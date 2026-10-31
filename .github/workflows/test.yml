@@ -1,0 +1,14 @@
+name: Pre-Gserver unit tests
+on:
+  push:
+    branches: ['feat/assistant-ai-and-sales-core']
+  pull_request:
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
