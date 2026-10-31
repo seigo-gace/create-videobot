@@ -7,3 +7,11 @@ test('cannot bypass consent and price validation',()=>{const d=beginSale('creato
 test('paid media uses exact Stars and sends no file content',()=>{assert.deepEqual(buildPaidMediaRequest({chatId:12345,mediaFileId:'file_001',priceStars:80}),{chat_id:12345,star_count:80,media:[{type:'video',media:'file_001'}]});});
 test('deny unauthorized Telegram media send',async()=>{let called=false;const telegramApi=async()=>{called=true};await assert.rejects(()=>sendPaidVideo({telegramApi,gateVerified:false,approved:true,params:{chatId:12345,mediaFileId:'file_001',priceStars:80}}));assert.equal(called,false);});
 test('authorized mock send uses selected Bot API method',async()=>{let method;const result=await sendPaidVideo({telegramApi:async(m,p)=>{method=m;return {message_id:7}},gateVerified:true,approved:true,params:{chatId:12345,mediaFileId:'file_001',priceStars:80}});assert.equal(method,'sendPaidMedia');assert.equal(result.message_id,7);});
+
+test('paid media topic routing and exact Telegram limits',()=>{
+ const p=buildPaidMediaRequest({chatId:-1001234567890,mediaFileId:'file_001',priceStars:25000,messageThreadId:123});
+ assert.equal(p.message_thread_id,123);
+ assert.equal(p.star_count,25000);
+ assert.throws(()=>buildPaidMediaRequest({chatId:1,mediaFileId:'file_001',priceStars:25001}));
+ assert.throws(()=>buildPaidMediaRequest({chatId:1,mediaFileId:'file_001',priceStars:1,messageThreadId:-1}));
+});
