@@ -33,3 +33,10 @@ test('rejected payload and missing token never trigger network',async()=>{
 test('transport error does not leak token',async()=>{
  await assert.rejects(()=>postGserverEvent({event,baseUrl:'http://127.0.0.1:18765/',token,fetchImpl:async()=>({status:500})}),/Gserver transport failed/);
 });
+
+test('event level and outcome strictly match Gserver actual validation',()=>{
+ assert.deepEqual(normalizeBotEvent({...event,level:'warn',outcome:'FAIL',error_code:'BOT_AUTH_REJECTED'}).outcome,'FAIL');
+ assert.throws(()=>normalizeBotEvent({...event,level:'warning'}));
+ assert.throws(()=>normalizeBotEvent({...event,outcome:'success'}));
+ assert.throws(()=>normalizeBotEvent({...event,level:'info',outcome:'FAIL'}));
+});
