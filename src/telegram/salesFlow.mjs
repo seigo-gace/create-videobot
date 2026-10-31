@@ -12,7 +12,7 @@ export function transitionSale(draft,action) {
    return {...draft,fileId:action.fileId,state:'awaiting_price'};
  }
  if(draft.state==='awaiting_price' && action.type==='price') {
-   if(!Number.isSafeInteger(action.stars)||action.stars<1||action.stars>1000000) throw new Error('invalid price');
+   if(!Number.isSafeInteger(action.stars)||action.stars<1||action.stars>25000) throw new Error('invalid price');
    return {...draft,priceStars:action.stars,state:'awaiting_rights'};
  }
  if(draft.state==='awaiting_rights' && action.type==='confirm_rights') {
