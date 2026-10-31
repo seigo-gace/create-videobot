@@ -3,9 +3,10 @@ const BOTS = new Set(['create-videobot']);
 export function normalizeBotEvent(value) {
   if (!value || !BOTS.has(value.bot) || !EVENTS.has(value.event)) throw new Error('invalid bot event');
   if (typeof value.event_id !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(value.event_id)) throw new Error('invalid event id');
-  if (value.level !== undefined && !['info','warning','error','critical'].includes(value.level)) throw new Error('invalid level');
-  if (value.outcome !== undefined && !['success','failure','unknown'].includes(value.outcome)) throw new Error('invalid outcome');
-  if (value.error_code !== undefined && (typeof value.error_code !== 'string' || !/^[A-Z0-9_]{1,50}$/.test(value.error_code))) throw new Error('invalid error code');
+  if (value.level !== undefined && !['info','warn','error'].includes(value.level)) throw new Error('invalid level');
+  if (value.outcome !== undefined && !['PASS','FAIL','RETRY','SKIP'].includes(value.outcome)) throw new Error('invalid outcome');
+  if (value.outcome==='FAIL' && value.level==='info') throw new Error('failed operations require warning or error');
+  if (value.error_code !== undefined && (typeof value.error_code !== 'string' || !/^[A-Z][A-Z0-9_]{0,47}$/.test(value.error_code))) throw new Error('invalid error code');
   const result = {bot:value.bot,event_id:value.event_id,event:value.event};
   for (const field of ['level','outcome','error_code']) if (value[field]!==undefined) result[field] = value[field];
   return result;
