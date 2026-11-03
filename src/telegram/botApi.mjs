@@ -2,7 +2,7 @@
  * Telegram Bot API HTTPS transport. Only explicit allowed methods are exposed.
  * Do not log request URL: it contains the Bot Token.
  */
-const METHODS = new Set(['getMe', 'sendPaidMedia', 'getMyName', 'getMyDescription', 'getMyShortDescription', 'getMyCommands', 'setMyName', 'setMyDescription', 'setMyShortDescription', 'setMyCommands']);
+const METHODS = new Set(['getMe', 'sendPaidMedia', 'getMyName', 'getMyDescription', 'getMyShortDescription', 'getMyCommands', 'setMyName', 'setMyDescription', 'setMyShortDescription', 'setMyCommands', 'sendMessage', 'editMessageText', 'answerCallbackQuery']);
 export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeoutMs=8000}) {
  if(typeof token!=='string' || !/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)) throw new Error('invalid Bot Token');
  if(typeof fetchImpl!=='function') throw new Error('fetch implementation required');
