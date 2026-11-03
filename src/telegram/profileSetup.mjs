@@ -2,7 +2,7 @@ const PROFILE=Object.freeze({
  name:'動画販売・出品サポート',
  description:'動画の出品準備と販売管理をサポートします。出品前に作品の権利や利用条件を確認し、公開・販売は承認されたものに限ります。購入や公開機能は準備状況に応じて順次ご案内します。',
  short_description:'動画の出品準備と販売をサポートするBotです。',
- commands:[{command:'start',description:'はじめる・ご案内'},{command:'help',description:'利用方法を確認'}]
+ commands:[]
 });
 export function plannedProfile(){return PROFILE}
 export async function applyProfile({api,expectedUsername,confirmChange=false}){
