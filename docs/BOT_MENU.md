@@ -4,5 +4,5 @@
 - パネルは既存投稿を編集し、ボタン連打による投稿増殖を防ぐ。グループへメニューパネルを自動投稿しない。
 - callback_dataは固定許可リスト。クリックした本人とprivate chatの一致を検証し、callbackに回答する。
 - 出品・販売は現在未接続なので準備中と明示し、機能稼働済みを装わない。
-- 既存Telegramプロフィールに設定された /start、/help コマンド候補の削除は未実施。
+- プロフィールの希望状態はコマンド候補なし（setMyCommands空配列）へ変更済み。既存Telegramに登録済みの /start、/help の削除はまだ実機未実施。Telegramの初回開始ボタンによる /start Update は引き続き処理する。
 - APIモックのテスト合格とTelegram実機での稼働は別。実機Webhook/Long Pollingへの配線・Gserverへの配置・実Telegram操作は未検証。
