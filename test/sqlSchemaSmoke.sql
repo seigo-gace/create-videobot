@@ -3,11 +3,11 @@ BEGIN;
 INSERT INTO videobot_listings
  (listing_id,seller_user_id,revision,title,price_stars,price_mode,
   thumbnail_file_id,sample_file_id,sample_duration_seconds,paid_video_file_id,
-  rights_verified,adult_consent_verified,status)
+  rights_verified,adult_consent_verified,fee_terms_accepted_at,status)
 VALUES
  ('ci_video_01',44,2,'CI TEST ONLY',300,'preset',
   'ci_photo_id','ci_sample_id',30,'ci_paid_file',
-  TRUE,TRUE,'published');
+  TRUE,TRUE,NOW(),'published');
 
 INSERT INTO videobot_post_receipts
  (delivery_key,listing_id,revision,topic_id,status,free_message_ids,paid_message_id)
@@ -72,7 +72,8 @@ UPDATE videobot_listings AS l
  SET status='published',revision=l.revision+1,updated_at=NOW()
  WHERE l.seller_user_id=44 AND l.listing_id='ci_draft_02' AND l.revision=1
   AND l.status IN ('draft','ready') AND l.rights_verified=TRUE
-  AND l.adult_consent_verified=TRUE
+  AND l.adult_consent_verified=TRUE AND l.fee_terms_accepted_at IS NOT NULL
+  AND l.management_fee_bps=3000
   AND EXISTS (
    SELECT 1 FROM videobot_post_receipts AS r
    WHERE r.delivery_key='ci_draft_02:1' AND r.listing_id=l.listing_id
@@ -93,7 +94,8 @@ UPDATE videobot_listings AS l
  SET status='published',revision=l.revision+1,updated_at=NOW()
  WHERE l.seller_user_id=44 AND l.listing_id='ci_draft_02' AND l.revision=1
   AND l.status IN ('draft','ready') AND l.rights_verified=TRUE
-  AND l.adult_consent_verified=TRUE
+  AND l.adult_consent_verified=TRUE AND l.fee_terms_accepted_at IS NOT NULL
+  AND l.management_fee_bps=3000
   AND EXISTS (
    SELECT 1 FROM videobot_post_receipts AS r
    WHERE r.delivery_key='ci_draft_02:1' AND r.listing_id=l.listing_id
@@ -102,8 +104,37 @@ UPDATE videobot_listings AS l
   );
 DO $$
 BEGIN
- IF (SELECT status FROM videobot_listings WHERE listing_id='ci_draft_02') <> 'published'
- THEN RAISE EXCEPTION 'Valid durable media receipt rejected'; END IF;
-END $$;
+ IF (SELECT status FROM videobot_listings WHERE listing_id='ci_draft_02') <> 'draft'
+ THEN RAISE EXCEPTION 'Published without seller 30-percent fee acceptance'; END IF;
+END $;
+
+-- The seller accepted the displayed 30% management deduction by tapping the
+-- existing publish button; now and only now can a receipt-matched item publish.
+UPDATE videobot_listings SET fee_terms_accepted_at=NOW()
+ WHERE listing_id='ci_draft_02' AND fee_terms_accepted_at IS NULL;
+UPDATE videobot_listings AS l
+ SET status='published',revision=l.revision+1,updated_at=NOW()
+ WHERE l.seller_user_id=44 AND l.listing_id='ci_draft_02' AND l.revision=1
+ AND l.status IN ('draft','ready') AND l.rights_verified=TRUE
+ AND l.adult_consent_verified=TRUE AND l.fee_terms_accepted_at IS NOT NULL
+ AND l.management_fee_bps=3000 AND EXISTS (
+  SELECT 1 FROM videobot_post_receipts AS r
+  WHERE r.delivery_key='ci_draft_02:1' AND r.listing_id=l.listing_id
+   AND r.revision=1 AND r.status='sent'
+   AND r.free_message_ids=ARRAY[201,202]::BIGINT[]
+   AND r.paid_message_id=203
+ );
+DO $
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM videobot_listings
+    WHERE listing_id='ci_draft_02' AND status='published'
+    AND fee_terms_accepted_at IS NOT NULL AND management_fee_bps=3000)
+ THEN RAISE EXCEPTION 'Seller-accepted valid receipt rejected'; END IF;
+ IF NOT EXISTS (SELECT 1 FROM videobot_stars_ledger
+    WHERE telegram_transaction_id='ci_transaction_123'
+      AND management_fee_bps=3000
+      AND fee_policy_id='video-admin-30-20261107')
+ THEN RAISE EXCEPTION 'Purchase fee terms snapshot missing'; END IF;
+END $;
 
 ROLLBACK;
