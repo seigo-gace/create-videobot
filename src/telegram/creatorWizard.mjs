@@ -1,5 +1,6 @@
 import { menuPage } from './menuPanel.mjs';
-import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, myVideosPanel } from './creatorUi.mjs';
+import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorReviewPanel, myVideosPanel } from './creatorUi.mjs';
+import { randomUUID } from 'node:crypto';
 
 function privateUser(update) {
   const message=update?.message??update?.callback_query?.message;
@@ -30,7 +31,7 @@ function statusPanel(draft,rev,extra='') {
  * implemented by GateApp-Bot PR#11; VideoBot does not clone its transport.
  * sessionStore owns durable optimistic CAS, must not use GATE admin sessions.
  */
-export function createCreatorWizard({api,sessionStore,screenTransport,listingStore,mediaProcessor}={}) {
+export function createCreatorWizard({api,sessionStore,screenTransport,listingStore,mediaProcessor,publishListing}={}) {
   if(typeof api!=='function'||typeof screenTransport?.show!=='function')
     throw new Error('trusted Telegram/screen transport unavailable');
   requireFunctions(sessionStore,['read','write','setScreen']);
@@ -110,13 +111,73 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           } else warning='自動生成サービスが未接続です。';
         }
         const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!prepared[k]);
-        const note=missing.length
-          ? '⚠️ 未登録：'+missing.join('・')+'。'+warning
-          : '👁 プレビュー確認：まだ公開されていません。本人の明示投稿と既存GATE・Topic・リリースGateを通過した後だけ公開できます。';
-        return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null},
-          rev=>statusPanel(prepared,rev,note));
+        const note=missing.length ? warning : '本人が［投稿する］を押すまでは公開されません。';
+        return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null,screen:'review'},
+          rev=>creatorReviewPanel(prepared,rev,note));
       }
       throw new Error('UNKNOWN_CREATOR_ACTION');
+    }
+    if(code.startsWith('review:')) {
+      expectSession(old,messageId);
+      if(old.screen!=='review')throw new Error('CREATOR_NOT_IN_REVIEW');
+      const action=validateRevision(code,old);
+      const draft=old.draft;
+      if(action==='review:edit')return persistAndRender(ownerId,old,
+        {...old,screen:'editor',waiting:null},rev=>statusPanel(draft,rev));
+      if(action==='review:cancel')return persistAndRender(ownerId,old,
+        {...old,draft:null,waiting:null,screen:'home'},menuPage('home'));
+      if(action==='review:rights') {
+        const agreed=editCreatorDraft(draft,
+          {type:'confirmRights',rightsVerified:true,adultConsentVerified:true});
+        return persistAndRender(ownerId,old,{...old,draft:agreed},
+          rev=>creatorReviewPanel(agreed,rev));
+      }
+      if(action==='review:publish') {
+        if(old.publishing==='needs_reconcile')throw new Error('PUBLISH_NEEDS_RECONCILE');
+        const valid=!!draft.thumbnail&&!!draft.sample&&!!draft.paidVideo&&
+          !!draft.title&&Number.isSafeInteger(draft.priceStars)&&
+          draft.rightsVerified===true&&draft.adultConsentVerified===true;
+        if(!valid)return persistAndRender(ownerId,old,{...old},
+          rev=>creatorReviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。'));
+        if(typeof publishListing!=='function' ||
+          typeof listingStore?.createDraft!=='function' ||
+          typeof listingStore?.updateDraft!=='function' ||
+          typeof listingStore?.markPublished!=='function')
+          return persistAndRender(ownerId,old,{...old},
+            rev=>creatorReviewPanel(draft,rev,'公開用の既存GATE・Topic・売上DB接続はまだ検証されていません。投稿は行われません。'));
+        const reservation={...old,revision:old.revision+1,publishing:'in_progress'};
+        // Reserve callback revision *before* any paid-media send; rejects races.
+        await sessionStore.write(ownerId,old.revision,reservation);
+        let stored=null;
+        try {
+          stored=draft.mode==='edit'
+            ? await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,draft)
+            : await listingStore.createDraft(ownerId,randomUUID(),draft);
+          const published=await publishListing({
+            ...stored,ownerConfirmedPublish:true,
+            rightsVerified:draft.rightsVerified,
+            adultConsentVerified:draft.adultConsentVerified
+          });
+          if(published?.posted!==true || !Number.isSafeInteger(published.paidMessageId))
+            throw new Error('publication not confirmed');
+          await listingStore.markPublished(ownerId,stored.id,stored.revision,published);
+          const current=await sessionStore.read(ownerId);
+          return persistAndRender(ownerId,current,{...current,draft:null,
+            screen:'home',publishing:null,waiting:null},
+            {text:'✅ 動画の投稿を確認しました。マイ動画から確認できます。',
+             reply_markup:{inline_keyboard:[[{
+               text:'📦 マイ動画',callback_data:'menu:manage'
+             }],[{text:'↩ 戻る',callback_data:'menu:home'}]]}});
+        } catch(e) {
+          const current=await sessionStore.read(ownerId);
+          return persistAndRender(ownerId,current,{
+            ...current,publishing:'needs_reconcile',waiting:null,
+            screen:'review',draft
+          },rev=>creatorReviewPanel(draft,rev,
+            '⚠️ 送信または保存結果の照合が必要です。重複投稿を防止するため、再投稿しません。'));
+        }
+      }
+      throw new Error('UNKNOWN_REVIEW_ACTION');
     }
     if(code.startsWith('video:')) {
       const action=code.slice(6).split(':');
