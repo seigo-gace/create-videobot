@@ -1,3 +1,4 @@
+import {splitStarsExact,formatTenths,managementFeeDisclosure} from '../sales/managementFee.mjs';
 import {withdrawalPrompt,validateWithdrawalText,confirmedWithdrawal,WithdrawalInputError} from './creatorUi.mjs';
 
 function nonnegative(value,name) {
@@ -14,12 +15,24 @@ export function salesOverviewPanel(summary,revision) {
   nonnegative(summary.grossStars,'gross Stars');
   const payoutReady=summary.payoutReady===true;
   if(payoutReady)nonnegative(summary.availableStars,'available Stars');
+  const netKnown=summary.netRecordedStars!==undefined;
+  const net=netKnown?nonnegative(summary.netRecordedStars,'refund-adjusted Stars'):null;
+  if(netKnown&&net>summary.grossStars)throw new Error('refund-adjusted Stars exceed gross');
+  const split=netKnown?splitStarsExact(net):null;
+  if(split&&(summary.managementFeeTenths!==undefined&&
+     summary.managementFeeTenths!==split.managementFeeTenths ||
+     summary.creatorShareTenths!==undefined&&
+     summary.creatorShareTenths!==split.creatorShareTenths))
+    throw new Error('ledger fee split mismatch');
   const text=[
     '⭐ 売上・引き出し',
     '',
     '累計売上：'+summary.grossStars+' Stars',
+    '返金控除後売上：'+(netKnown?net+' Stars':'未確認'),
+    '運営管理費（30%）：'+(split?formatTenths(split.managementFeeTenths)+' Stars（計算上）':'未確認'),
+    '投稿者分（70%）：'+(split?formatTenths(split.creatorShareTenths)+' Stars（計算上）':'未確認'),
     '引き出し可能：'+(payoutReady?summary.availableStars+' Stars':'未確認（出品者への公式Stars移転手段は未検証）'),
-    '※ 実際の受取可能額は公式取引・返金等の確認後に確定します。'
+    '※ 1 Star未満の端数処理は未決定です。管理費・投稿者分の計算額は引き出し可能残高ではありません。'
   ].join('\n');
   return {text,reply_markup:{inline_keyboard:[
     [{text:'⭐ 引き出す',callback_data:cb('sales:withdraw',revision)},
@@ -33,8 +46,13 @@ export function salesHistoryPanel(history,revision) {
     if(!row||!['sale','refund','withdrawal'].includes(row.type)||
        !Number.isSafeInteger(row.stars)||row.stars<1)
       throw new Error('invalid ledger history event');
-    return (row.type==='sale'?'売上':row.type==='refund'?'返金':'引き出し')+
+    const label=(row.type==='sale'?'売上':row.type==='refund'?'返金':'引き出し')+
       '：'+(row.type==='sale'?'+':'−')+row.stars+' Stars';
+    if(row.type==='withdrawal')return label;
+    const split=splitStarsExact(row.stars);
+    return label+'（管理費'+(row.type==='refund'?'戻し':'')+'30% '+
+      formatTenths(split.managementFeeTenths)+' / 投稿者'+(row.type==='refund'?'戻し':'分')+'70% '+
+      formatTenths(split.creatorShareTenths)+' Stars・計算上）';
   });
   return {text:'📋 売上・引き出し履歴\n\n'+(list.join('\n')||'履歴はありません。'),
     reply_markup:{inline_keyboard:[[{
@@ -43,7 +61,7 @@ export function salesHistoryPanel(history,revision) {
 }
 export function salesWithdrawalPanel(summary,revision,error='') {
   if(summary?.payoutReady!==true)return {
-    text:'⭐ 引き出し\n\n出品者への公式Stars移転手段が未確認のため引き出しは利用できません。',
+    text:'⭐ 引き出し\n\n販売売上の30%は運営管理費、投稿者分は70%です。\n出品者への公式Stars移転手段が未確認のため引き出しは利用できません。',
     reply_markup:{inline_keyboard:[[{
       text:'↩ 戻る',callback_data:cb('sales:back',revision)
     }]]}
