@@ -10,7 +10,8 @@ const transaction=()=>({id:'transaction-true-123',amount:300,source:{
 function fixture(){
  const rows=[],calls=[],state={
   delivery_key:'myvid:1',listing_id:'myvid',price_stars:300,
-  seller_user_id:'44',status:'sent',paid_message_id:15,listing_status:'published'
+  seller_user_id:'44',status:'sent',paid_message_id:15,listing_status:'published',
+  management_fee_bps:3000,fee_policy_id:'video-admin-30-20261107',fee_terms_accepted_at:'seller-confirmed'
  };
  const pool={
   async query(sql,args){
@@ -18,7 +19,9 @@ function fixture(){
    if(sql.startsWith('SELECT r.listing_id')){
      const p=args[0];
      return {rows:p===state.delivery_key&&state.status==='sent'&&state.listing_status==='published'
-        ?[{listing_id:'myvid',price_stars:300,seller_user_id:'44'}]:[]};
+        ?[{listing_id:'myvid',price_stars:300,seller_user_id:'44',
+          management_fee_bps:state.management_fee_bps,fee_policy_id:state.fee_policy_id,
+          fee_terms_accepted_at:state.fee_terms_accepted_at}]:[]};
    }
    if(sql.startsWith('INSERT INTO videobot_stars_ledger') && sql.includes("SELECT p.telegram_transaction_id")) {
      const original=rows.find(r=>r.telegram_transaction_id===args[0]&&r.kind==='paid');
@@ -35,7 +38,8 @@ function fixture(){
      if(rows.some(r=>r.telegram_transaction_id===id&&r.kind==='paid'))
        return {rowCount:0,rows:[]};
      rows.push({telegram_transaction_id:id,kind:'paid',delivery_key:key,listing_id:'myvid',
-       seller_user_id:'44',buyer_user_id:String(buyer),stars,updateId});
+       seller_user_id:'44',buyer_user_id:String(buyer),stars,updateId,
+       management_fee_bps:3000,fee_policy_id:'video-admin-30-20261107'});
      return {rowCount:1,rows:[{ledger_id:1}]};
    }
    if(sql.startsWith("SELECT kind,stars,listing_id,buyer_user_id")) {
@@ -75,7 +79,8 @@ test('Telegram purchase update is corroborated before unique SQL ledger insert',
  assert.equal(x.rows[0].seller_user_id,'44');
  assert.equal(x.rows[0].buyer_user_id,'77');
  const summary=await ledger.getSummary(44);
- assert.deepEqual(summary,{grossStars:300,netRecordedStars:300,payoutReady:false});
+ assert.deepEqual(summary,{grossStars:300,netRecordedStars:300,managementFeeTenths:900,creatorShareTenths:2100,
+    feePolicyId:'video-admin-30-20261107',payoutReady:false});
  assert.deepEqual(await ledger.getHistory(44),[{type:'sale',stars:300}]);
  assert.deepEqual(await ledger.getHistory(45),[]);
 });
@@ -133,7 +138,8 @@ test('official Telegram negative refund is idempotently recorded without transfe
  assert.deepEqual(await ledger.confirmRefund('transaction-true-123'),
    {recorded:true,duplicate:true});
  assert.deepEqual(await ledger.getSummary(44),
-   {grossStars:300,netRecordedStars:0,payoutReady:false});
+   {grossStars:300,netRecordedStars:0,managementFeeTenths:0,creatorShareTenths:0,
+    feePolicyId:'video-admin-30-20261107',payoutReady:false});
  assert.deepEqual(await ledger.getHistory(44),[
    {type:'refund',stars:300},{type:'sale',stars:300}
  ]);
@@ -155,4 +161,10 @@ test('refund with unknown sale, wrong buyer, or wrong amount fails closed',async
    await assert.rejects(()=>bad.confirmRefund('transaction-true-123'),/not verified/);
  }
  assert.equal(x.rows.filter(r=>r.kind==='refunded').length,0);
+});
+
+test('sales record is rejected without seller acceptance of the 30 percent management fee',async()=>{
+ const x=fixture();x.state.fee_terms_accepted_at=null;
+ await assert.rejects(()=>createPostgresStarsLedger(x).confirmPurchase(purchase),/management-fee acceptance missing/);
+ assert.equal(x.rows.length,0);
 });
