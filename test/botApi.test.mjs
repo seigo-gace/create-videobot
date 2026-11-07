@@ -21,3 +21,24 @@ test('Telegram API reports denied result without dumping body',async()=>{
  const api=createTelegramBotApi({token,fetchImpl:async()=>({status:200,json:async()=>({ok:false,description:'secret'})})});
  await assert.rejects(()=>api('getMe'),err=>!err.message.includes('secret'));
 });
+
+test('Telegram DM edit maps only known not-editable failures for safe screen replacement',async()=>{
+ const api=createTelegramBotApi({token,fetchImpl:async()=>({
+   status:400,json:async()=>({ok:false,description:'Bad Request: message to edit not found'})
+ })});
+ await assert.rejects(()=>api('editMessageText',{chat_id:1,message_id:2,text:'new'}),/message cannot be edited/);
+ const unchanged=createTelegramBotApi({token,fetchImpl:async()=>({
+   status:400,json:async()=>({ok:false,description:'Bad Request: message is not modified'})
+ })});
+ await assert.rejects(()=>unchanged('editMessageText',{chat_id:1,message_id:2,text:'old'}),/message is not modified/);
+});
+test('Telegram API rejects unknown edit failure without propagating user data',async()=>{
+ const untrusted='private text '+token;
+ const api=createTelegramBotApi({token,fetchImpl:async()=>({
+   status:400,json:async()=>({ok:false,description:'Bad Request: '+untrusted})
+ })});
+ await assert.rejects(()=>api('editMessageText',{chat_id:1,message_id:2,text:'new'}),
+   error=>error.message==='Telegram API request failed'&&!error.message.includes(untrusted));
+ await assert.rejects(()=>api('sendMessage',{chat_id:1,text:'x'}),
+   /Telegram API request failed/);
+});
