@@ -53,3 +53,45 @@ test('does not follow redirects or leave partial file on HTTP rejection',()=>fix
  await assert.rejects(()=>fetcher('file001',dir),/download failed/);
  assert.deepEqual(await readdir(dir),[]);
 }));
+
+test('retries short writes to preserve every byte and cleans up on a stalled write',()=>fixture(async dir=>{
+ const payload=Buffer.from('complete paid-video preview');
+ const writes=[];
+ let stored=Buffer.alloc(0),closed=false,removed=false;
+ const fetcher=createTelegramVideoFetcher({
+   token:dummy,
+   telegramApi:async()=>({file_path:'videos/source.mp4',file_size:payload.length}),
+   fetchImpl:async()=>({ok:true,body:(async function*(){yield payload;})()}),
+   openFile:async(path,flags,mode)=>{
+     assert.equal(flags,'wx');
+     assert.equal(mode,0o600);
+     writes.push(path);
+     return {
+       async write(buffer,offset,length){
+         const n=Math.min(3,length);
+         stored=Buffer.concat([stored,buffer.subarray(offset,offset+n)]);
+         return {bytesWritten:n};
+       },
+       async sync(){},
+       async close(){closed=true;}
+     };
+   }
+ });
+ const result=await fetcher('file001',dir);
+ assert.equal(stored.toString(),payload.toString());
+ assert.equal(closed,true);
+ await result.cleanup();
+ assert.equal(writes.length,1);
+ const stalled=createTelegramVideoFetcher({
+   token:dummy,
+   telegramApi:async()=>({file_path:'videos/source.mp4'}),
+   fetchImpl:async()=>({ok:true,body:(async function*(){yield Buffer.from('abc');})()}),
+   openFile:async(path)=>({
+     async write(){return {bytesWritten:0};},
+     async close(){removed=true;}
+   })
+ });
+ await assert.rejects(()=>stalled('file001',dir),/incomplete Telegram media write/);
+ assert.equal(removed,true);
+ assert.deepEqual(await readdir(dir),[]);
+}));
