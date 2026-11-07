@@ -41,3 +41,29 @@ test('history presents bounded sales/refund/withdrawal and back only',()=>{
  assert.equal(panel.reply_markup.inline_keyboard[0][0].callback_data,'sales:back|r12');
  assert.throws(()=>salesHistoryPanel([{type:'sale',stars:-1}],1),/invalid/);
 });
+
+test('verified gross vs refund-adjusted Stars discloses management 30% and creator 70%',()=>{
+ const panel=salesOverviewPanel({
+   grossStars:400,netRecordedStars:300,
+   managementFeeTenths:900,creatorShareTenths:2100,payoutReady:false
+ },6);
+ assert.match(panel.text,/累計売上：400 Stars/);
+ assert.match(panel.text,/返金控除後売上：300 Stars/);
+ assert.match(panel.text,/運営管理費（30%）：90 Stars/);
+ assert.match(panel.text,/投稿者分（70%）：210 Stars/);
+ assert.match(panel.text,/引き出し可能：未確認/);
+ assert.deepEqual(panel.reply_markup.inline_keyboard.map(r=>r.length),[2,1]);
+ assert.throws(()=>salesOverviewPanel({
+   grossStars:300,netRecordedStars:300,managementFeeTenths:999,payoutReady:false
+ },6),/fee split mismatch/);
+});
+test('refund events reverse both accounting shares, no second management fee on withdrawal',()=>{
+ const panel=salesHistoryPanel([
+  {type:'sale',stars:300},{type:'refund',stars:100},
+  {type:'withdrawal',stars:10}
+ ],3);
+ assert.match(panel.text,/売上：\+300 Stars（管理費30% 90 \/ 投稿者分70% 210/);
+ assert.match(panel.text,/返金：−100 Stars（管理費戻し30% 30 \/ 投稿者戻し70% 70/);
+ assert.match(panel.text,/引き出し：−10 Stars/);
+ assert.equal(panel.text.includes('引き出し：−10 Stars（管理費'),false);
+});
