@@ -113,8 +113,8 @@ export function createPostgresListingStore(pool) {
          receipt.paidMessageId<=0)
         throw new Error('verified publish receipt required');
       const r=await pool.query(
-        "UPDATE videobot_listings SET status='published',revision=revision+1,updated_at=NOW() WHERE seller_user_id=$1 AND listing_id=$2 AND revision=$3 AND status IN ('draft','ready') AND rights_verified=TRUE AND adult_consent_verified=TRUE AND title<>'' AND price_stars IS NOT NULL AND thumbnail_file_id IS NOT NULL AND sample_file_id IS NOT NULL AND paid_video_file_id IS NOT NULL RETURNING *",
-        [owner,id,expectedRevision]
+        "UPDATE videobot_listings AS l SET status='published',revision=l.revision+1,updated_at=NOW() WHERE l.seller_user_id=$1 AND l.listing_id=$2 AND l.revision=$3 AND l.status IN ('draft','ready') AND l.rights_verified=TRUE AND l.adult_consent_verified=TRUE AND l.title<>'' AND l.price_stars IS NOT NULL AND l.thumbnail_file_id IS NOT NULL AND l.sample_file_id IS NOT NULL AND l.paid_video_file_id IS NOT NULL AND EXISTS (SELECT 1 FROM videobot_post_receipts AS r WHERE r.delivery_key=$2||':'||$3::text AND r.listing_id=l.listing_id AND r.revision=$3 AND r.status='sent' AND r.free_message_ids=$4::bigint[] AND r.paid_message_id=$5) RETURNING l.*",
+        [owner,id,expectedRevision,receipt.freeMessageIds,receipt.paidMessageId]
       );
       if(r?.rowCount!==1)throw new Error('PUBLISH_RECEIPT_REQUIRES_RECONCILE');
       return recordToListing(r.rows[0]);
