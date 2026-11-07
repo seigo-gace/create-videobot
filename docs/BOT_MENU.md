@@ -31,3 +31,16 @@
 - 現在のSource：`creatorUi.mjs`、`sampleMedia.mjs`、`autoPreview.mjs`、`freeAlbum.mjs`、`menuPanel.mjs`、`botApi.mjs`を単体テストし、実FFmpegの別途Smokeを実施。
 - **未実施**：Telegram受信からEditorへの配線・取得／アップロード・永続下書き・部分失敗復旧・編集公開・GATE実接続・売上台帳・Stars実受取/払出・権利/規約確認・実機E2E・deploy。
 - 関連Current：[動画販売 #6](https://github.com/seigo-gace/GateApp-Bot/issues/6) と既存[PR #1](https://github.com/seigo-gace/create-videobot/pull/1)。本番公開禁止の現行境界を維持。
+
+## 2026-11-07 実装差分・最新のSource判定（旧進捗説明を更新）
+
+上記の「配線未実装」「台帳未実装」は**記載時点の履歴**であり、現行Sourceの状態ではない。既定のボタン名称・行配置・新規/編集共通性を変更しない。
+
+- **メニュー→DM**：`creatorBot.mjs`→`creatorWizard.mjs`で既存メニューと新規/編集を接続。本人ID/画面ID/下書きrevisionを照合し、同一Botメッセージ編集・Telegram入力削除を共通画面契約に委譲。独立DBの`pgCreatorSessions.mjs`と`sql/002_creator_sessions.sql`で保存・再開。
+- **商品**：`pgListings.mjs` / `sql/003_video_listings.sql`に本人所有の下書き・価格・サムネ/サンプル/本編file_idを保存。未公開の削除確認、マイ動画のページ送り、タイトル変更、公開済みメディアと売上証拠の保護を接続。
+- **動画**：`telegramFileFetch.mjs`→既存`sampleMedia.mjs`/`autoPreview.mjs`→`privateMediaUpload.mjs`へ受信・先頭30秒切出し・未提出素材補完を接続するAdapterを実装。Telegram標準Bot APIの`getFile`は20MBまでで、上限超過は勝手な転送/公開ではなく拒否。保管先は検証済み専用Privateストレージが注入されるまで無効。
+- **販売投稿**：`paidListingPublisher.mjs`が既存無料アルバム2件＋Stars本編1件の送信ビルダーを使用。購入通知を商品版に結ぶ`payload=listingId:revision`を必須として付与。GATE資格、販売専用Topic実ID、公開Feature Gate、作品審査は既存Ownerの検証済み提供元から取得できる場合のみ送信。送信結果不明は再送停止。
+- **購入・返金・売上**：`creatorWebhookAdmission.mjs`の秘密ヘッダー認証→`creatorBot.mjs`→`pgStarsLedger.mjs`が購入通知とTelegram`getStarTransactions`の金額/購入者/payload/取引IDを照合した場合にだけ永続台帳へ計上。`sql/004_stars_ledger.sql`、公式返金の読取り照合、本人の売上/履歴UIも追加。**引き出し機能は未有効**：Bot所有者が残高を引き出す公式経路を、第三者出品者へのStars直接送金と誤認しない。
+- **品質**：隔離Unit/Mockに加え、PostgreSQL16のCI専用コンテナで4スキーマと実SQLの保存・重複制約・本編と無料2件のレシート一致時のみ公開遷移を検証。Source合格は本番Botプロセス/Telegram端末/実決済を意味しない。
+
+**未完了の外部ゲート**：実販売Topicの現行chat_id/message_thread_idと承認済みGATE照合API、サービスのPrivate媒体保管と大容量Bot API運用、SecretとHost admission、実DB移行・Runtime/Telegram E2E、外部商用規約と出品者への適法なStars受取方式の確定。現時点のMaster決定は未起動・未配備・未公開であり、PRはDraft維持。
