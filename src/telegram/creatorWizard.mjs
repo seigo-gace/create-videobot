@@ -181,9 +181,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         await sessionStore.write(ownerId,old.revision,reservation);
         let stored=null;
         try {
+          // The price and 30% deduction are shown on the same review screen.
+          // Explicit tapping of the existing "投稿する" button records fee
+          // acceptance; no extra button or user command is introduced.
+          const acceptedDraft={...draft,feeTermsAccepted:true};
           stored=draft.mode==='edit'
-            ? await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,draft)
-            : await listingStore.createDraft(ownerId,randomUUID(),draft);
+            ? await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,acceptedDraft)
+            : await listingStore.createDraft(ownerId,randomUUID(),acceptedDraft);
           const published=await publishListing({
             ...stored,ownerConfirmedPublish:true,
             rightsVerified:draft.rightsVerified,
