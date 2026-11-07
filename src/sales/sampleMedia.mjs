@@ -45,10 +45,11 @@ export async function probeDurationSeconds(filePath, { run = exec, ffprobe = 'ff
  * This never edits the original, never replaces an existing destination, and
  * never sends media to Telegram or publishes a listing.
  */
-export async function prepareSampleVideo({ inputPath, outputPath, run = exec, ffmpeg = 'ffmpeg', ffprobe = 'ffprobe' } = {}) {
+export async function prepareSampleVideo({ inputPath, outputPath, run = exec, ffmpeg = 'ffmpeg', ffprobe = 'ffprobe', limitSeconds = SAMPLE_MAX_SECONDS } = {}) {
+  if (!Number.isFinite(limitSeconds) || limitSeconds <= 0 || limitSeconds > SAMPLE_MAX_SECONDS) throw new Error('invalid sample length');
   const input = absolutePath(inputPath);
   const duration = await probeDurationSeconds(input, { run, ffprobe });
-  if (duration <= SAMPLE_MAX_SECONDS) {
+  if (duration <= limitSeconds) {
     return { kind: 'original', path: input, durationSeconds: duration };
   }
   const output = absolutePath(outputPath);
@@ -58,13 +59,13 @@ export async function prepareSampleVideo({ inputPath, outputPath, run = exec, ff
   try {
     await run(ffmpeg, [
       '-nostdin', '-hide_banner', '-loglevel', 'error',
-      '-i', input, '-t', String(SAMPLE_MAX_SECONDS),
+      '-i', input, '-t', String(limitSeconds),
       '-map', '0:v:0', '-map', '0:a?',
       '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
       '-c:a', 'aac', '-movflags', '+faststart', '-y', temporary
     ], { timeout: 180000, maxBuffer: 1024 * 1024 });
     const clippedDuration = await probeDurationSeconds(temporary, { run, ffprobe });
-    if (clippedDuration > SAMPLE_MAX_SECONDS) throw new Error('generated sample exceeds 30 seconds');
+    if (clippedDuration > limitSeconds) throw new Error('generated sample exceeds requested length');
     await chmod(temporary, 0o600);
     // link() fails if a competing writer creates output; rename() could overwrite it.
     await link(temporary, output);
