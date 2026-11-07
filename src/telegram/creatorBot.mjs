@@ -23,7 +23,7 @@ export function createCreatorBotUpdateHandler(options={}) {
     if(message?.chat?.type==='private' &&
        typeof message.text==='string' &&
        /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text)) {
-      return handleMenuUpdate({api:options.api,update});
+      return wizard.openHome(update);
     }
     let creatorResult;
     try {
