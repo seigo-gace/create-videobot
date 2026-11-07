@@ -72,7 +72,7 @@ test('creator DM callback/standard input/price flow uses one existing screen and
   const draft=x.states.get(33).draft;
   assert.equal(draft.thumbnail.fileId,'photo_auto_1');
   assert.equal(draft.sample.fileId,'prepared_sample_001');
-  assert.ok(x.screens.at(-1).panel.text.includes('プレビュー確認'));
+  assert.ok(x.screens.at(-1).panel.text.includes('動画販売プレビュー'));
   assert.ok(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===213));
   assert.equal(x.screens.every(s=>s.oldId===101),true);
 });
