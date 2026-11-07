@@ -28,3 +28,15 @@
 1. VideoBot内の画面・購入・配送を**既存Ownerを再利用する境界契約**に結合し、独立の金銭台帳/媒体参照のみ扱う。
 2. Topic/GATE/Feature Gateは既存提供元の正規読み取り契約から取得する。未接続なら実投稿を拒否。Bot独自の認証・Topic IDを偽造しない。
 3. 上記 Sourceの Unit/契約・隔離統合CI → 承認済みHost/実Telegram/Starsの順に検証。Production/paidに対する自動GOなし。
+
+## 2026-11-07 Source接続実績と完成判定（追記）
+- 実装した再利用接続：`src/telegram/paidListingPublisher.mjs` は既存 `paidMedia.mjs` と `freeAlbum.mjs` を、承認済みTopic/GATE/Feature Gate・専用永続レシートを注入して2メッセージとして送信する。通信結果不明時は `needs_reconcile` に固定し二重送信禁止。既存MPBを移植/複製しない。
+- `src/telegram/creatorBot.mjs` → `creatorWizard.mjs` は、PR#11のDM同一画面・入力削除・revisionの**インターフェイス契約**に従い、Private Botの別セッションから既存メニューと新規/編集を接続。`pgCreatorSessions.mjs` /`sql/002_creator_sessions.sql` が販売Bot内の永続CAS。GATE管理者セッションや公開済み掲示板の下書きを流用しない。
+- `src/sales/pgListings.mjs` と `sql/003_video_listings.sql` は商品・売り手・media file_idの私有保存、編集CAS、公開済み動画/価格の直接上書き拒否。公開成功は無料2件＋有料本編1件の実証済みmessage_idでのみ確定。
+- `src/sales/pgPostingReceipts.mjs`/`sql/001_video_post_receipts.sql` は二重投稿防止とTelegram部分失敗を保護する専用レシート。
+- `src/telegram/telegramFileFetch.mjs` は公式getFileの通常20MB制限内で受信し、`mediaProcessor.mjs`が既存`sampleMedia.mjs`と`autoPreview.mjs`を呼び出す。`privateMediaUpload.mjs` は**既存の実在し検証済みプライベート保管先が注入された場合のみ**アップロード。未承認先を勝手に生成しない。
+- プレビューの各動画の権利・出演者全員の成人/同意確認を`creatorUi.mjs`で維持し、本編差し替えで同意を失効。本人の明示［投稿する］＋承認済み外部公開Providerがある場合に限り動画販売を行えるよう`creatorWizard.mjs`を拡張。Provider不在・実Topic不明時は拒否し、運用上の合格を偽装しない。
+
+**Source CI根拠**：PR#1 branch Head `f1c92cc30b33042c11f5a0a8d068d67156b462db`、[GitHub Actions #42364415488](https://github.com/seigo-gace/create-videobot/actions/runs/42364415488)、Node.js Unit 95/95 PASS（0 FAIL/0 SKIP）。所有者の実Topic登録・実PG migration/Telegramメディア取得・プレビュー生成/保管先・Stars購買実照合・Bot→第三者Stars払出は**未検証／接続なし**。このCI結果は本番完成、サービス起動、公開許可の証拠ではない。
+
+**外部制約と保護判定**：Telegram Bot所有者のStars収益引き出しと、Bot残高から複数クリエーターへStarsを直接移転するAPIは別。後者の公式対応が未立証で、実第三者販売・引き出しを有効化できない。発行者の権利/適用規約・検証済み動画販売Topic・接続先非公開メディア保管・実Tokenは、個別の運用事実を検証するまでSourceのFake/Boolean値を「本番PASS」にできない。Bot起動/デプロイ/実決済は2026-11-04の既決境界を変更しない。
