@@ -62,3 +62,17 @@ test('invalid webhook token is rejected before decoding payload or querying data
  }),/webhook authorization failed/);
  assert.deepEqual(x.calls,[]);
 });
+
+test('source wiring accepts the concrete Telegram file adapters only with token and verified private storage provider',()=>{
+ const x=deps(),token='1234:'+('A'.repeat(36));
+ delete x.moduleConfig.mediaPorts;
+ assert.throws(()=>createVideoBotSourceModule(x.moduleConfig),/Telegram fetcher credentials unavailable/);
+ const built=createVideoBotSourceModule({...x.moduleConfig,
+  botToken:token,verifyPrivateMediaStore:async()=>({
+    kind:'private_video_media_store',verified:true,private:true,chatId:-100123
+  }),storageApproved:false,
+  fetchImpl:async()=>{throw Error('unexpected network');}
+ });
+ assert.equal(typeof built.handleCreatorUpdate,'function');
+ assert.equal(x.calls.length,0);
+});
