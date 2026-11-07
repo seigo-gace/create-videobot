@@ -79,11 +79,11 @@ UPDATE videobot_listings AS l
     AND r.revision=1 AND r.status='sent'
     AND r.free_message_ids=ARRAY[201,202]::BIGINT[] AND r.paid_message_id=203
   );
-DO $
+DO $$
 BEGIN
  IF (SELECT status FROM videobot_listings WHERE listing_id='ci_draft_02') <> 'draft'
  THEN RAISE EXCEPTION 'Published without durable media receipt'; END IF;
-END $;
+END $$;
 
 INSERT INTO videobot_post_receipts
  (delivery_key,listing_id,revision,topic_id,status,free_message_ids,paid_message_id)
@@ -100,10 +100,10 @@ UPDATE videobot_listings AS l
     AND r.revision=1 AND r.status='sent'
     AND r.free_message_ids=ARRAY[201,202]::BIGINT[] AND r.paid_message_id=203
   );
-DO $
+DO $$
 BEGIN
  IF (SELECT status FROM videobot_listings WHERE listing_id='ci_draft_02') <> 'published'
  THEN RAISE EXCEPTION 'Valid durable media receipt rejected'; END IF;
-END $;
+END $$;
 
 ROLLBACK;
