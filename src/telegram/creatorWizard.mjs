@@ -65,10 +65,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     }
     if(code==='menu:manage') {
       const items=await listingStore.listByOwner(ownerId);
-      const panel=myVideosPanel({sellerId:String(ownerId),listings:items,page:0});
       return persistAndRender(ownerId,old,{
-        screenMessageId:messageId,draft:old?.draft??null,waiting:null
-      },panel);
+        screenMessageId:messageId,draft:old?.draft??null,waiting:null,
+        screen:'my_videos',page:0
+      },rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
     }
     if(code==='menu:sales'||code==='menu:home') {
       const summary=code==='menu:sales'&&typeof salesProvider?.getSummary==='function'
@@ -211,13 +211,62 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       throw new Error('UNKNOWN_REVIEW_ACTION');
     }
     if(code.startsWith('video:')) {
-      const action=code.slice(6).split(':');
-      if(action[0]==='edit' && action[1]) {
-        const v=await listingStore.getOwned(ownerId,action[1]);
-        if(!v)throw new Error('LISTING_NOT_OWNED');
+      if(old?.screenMessageId!==messageId || !['my_videos','delete_confirm'].includes(old?.screen))
+        throw new Error('VIDEO_SCREEN_STALE');
+      const action=validateRevision(code,old);
+      const parts=action.split(':');
+      if(parts[0]!=='video')throw new Error('unknown video action');
+      if(parts[1]==='page') {
+        if(old.screen!=='my_videos'||!/^\d+$/.test(parts[2]||''))throw new Error('invalid video page');
+        const page=Number(parts[2]),items=await listingStore.listByOwner(ownerId);
+        return persistAndRender(ownerId,old,{...old,screen:'my_videos',page},
+          rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page,revision:rev}));
+      }
+      const id=parts[2];
+      if(!id || !/^[A-Za-z0-9_-]{1,40}$/.test(id))throw new Error('invalid video listing id');
+      const v=await listingStore.getOwned(ownerId,id);
+      if(!v)throw new Error('LISTING_NOT_OWNED');
+      if(parts[1]==='edit' && old.screen==='my_videos') {
+        if(v.status==='published'||v.status==='paused') {
+          return persistAndRender(ownerId,old,{...old},
+            rev=>({text:'購入済み動画の価格・本編は直接変更できません。購入者の権利を保護する再掲載経路の検証が必要です。',
+              reply_markup:{inline_keyboard:[[{
+                text:'↩ 戻る',callback_data:'menu:manage'
+              }]]}}));
+        }
         const draft=openCreatorEditor({sellerId:String(ownerId),existing:v});
-        return persistAndRender(ownerId,old,{screenMessageId:messageId,draft,waiting:null},
+        return persistAndRender(ownerId,old,{screenMessageId:messageId,draft,waiting:null,screen:'editor'},
           rev=>statusPanel(draft,rev));
+      }
+      if(parts[1]==='delete'&&old.screen==='my_videos') {
+        if(v.status==='published'||v.status==='paused')return persistAndRender(ownerId,old,{...old},
+          {text:'購入済み有料動画は、購入者の権利と取引履歴を保護する処理が未検証のため、ここから削除しません。',
+           reply_markup:{inline_keyboard:[[{
+             text:'↩ 戻る',callback_data:'menu:manage'
+           }]]}});
+        return persistAndRender(ownerId,old,{...old,screen:'delete_confirm',deleteId:id},
+          rev=>({text:'🗑 この動画を削除しますか？\n'+v.title+'\n※未公開の商品だけを非表示にし、売上や購入履歴を消しません。',
+            reply_markup:{inline_keyboard:[
+              [{text:'🗑 削除する',callback_data:'video:confirmDelete:'+id+'|r'+rev}],
+              [{text:'↩ 中止',callback_data:'video:cancelDelete:'+id+'|r'+rev}]
+            ]}}));
+      }
+      if(parts[1]==='cancelDelete'&&old.screen==='delete_confirm'&&old.deleteId===id) {
+        const items=await listingStore.listByOwner(ownerId);
+        return persistAndRender(ownerId,old,{...old,screen:'my_videos',deleteId:null},
+          rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:old.page??0,revision:rev}));
+      }
+      if(parts[1]==='confirmDelete'&&old.screen==='delete_confirm'&&old.deleteId===id) {
+        if(typeof listingStore.removeUnpublished!=='function')throw new Error('safe listing deletion unavailable');
+        await listingStore.removeUnpublished(ownerId,id,v.revision);
+        const items=await listingStore.listByOwner(ownerId);
+        return persistAndRender(ownerId,old,{...old,screen:'my_videos',deleteId:null,page:0},
+          rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
+      }
+      if(parts[1]==='price'||parts[1]==='open') {
+        const items=await listingStore.listByOwner(ownerId);
+        return persistAndRender(ownerId,old,{...old,screen:'my_videos'},
+          rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:old.page??0,revision:rev}));
       }
       throw new Error('VIDEO_ACTION_NOT_CONNECTED');
     }
