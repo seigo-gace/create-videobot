@@ -42,7 +42,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const next={...patch,revision:expected+1};
     const drawn=typeof panel==='function'?panel(next.revision):panel;
     await sessionStore.write(ownerId,expected,next);
-    const result=await screenTransport.show(ownerId,old?.screenMessageId??patch.screenMessageId,drawn);
+    const result=await screenTransport.show(ownerId,patch.screenMessageId??old?.screenMessageId,drawn);
     if(!Number.isSafeInteger(result?.messageId)||result.messageId<=0)throw new Error('WIZARD_SCREEN_UNKNOWN');
     if(result.messageId!==next.screenMessageId)
       await sessionStore.setScreen(ownerId,next.revision,result.messageId);
@@ -98,12 +98,23 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           rev=>statusPanel(changed,rev));
       }
       if(value==='preview') {
-        const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!draft[k]);
+        let prepared=draft;
+        let warning='';
+        if(draft.paidVideo && (!draft.thumbnail || !draft.sample)) {
+          if(typeof mediaProcessor?.prepareMissingPreviews==='function') {
+            try {
+              const refs=await mediaProcessor.prepareMissingPreviews(draft);
+              if(!draft.thumbnail && refs?.thumbnail) prepared=editCreatorDraft(prepared,{type:'thumbnail',media:refs.thumbnail});
+              if(!draft.sample && refs?.sample) prepared=editCreatorDraft(prepared,{type:'sample',media:refs.sample});
+            } catch(e) {warning='自動生成に失敗しました：'+(e instanceof Error?e.message:'処理できません');}
+          } else warning='自動生成サービスが未接続です。';
+        }
+        const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!prepared[k]);
         const note=missing.length
-          ? '⚠️ 未登録：'+missing.join('・')+'。本編からの自動補完が必要な場合は連携済みメディア処理で生成してください。'
+          ? '⚠️ 未登録：'+missing.join('・')+'。'+warning
           : '👁 プレビュー確認：まだ公開されていません。本人の明示投稿と既存GATE・Topic・リリースGateを通過した後だけ公開できます。';
-        return persistAndRender(ownerId,old,{...old,waiting:null},
-          rev=>statusPanel(draft,rev,note));
+        return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null},
+          rev=>statusPanel(prepared,rev,note));
       }
       throw new Error('UNKNOWN_CREATOR_ACTION');
     }
@@ -144,10 +155,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       } else throw new Error('UNKNOWN_CREATOR_INPUT');
     } catch(e){error=e instanceof Error?e.message:'入力を確認できません。';}
     // Applies existing common UI rule: remove input even when invalid.
+    let inputDeleteFailed=false;
     try{await api('deleteMessage',{chat_id:ownerId,message_id:messageId});}
-    catch{error=(error?error+'\n':'')+'入力メッセージを自動削除できませんでした。手動で削除してください。';}
+    catch{inputDeleteFailed=true;}
     const next={...old,draft,waiting:error?old.waiting:null};
-    return persistAndRender(ownerId,old,next,rev=>statusPanel(draft,rev,error?'⚠️ '+error:'✅ 反映しました。'));
+    const note=(error?'⚠️ '+error:'✅ 反映しました。')+
+      (inputDeleteFailed?'\n入力メッセージを自動削除できませんでした。手動で削除してください。':'');
+    return persistAndRender(ownerId,old,next,rev=>statusPanel(draft,rev,note));
   }
   return {
     async handle(update){
