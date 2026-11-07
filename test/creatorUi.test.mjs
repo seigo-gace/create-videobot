@@ -95,3 +95,24 @@ test('rights confirmation is per-video; replacement invalidates previous consent
  panel=creatorReviewPanel(d,6);
  assert.match(panel.text,/出演者全員の成人/);
 });
+
+test('new/edit and review all disclose 30 percent management fee without adding buttons',()=>{
+ let d=openCreatorEditor({sellerId:'seller1'});
+ d=editCreatorDraft(d,{type:'preset',stars:300});
+ const editor=creatorEditorPanel(d,2);
+ assert.match(editor.text,/管理費90 Stars／投稿者分210 Stars/);
+ assert.match(editor.text,/30%/);
+ assert.equal(editor.reply_markup.inline_keyboard.length,5);
+ const review=creatorReviewPanel(d,3);
+ assert.match(review.text,/管理費90 Stars／投稿者分210 Stars/);
+ assert.match(review.text,/投稿する.*30%を運営管理費/);
+ assert.equal(review.reply_markup.inline_keyboard.length,2);
+ assert.equal(review.reply_markup.inline_keyboard[1].length,3);
+ assert.match(myVideosPanel({sellerId:'seller1',listings:[]}).text,/管理費30%/);
+ const existing=openCreatorEditor({sellerId:'seller1',existing:{
+   id:'abc123',sellerId:'seller1',revision:1,title:'sample',priceStars:101,
+   paidVideo:{fileId:'file111'},feeTermsAccepted:true
+ }});
+ assert.match(creatorEditorPanel(existing).text,/30.3 Stars／投稿者分70.7 Stars/);
+ assert.equal(editCreatorDraft(existing,{type:'preset',stars:100}).feeTermsAccepted,false);
+});
