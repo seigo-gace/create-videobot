@@ -54,6 +54,16 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       await sessionStore.setScreen(ownerId,next.revision,result.messageId);
     return {handled:true,revision:next.revision,messageId:result.messageId};
   }
+  async function openHome(update) {
+    const {ownerId}=privateUser(update);
+    const old=await sessionStore.read(ownerId);
+    // /start is a navigation action, not a new Bot conversation.
+    // Reuse the current private Bot message and preserve any unresolved
+    // paid-media publication lock. Do not reset the creator's owned draft.
+    return persistAndRender(ownerId,old,{
+      ...old,draft:old?.draft??null,waiting:null,screen:'home'
+    },menuPage('home'));
+  }
   async function handleCallback(update) {
     const {ownerId,messageId}=privateUser(update);
     const cb=update.callback_query;
@@ -318,6 +328,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     return persistAndRender(ownerId,old,next,rev=>statusPanel(draft,rev,note));
   }
   return {
+    openHome,
     async handle(update){
       if(update?.callback_query)return handleCallback(update);
       if(update?.message && (update.message.text||update.message.photo||update.message.video))return handleInput(update);
