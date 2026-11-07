@@ -34,3 +34,18 @@ jobs:
             docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < "$sql"
           done
           docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < test/sqlSchemaSmoke.sql
+          # Repeating the policy migration must be safe after initial adoption.
+          docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < sql/005_management_fee_30.sql
+          # A historical transaction in another disposable CI database must NOT be
+          # silently assigned the new management fee during the first migration.
+          docker exec "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d postgres -c "CREATE DATABASE videobot_legacy_fee_ci"
+          for sql in sql/001_video_post_receipts.sql sql/002_creator_sessions.sql sql/003_video_listings.sql sql/004_stars_ledger.sql; do
+            docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_legacy_fee_ci < "$sql"
+          done
+          docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_legacy_fee_ci < test/sqlLegacyFeeGuard.sql
+          if docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_legacy_fee_ci < sql/005_management_fee_30.sql; then
+            echo "ERROR: historical sale was silently assigned a new fee policy" >&2
+            exit 1
+          fi
+          cols=$(docker exec "$container" psql -X -tA -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_legacy_fee_ci -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='videobot_stars_ledger' AND column_name='management_fee_bps'")
+          test "$cols" = "0"
