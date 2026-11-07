@@ -30,7 +30,7 @@ jobs:
           set -euo pipefail
           container='${{ job.services.postgres.id }}'
           test -n "$container"
-          for sql in sql/001_video_post_receipts.sql sql/002_creator_sessions.sql sql/003_video_listings.sql sql/004_stars_ledger.sql; do
+          for sql in sql/001_video_post_receipts.sql sql/002_creator_sessions.sql sql/003_video_listings.sql sql/004_stars_ledger.sql sql/005_management_fee_30.sql; do
             docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < "$sql"
           done
           docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < test/sqlSchemaSmoke.sql
