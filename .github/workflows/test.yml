@@ -39,6 +39,7 @@ jobs:
           export VIDEOBOT_WEBHOOK_SECRET_SOURCE=/tmp/ci-webhook-secret-do-not-create
           export VIDEOBOT_DATABASE_URL_SOURCE=/tmp/ci-pg-dsn-do-not-create
           export GSERVER_PRIVATE_NETWORK=ci-mocked-only
+          export VIDEOBOT_WEBHOOK_URL=https://video.example.test/telegram/creator
           docker compose -f deploy/compose.videobot.telegram.yaml config --quiet
       - name: Verify VideoBot PostgreSQL migrations and purchase schema
         shell: bash
