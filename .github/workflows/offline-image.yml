@@ -1,0 +1,37 @@
+name: CreateVdoBot offline Docker image
+on:
+  push:
+    branches:
+      - feat/assistant-ai-and-sales-core
+    paths:
+      - .github/workflows/offline-image.yml
+      - deploy/**
+      - src/**
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build existing private-runtime image (no production credentials)
+        run: |
+          set -euo pipefail
+          docker build --file deploy/Dockerfile --tag create-videobot:local-telegram .
+          docker save create-videobot:local-telegram | gzip -1 > "$RUNNER_TEMP/create-videobot-image.tar.gz"
+          cd "$RUNNER_TEMP"
+          sha256sum create-videobot-image.tar.gz > create-videobot-image.tar.gz.sha256
+      - name: Save short-lived image for private Gserver import
+        uses: actions/upload-artifact@v4
+        with:
+          name: create-videobot-offline-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/create-videobot-image.tar.gz
+            ${{ runner.temp }}/create-videobot-image.tar.gz.sha256
+          retention-days: 1
+          if-no-files-found: error
