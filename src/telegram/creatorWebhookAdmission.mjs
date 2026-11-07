@@ -1,0 +1,45 @@
+import {verifyTelegramWebhookHeader,validateTelegramUpdateSize} from './webhookAdmission.mjs';
+import {createHash} from 'node:crypto';
+
+/**
+ * Runtime-independent Telegram webhook admission, reusing the existing
+ * verified VideoBot update router. This is not an HTTP server or deployment.
+ * HTTP host must supply X-Telegram-Bot-Api-Secret-Token and raw request body,
+ * enforce one consumer, await completion before acknowledging Telegram.
+ */
+export function createCreatorWebhookAdmission({expectedSecret,handleCreatorUpdate,maxBytes=262144,updateStore}={}) {
+  if(typeof handleCreatorUpdate!=='function'||typeof expectedSecret!=='string'||
+     expectedSecret.length<20||!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>262144)
+    throw new Error('webhook admission unavailable');
+  if(updateStore)for(const name of ['claim','complete','markUnknown']) {
+    if(typeof updateStore[name]!=='function')
+      throw new Error('durable webhook update store missing '+name);
+  }
+  return async function handleTelegramWebhook({secretHeader,body}={}) {
+    // Authorization *before* decoding or any SQL/Telegram/side effects.
+    verifyTelegramWebhookHeader(secretHeader,expectedSecret);
+    const update=validateTelegramUpdateSize(body,maxBytes);
+    if(updateStore) {
+      const digest=createHash('sha256').update(body).digest('hex');
+      const admission=await updateStore.claim(update.update_id,digest);
+      if(!admission?.claimed) {
+        if(admission?.completed!==true||typeof admission.handled!=='boolean')
+          throw new Error('WEBHOOK_UPDATE_NEEDS_RECONCILE');
+        return {accepted:true,handled:admission.handled,
+          updateId:update.update_id,duplicate:true};
+      }
+    }
+    try {
+      const result=await handleCreatorUpdate(update);
+      if(result?.handled!==true &&
+         (update.purchased_paid_media||update.callback_query))
+        throw new Error('Telegram update not durably handled');
+      const handled=result?.handled===true;
+      if(updateStore)await updateStore.complete(update.update_id,handled);
+      return {accepted:true,handled,updateId:update.update_id};
+    } catch(error) {
+      if(updateStore)await updateStore.markUnknown(update.update_id);
+      throw error;
+    }
+  };
+}
