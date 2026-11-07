@@ -115,7 +115,8 @@ export function creatorEditorPanel(draft, revision = 0) {
   return { text, reply_markup: { inline_keyboard: keyboard.map(row => row.map(button => ({...button, callback_data: revision ? button.callback_data + '|r' + revision : button.callback_data}))) } };
 }
 
-export function myVideosPanel({ sellerId, listings, page = 0 } = {}) {
+export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {}) {
+  if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('invalid listing screen revision');
   if (typeof sellerId !== 'string' || !USER_ID.test(sellerId)) throw new Error('seller verification required');
   if (!Array.isArray(listings) || !Number.isSafeInteger(page) || page < 0) throw new Error('invalid pagination');
   const owned = listings.filter(v => v.sellerId === sellerId);
@@ -126,7 +127,7 @@ export function myVideosPanel({ sellerId, listings, page = 0 } = {}) {
   for (const item of owned.slice(page * 10, page * 10 + 10)) {
     keyboard.push([{ text: item.title, callback_data: 'video:open:' + item.id }]);
     keyboard.push([
-      { text: '⭐ ' + price(item.priceStars) + ' Stars', callback_data: 'video:price:' + item.id },
+      { text: item.priceStars==null?'⭐ 未設定':'⭐ ' + price(item.priceStars) + ' Stars', callback_data: 'video:price:' + item.id },
       { text: '✏️ 編集', callback_data: 'video:edit:' + item.id },
       { text: '🗑 削除', callback_data: 'video:delete:' + item.id }
     ]);
@@ -136,7 +137,7 @@ export function myVideosPanel({ sellerId, listings, page = 0 } = {}) {
   if (page + 1 < pages) nav.push({ text: '次へ ▶', callback_data: 'video:page:' + (page + 1) });
   if (nav.length) keyboard.push(nav);
   keyboard.push([{ text: '↩ 戻る', callback_data: 'menu:home' }]);
-  return { text: '📦 マイ動画\n' + (owned.length ? (page * 10 + 1) + '〜' + Math.min(owned.length, page * 10 + 10) + ' / ' + owned.length + '件' : 'まだ登録された動画はありません。'), reply_markup: { inline_keyboard: keyboard } };
+  return { text: '📦 マイ動画\n' + (owned.length ? (page * 10 + 1) + '〜' + Math.min(owned.length, page * 10 + 10) + ' / ' + owned.length + '件' : 'まだ登録された動画はありません。'), reply_markup: { inline_keyboard: revision ? keyboard.map(row => row.map(b=>({...b,callback_data:b.callback_data+'|r'+revision}))) : keyboard } };
 }
 
 export function withdrawalPrompt(availableStars) {
