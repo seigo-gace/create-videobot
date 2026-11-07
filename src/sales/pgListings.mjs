@@ -102,6 +102,23 @@ export function createPostgresListingStore(pool) {
       if(r?.rowCount!==1)throw new Error('LISTING_STALE_OR_PUBLISHED');
       return recordToListing(r.rows[0]);
     },
+    /** Only call after both real Telegram message IDs have durable receipts. */
+    async markPublished(owner,id,expectedRevision,receipt) {
+      ownerId(owner);listingId(id);revisionNumber(expectedRevision);
+      if(expectedRevision<1 || receipt?.posted!==true ||
+         !Array.isArray(receipt.freeMessageIds) ||
+         receipt.freeMessageIds.length!==2 ||
+         receipt.freeMessageIds.some(x=>!Number.isSafeInteger(x)||x<=0) ||
+         !Number.isSafeInteger(receipt.paidMessageId) ||
+         receipt.paidMessageId<=0)
+        throw new Error('verified publish receipt required');
+      const r=await pool.query(
+        "UPDATE videobot_listings SET status='published',revision=revision+1,updated_at=NOW() WHERE seller_user_id=$1 AND listing_id=$2 AND revision=$3 AND status IN ('draft','ready') AND rights_verified=TRUE AND adult_consent_verified=TRUE AND title<>'' AND price_stars IS NOT NULL AND thumbnail_file_id IS NOT NULL AND sample_file_id IS NOT NULL AND paid_video_file_id IS NOT NULL RETURNING *",
+        [owner,id,expectedRevision]
+      );
+      if(r?.rowCount!==1)throw new Error('PUBLISH_RECEIPT_REQUIRES_RECONCILE');
+      return recordToListing(r.rows[0]);
+    },
     /** Records visibility suppression without deleting purchase/receipts. */
     async removeUnpublished(owner,id,expectedRevision) {
       ownerId(owner);listingId(id);revisionNumber(expectedRevision);
