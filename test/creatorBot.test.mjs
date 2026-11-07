@@ -26,3 +26,34 @@ test('native Telegram start opens existing main menu; callback enters reuse-base
  const ignored=await handler({message:{from:{id:33},chat:{id:-99,type:'supergroup'},text:'/start',message_id:9}});
  assert.deepEqual(ignored,{handled:false});
 });
+
+test('a stale creator button is acknowledged as harmless navigation, not marked as unknown payment',async()=>{
+ const calls=[],states=new Map();
+ const api=async(method,params)=>{calls.push({method,params});return {message_id:11};};
+ const sessionStore={
+  async read(id){return states.get(id)||null;},
+  async write(id,revision,next){assert.equal(states.get(id)?.revision??0,revision);states.set(id,next);},
+  async setScreen(id,revision,messageId){const old=states.get(id);states.set(id,{...old,screenMessageId:messageId});}
+ };
+ const bot=createCreatorBotUpdateHandler({
+  api,sessionStore,screenTransport:{show:async()=>({messageId:11})},
+  listingStore:{listByOwner:async()=>[],getOwned:async()=>null}
+ });
+ await bot({callback_query:{id:'cb_first',from:{id:33},data:'menu:listing',
+  message:{chat:{id:33,type:'private'},message_id:11}}});
+ const result=await bot({callback_query:{id:'cb_old',from:{id:33},data:'edit:title|r999',
+  message:{chat:{id:33,type:'private'},message_id:11}}});
+ assert.deepEqual(result,{handled:true,staleButton:true});
+ assert.equal(states.get(33).revision,1);
+ assert.equal(calls.filter(c=>c.method==='answerCallbackQuery').length,2);
+});
+test('do not mistake unauthorized callback ownership errors for harmless stale taps',async()=>{
+ const bot=createCreatorBotUpdateHandler({
+  api:async()=>true,
+  sessionStore:{read:async()=>null,write:async()=>null,setScreen:async()=>null},
+  screenTransport:{show:async()=>({messageId:3})},
+  listingStore:{listByOwner:async()=>[],getOwned:async()=>null}
+ });
+ await assert.rejects(()=>bot({callback_query:{id:'unauthorized',from:{id:9},
+  data:'menu:listing',message:{chat:{id:33,type:'private'},message_id:3}}}),/PRIVATE_OWNER_REQUIRED/);
+});
