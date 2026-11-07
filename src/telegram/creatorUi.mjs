@@ -143,6 +143,36 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {
   return { text: '📦 マイ動画\n※ 販売売上から管理費30%が差し引かれ、投稿者分は70%です。\n' + (owned.length ? (page * 10 + 1) + '〜' + Math.min(owned.length, page * 10 + 10) + ' / ' + owned.length + '件' : 'まだ登録された動画はありません。'), reply_markup: { inline_keyboard: revision ? keyboard.map(row => row.map(b=>({...b,callback_data:b.callback_data==='menu:home'?'menu:home':b.callback_data+'|r'+revision}))) : keyboard } };
 }
 
+/** Read-only detail for the existing title and price buttons on My Videos.
+ * No separate command, publication or extra persistent document.
+ */
+export function videoInfoPanel(listing,revision,mode='open') {
+  if(!listing||!ID.test(listing.id||'')||
+     typeof listing.title!=='string'||
+     !Number.isSafeInteger(revision)||revision<1||
+     !['open','price'].includes(mode))
+    throw new Error('invalid owner video information panel');
+  const lines=[
+    mode==='price'?'⭐ 動画の価格・手数料':'🎬 マイ動画の詳細',
+    '',
+    'タイトル：'+listing.title,
+    '販売価格：'+(listing.priceStars==null?'未設定':'⭐ '+price(listing.priceStars)+' Stars'),
+    managementFeeDisclosure(listing.priceStars)
+  ];
+  if(mode==='open')lines.push(
+    'サムネ：'+(listing.thumbnail?'登録済み':'未登録'),
+    'サンプル：'+(listing.sample?'登録済み':'未登録'),
+    '本編：'+(listing.paidVideo?'登録済み':'未登録'),
+    '状態：'+(listing.status==='published'?'公開済み':listing.status==='paused'?'停止中':'未公開')
+  );
+  return {
+    text:lines.join('\n'),
+    reply_markup:{inline_keyboard:[[{
+      text:'↩ マイ動画へ',callback_data:'video:back:'+listing.id+'|r'+revision
+    }]]}
+  };
+}
+
 export function withdrawalPrompt(availableStars) {
   if (!Number.isSafeInteger(availableStars) || availableStars < 0) throw new Error('invalid available Stars');
   return { text: '⭐ Starsを引き出す\n\n引き出し可能：' + availableStars + ' Stars\nTelegramのメッセージ入力欄へ引き出すStars数を数字で入力し、通常の送信ボタンで送信してください。', reply_markup: { inline_keyboard: [[{ text: '↩ 戻る', callback_data: 'menu:sales' }]] } };
