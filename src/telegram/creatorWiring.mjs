@@ -8,6 +8,8 @@ import {createPostgresStarsLedger} from '../sales/pgStarsLedger.mjs';
 import {createPostgresWebhookUpdateStore} from '../sales/pgWebhookUpdates.mjs';
 import {createVideoMediaProcessor} from './mediaProcessor.mjs';
 import {createVideoBotScreenTransport} from './creatorScreenTransport.mjs';
+import {createTelegramVideoFetcher} from './telegramFileFetch.mjs';
+import {createTelegramPrivateMediaUploader} from './privateMediaUpload.mjs';
 
 /**
  * Source-only wiring for the existing VideoBot owner. This does NOT create an
@@ -18,24 +20,33 @@ import {createVideoBotScreenTransport} from './creatorScreenTransport.mjs';
  */
 export function createVideoBotSourceModule({
   pool,telegramApi,screenTransport,gateOwner,mediaPorts,webhookSecret,
-  mediaRun,storageApproved=false
+  mediaRun,storageApproved=false,botToken,verifyPrivateMediaStore,fetchImpl
 }={}) {
   if(typeof pool?.query!=='function'||typeof telegramApi!=='function'||
       (screenTransport!=null&&typeof screenTransport?.show!=='function')||!gateOwner||
-      !mediaPorts||typeof mediaPorts.fetchSource!=='function'||
-      typeof mediaPorts.saveGenerated!=='function')
+      (mediaPorts!=null&&(typeof mediaPorts.fetchSource!=='function'||
+       typeof mediaPorts.saveGenerated!=='function')))
     throw new Error('VideoBot source module missing owned dependencies');
   for(const name of ['getVerifiedVideoTopic','verifyMembership','verifyReview','verifyRelease']) {
     if(typeof gateOwner[name]!=='function')throw new Error('verified GATE owner provider missing: '+name);
   }
   const screen=screenTransport??createVideoBotScreenTransport(telegramApi);
+  // Host can supply existing media ports, or this narrow Bot API adapter
+  // may be constructed using an injected private token plus an existing
+  // verified private-storage provider. Neither case creates a storage chat.
+  const ports=mediaPorts??{
+    fetchSource:createTelegramVideoFetcher({telegramApi,token:botToken,fetchImpl}),
+    saveGenerated:createTelegramPrivateMediaUploader({
+      token:botToken,verifyStorage:verifyPrivateMediaStore,fetchImpl
+    })
+  };
   const sessionStore=createPostgresCreatorSessionStore(pool);
   const listingStore=createPostgresListingStore(pool);
   const receiptStore=createPostgresPostingReceiptStore(pool);
   const updateStore=createPostgresWebhookUpdateStore(pool);
   const starsLedger=createPostgresStarsLedger({pool,telegramApi});
   const mediaProcessor=createVideoMediaProcessor({
-    ...mediaPorts,run:mediaRun,storageApproved
+    ...ports,run:mediaRun,storageApproved
   });
   const publishListing=listing=>publishVideoListing({
     listing,store:receiptStore,telegramApi,
