@@ -1,4 +1,5 @@
-import {Pool} from 'pg';
+import pg from 'pg';
+const {Pool}=pg;
 import {pathToFileURL} from 'node:url';
 import {readPrivateToken} from './config.mjs';
 import {createCreatorLiveService} from './creatorLiveService.mjs';
