@@ -1,0 +1,159 @@
+import { menuPage } from './menuPanel.mjs';
+import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, myVideosPanel } from './creatorUi.mjs';
+
+function privateUser(update) {
+  const message=update?.message??update?.callback_query?.message;
+  const from=update?.callback_query?.from??update?.message?.from;
+  if(!message || message.chat?.type!=='private' || !Number.isSafeInteger(message.chat.id) ||
+     message.chat.id<=0 || from?.id!==message.chat.id)
+    throw new Error('PRIVATE_OWNER_REQUIRED');
+  return {ownerId:message.chat.id,messageId:message.message_id};
+}
+function requireFunctions(store,names) {
+  for(const name of names) if(typeof store?.[name]!=='function')throw new Error('session store missing '+name);
+}
+function validateRevision(action,session) {
+  const m=/^(.*)\|r([1-9][0-9]*)$/.exec(action||'');
+  if(!m || !session || Number(m[2])!==session.revision)throw new Error('STALE_CREATOR_BUTTON');
+  return m[1];
+}
+function expectSession(session,screenMessageId) {
+  if(!session?.draft || session.screenMessageId!==screenMessageId)throw new Error('CREATOR_SCREEN_STALE');
+}
+function statusPanel(draft,rev,extra='') {
+  const p=creatorEditorPanel(draft,rev);
+  return {...p,text:p.text+(extra?'\n\n'+extra:'')};
+}
+/**
+ * Connects VideoBot-specific draft actions to the EXISTING shared DM screen
+ * transport contract. screenTransport.show owns edit/fallback/delete-old as
+ * implemented by GateApp-Bot PR#11; VideoBot does not clone its transport.
+ * sessionStore owns durable optimistic CAS, must not use GATE admin sessions.
+ */
+export function createCreatorWizard({api,sessionStore,screenTransport,listingStore,mediaProcessor}={}) {
+  if(typeof api!=='function'||typeof screenTransport?.show!=='function')
+    throw new Error('trusted Telegram/screen transport unavailable');
+  requireFunctions(sessionStore,['read','write','setScreen']);
+  if(typeof listingStore?.listByOwner!=='function'||typeof listingStore?.getOwned!=='function')
+    throw new Error('owner listing source required');
+
+  async function persistAndRender(ownerId,old,patch,panel) {
+    const expected=old?.revision??0;
+    const next={...patch,revision:expected+1};
+    const drawn=typeof panel==='function'?panel(next.revision):panel;
+    await sessionStore.write(ownerId,expected,next);
+    const result=await screenTransport.show(ownerId,old?.screenMessageId??patch.screenMessageId,drawn);
+    if(!Number.isSafeInteger(result?.messageId)||result.messageId<=0)throw new Error('WIZARD_SCREEN_UNKNOWN');
+    if(result.messageId!==next.screenMessageId)
+      await sessionStore.setScreen(ownerId,next.revision,result.messageId);
+    return {handled:true,revision:next.revision,messageId:result.messageId};
+  }
+  async function handleCallback(update) {
+    const {ownerId,messageId}=privateUser(update);
+    const cb=update.callback_query;
+    if(typeof cb.id!=='string'||!cb.id)throw new Error('invalid callback');
+    await api('answerCallbackQuery',{callback_query_id:cb.id});
+    const code=cb.data??'';
+    const old=await sessionStore.read(ownerId);
+    if(code==='menu:listing') {
+      const draft=old?.draft??openCreatorEditor({sellerId:String(ownerId)});
+      return persistAndRender(ownerId,old,{
+        screenMessageId:messageId,draft,waiting:null
+      },rev=>statusPanel(draft,rev));
+    }
+    if(code==='menu:manage') {
+      const items=await listingStore.listByOwner(ownerId);
+      const panel=myVideosPanel({sellerId:String(ownerId),listings:items,page:0});
+      return persistAndRender(ownerId,old,{
+        screenMessageId:messageId,draft:old?.draft??null,waiting:null
+      },panel);
+    }
+    if(code==='menu:sales'||code==='menu:home') {
+      const panel=menuPage(code==='menu:sales'?'sales':'home');
+      return persistAndRender(ownerId,old,{
+        screenMessageId:messageId,draft:old?.draft??null,waiting:null
+      },panel);
+    }
+    if(code.startsWith('edit:')) {
+      expectSession(old,messageId);
+      const action=validateRevision(code,old);
+      const draft=old.draft;
+      const value=action.slice(5);
+      if(value==='cancel') {
+        return persistAndRender(ownerId,old,{...old,draft:null,waiting:null},menuPage('home'));
+      }
+      if(['thumbnail','sample','paidVideo','title'].includes(value)) {
+        return persistAndRender(ownerId,old,{...old,waiting:value},
+          rev=>statusPanel(draft,rev,'Telegramの通常入力欄へ'+
+            (value==='thumbnail'?'サムネ画像':value==='sample'?'サンプル動画':value==='paidVideo'?'販売用本編動画':'タイトル')+'を送信してください。'));
+      }
+      if(value==='price:custom') {
+        const changed=editCreatorDraft(draft,{type:'custom'});
+        return persistAndRender(ownerId,old,{...old,draft:changed,waiting:'title'},
+          rev=>statusPanel(changed,rev));
+      }
+      if(/^price:(50|100|300|500|1000)$/.test(value)) {
+        const changed=editCreatorDraft(draft,{type:'preset',stars:Number(value.slice(6))});
+        return persistAndRender(ownerId,old,{...old,draft:changed,waiting:null},
+          rev=>statusPanel(changed,rev));
+      }
+      if(value==='preview') {
+        const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!draft[k]);
+        const note=missing.length
+          ? '⚠️ 未登録：'+missing.join('・')+'。本編からの自動補完が必要な場合は連携済みメディア処理で生成してください。'
+          : '👁 プレビュー確認：まだ公開されていません。本人の明示投稿と既存GATE・Topic・リリースGateを通過した後だけ公開できます。';
+        return persistAndRender(ownerId,old,{...old,waiting:null},
+          rev=>statusPanel(draft,rev,note));
+      }
+      throw new Error('UNKNOWN_CREATOR_ACTION');
+    }
+    if(code.startsWith('video:')) {
+      const action=code.slice(6).split(':');
+      if(action[0]==='edit' && action[1]) {
+        const v=await listingStore.getOwned(ownerId,action[1]);
+        if(!v)throw new Error('LISTING_NOT_OWNED');
+        const draft=openCreatorEditor({sellerId:String(ownerId),existing:v});
+        return persistAndRender(ownerId,old,{screenMessageId:messageId,draft,waiting:null},
+          rev=>statusPanel(draft,rev));
+      }
+      throw new Error('VIDEO_ACTION_NOT_CONNECTED');
+    }
+    return {handled:false};
+  }
+
+  async function handleInput(update) {
+    const {ownerId,messageId}=privateUser(update);
+    const old=await sessionStore.read(ownerId);
+    if(!old?.waiting||!old.draft)return {handled:false};
+    let draft=old.draft,error=null;
+    try {
+      if(old.waiting==='title') {
+        draft=editCreatorDraft(draft,{type:'titleInput',text:update.message.text});
+      } else if(old.waiting==='thumbnail') {
+        const p=update.message.photo?.at(-1);
+        if(!p?.file_id)throw new Error('サムネイル画像を送信してください。');
+        draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:p.file_id}});
+      } else if(old.waiting==='paidVideo') {
+        if(!update.message.video?.file_id)throw new Error('本編動画を送信してください。');
+        draft=editCreatorDraft(draft,{type:'paidVideo',media:{fileId:update.message.video.file_id}});
+      } else if(old.waiting==='sample') {
+        if(!update.message.video?.file_id)throw new Error('サンプル動画を送信してください。');
+        if(typeof mediaProcessor?.prepareUserSample!=='function')throw new Error('サンプル生成サービスは未接続です。');
+        const processed=await mediaProcessor.prepareUserSample(update.message.video);
+        draft=editCreatorDraft(draft,{type:'sample',media:processed});
+      } else throw new Error('UNKNOWN_CREATOR_INPUT');
+    } catch(e){error=e instanceof Error?e.message:'入力を確認できません。';}
+    // Applies existing common UI rule: remove input even when invalid.
+    try{await api('deleteMessage',{chat_id:ownerId,message_id:messageId});}
+    catch{error=(error?error+'\n':'')+'入力メッセージを自動削除できませんでした。手動で削除してください。';}
+    const next={...old,draft,waiting:error?old.waiting:null};
+    return persistAndRender(ownerId,old,next,rev=>statusPanel(draft,rev,error?'⚠️ '+error:'✅ 反映しました。'));
+  }
+  return {
+    async handle(update){
+      if(update?.callback_query)return handleCallback(update);
+      if(update?.message && (update.message.text||update.message.photo||update.message.video))return handleInput(update);
+      return {handled:false};
+    }
+  };
+}
