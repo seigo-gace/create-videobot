@@ -1,0 +1,109 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createPostgresStarsLedger} from '../src/sales/pgStarsLedger.mjs';
+
+const purchase={update_id:430,purchased_paid_media:{from:{id:77},paid_media_payload:'myvid:1'}};
+const transaction=()=>({id:'transaction-true-123',amount:300,source:{
+  type:'user',transaction_type:'paid_media_payment',
+  paid_media_payload:'myvid:1',user:{id:77}
+}});
+function fixture(){
+ const rows=[],calls=[],state={
+  delivery_key:'myvid:1',listing_id:'myvid',price_stars:300,
+  seller_user_id:'44',status:'sent',paid_message_id:15,listing_status:'published'
+ };
+ const pool={
+  async query(sql,args){
+   calls.push({sql,args});
+   if(sql.startsWith('SELECT r.listing_id')){
+     const p=args[0];
+     return {rows:p===state.delivery_key&&state.status==='sent'&&state.listing_status==='published'
+        ?[{listing_id:'myvid',price_stars:300,seller_user_id:'44'}]:[]};
+   }
+   if(sql.startsWith('INSERT INTO videobot_stars_ledger')){
+     const [key,id,buyer,stars,updateId,seller]=args;
+     if(key!==state.delivery_key||state.status!=='sent'||state.listing_status!=='published'||
+       stars!==state.price_stars||String(seller)!==String(state.seller_user_id))
+       return {rowCount:0,rows:[]};
+     if(rows.some(r=>r.telegram_transaction_id===id&&r.kind==='paid'))
+       return {rowCount:0,rows:[]};
+     rows.push({telegram_transaction_id:id,kind:'paid',delivery_key:key,listing_id:'myvid',
+       seller_user_id:'44',buyer_user_id:String(buyer),stars,updateId});
+     return {rowCount:1,rows:[{ledger_id:1}]};
+   }
+   if(sql.startsWith('SELECT delivery_key')){
+     const found=rows.find(r=>r.telegram_transaction_id===args[0]);
+     return {rows:found?[found]:[]};
+   }
+   if(sql.startsWith('SELECT COALESCE(SUM')){
+     const match=rows.filter(r=>String(r.seller_user_id)===String(args[0]));
+     const gross=match.filter(r=>r.kind==='paid').reduce((n,r)=>n+r.stars,0);
+     const refunds=match.filter(r=>r.kind==='refunded').reduce((n,r)=>n+r.stars,0);
+     return {rows:[{gross_stars:String(gross),net_stars:String(gross-refunds)}]};
+   }
+   if(sql.startsWith('SELECT kind,stars')){
+     return {rows:rows.filter(r=>String(r.seller_user_id)===String(args[0]))
+       .slice(-10).reverse().map(r=>({kind:r.kind,stars:r.stars}))};
+   }
+   throw new Error('unexpected SQL statement');
+  }
+ };
+ const tgCalls=[];
+ const telegramApi=async(method,args)=>{
+   tgCalls.push({method,args});
+   return {transactions:[transaction()]};
+ };
+ return {pool,rows,calls,state,tgCalls,telegramApi};
+}
+test('Telegram purchase update is corroborated before unique SQL ledger insert',async()=>{
+ const x=fixture(),ledger=createPostgresStarsLedger(x);
+ assert.deepEqual(await ledger.confirmPurchase(purchase),
+  {recorded:true,duplicate:false,listingId:'myvid'});
+ assert.equal(x.tgCalls[0].method,'getStarTransactions');
+ assert.equal(x.rows.length,1);
+ assert.equal(x.rows[0].seller_user_id,'44');
+ assert.equal(x.rows[0].buyer_user_id,'77');
+ const summary=await ledger.getSummary(44);
+ assert.deepEqual(summary,{grossStars:300,netRecordedStars:300,payoutReady:false});
+ assert.deepEqual(await ledger.getHistory(44),[{type:'sale',stars:300}]);
+ assert.deepEqual(await ledger.getHistory(45),[]);
+});
+test('duplicate Telegram purchase does not duplicate revenue or post-event balance',async()=>{
+ const x=fixture(),ledger=createPostgresStarsLedger(x);
+ const first=await ledger.confirmPurchase(purchase);
+ const replay=await ledger.confirmPurchase(purchase);
+ assert.equal(first.duplicate,false);
+ assert.equal(replay.duplicate,true);
+ assert.equal(x.rows.length,1);
+});
+test('purchase notification and malicious amount alone can never create Stars earnings',async()=>{
+ const x=fixture();
+ x.telegramApi=async()=>({transactions:[]});
+ const ledger=createPostgresStarsLedger(x);
+ await assert.rejects(()=>ledger.confirmPurchase(purchase),/unverified/);
+ assert.equal(x.rows.length,0);
+});
+test('immutable sale receipt required and wrong buyer/price never persist',async()=>{
+ const x=fixture(),ledger=createPostgresStarsLedger(x);
+ x.state.status='needs_reconcile';
+ await assert.rejects(()=>ledger.confirmPurchase(purchase),/receipt not found/);
+ x.state.status='sent';
+ x.telegramApi=async()=>({transactions:[{...transaction(),amount:999}]});
+ const other=createPostgresStarsLedger(x);
+ await assert.rejects(()=>other.confirmPurchase(purchase),/mismatch/);
+ assert.equal(x.rows.length,0);
+});
+test('double use of same official charge for different payload raises ledger conflict',async()=>{
+ const x=fixture(),ledger=createPostgresStarsLedger(x);
+ await ledger.confirmPurchase(purchase);
+ x.rows[0].buyer_user_id='999';
+ await assert.rejects(()=>ledger.confirmPurchase(purchase),/transaction conflict/);
+ assert.equal(x.rows.length,1);
+});
+test('invalid seller IDs are rejected before SQL and no payouts can be requested',async()=>{
+ const x=fixture(),ledger=createPostgresStarsLedger(x);
+ await assert.rejects(()=>ledger.getSummary(-1),/owner/);
+ await assert.rejects(()=>ledger.getHistory(0),/owner/);
+ assert.throws(()=>createPostgresStarsLedger(),/trusted/);
+ assert.equal(x.calls.length,0);
+});
