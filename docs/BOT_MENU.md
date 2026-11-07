@@ -1,5 +1,12 @@
 # CreateVdobot｜メニュー操作・商品登録UI（2026-11-07決定）
 
+## 2026-11-07 Master訂正｜Stars販売・Bot起動の一律禁止は撤回
+
+- このBotの目的は、Telegram公式Starsで有料動画を実際に販売し、購入者が本編を解放できるようにすること。MasterはBot起動・配備・実Stars購入テストの全面禁止を指示していない。
+- 「モジュールを先行開発する」という作業順序を、CHATが「実機起動・実販売は禁止」と拡大した記録は誤り。以後は**未検証・未接続と禁止を区別**し、通常の完成作業として正規Topic・Bot Token・実DB・Webhook・Stars購入/返金E2Eを検証する。
+- 価格・管理費30%・投稿者分70%、無料サムネ/サンプル、本人専用メニューの確定仕様は維持。Botが受け取るStarsと、個々の投稿者への払い出しは別機能。実払い出しが未実装でもStars販売の開発を止めず、未提供機能を成功扱いしない。
+- 公開が許容される実データ/正規Topic/適用規約や商用影響の確認は、機能を禁じる規則ではなく実受入条件である。旧記録は履歴として保持する。
+
 ## Source実装とRuntimeを分ける
 - 現在の公開Telegram Bot稼働・販売・Stars支払・払い出しは **未接続／未検証**。既存Draft PR #1上のローカル単体テスト用Sourceを開発中。
 - 実際の`src/telegram/menuPanel.mjs`は、未接続の画面を「準備中」と明示する。実操作用Editorは`src/telegram/creatorUi.mjs`の純粋関数に実装。これらの配線・永続セッション・本人の投稿一覧DB・有料投稿送信処理は別途実装／受入が必要。
@@ -53,4 +60,4 @@
 - **購入・返金・売上**：`creatorWebhookAdmission.mjs`の秘密ヘッダー認証→`creatorBot.mjs`→`pgStarsLedger.mjs`が購入通知とTelegram`getStarTransactions`の金額/購入者/payload/取引IDを照合した場合にだけ永続台帳へ計上。`sql/004_stars_ledger.sql`、公式返金の読取り照合、本人の売上/履歴UIも追加。**引き出し機能は未有効**：Bot所有者が残高を引き出す公式経路を、第三者出品者へのStars直接送金と誤認しない。
 - **品質**：隔離Unit/Mockに加え、PostgreSQL16のCI専用コンテナで4スキーマと実SQLの保存・重複制約・本編と無料2件のレシート一致時のみ公開遷移を検証。Source合格は本番Botプロセス/Telegram端末/実決済を意味しない。
 
-**未完了の外部ゲート**：実販売Topicの現行chat_id/message_thread_idと承認済みGATE照合API、サービスのPrivate媒体保管と大容量Bot API運用、SecretとHost admission、実DB移行・Runtime/Telegram E2E、外部商用規約と出品者への適法なStars受取方式の確定。現時点のMaster決定は未起動・未配備・未公開であり、PRはDraft維持。
+**未完了の外部ゲート**：実販売Topicの現行chat_id/message_thread_idと承認済みGATE照合API、サービスのPrivate媒体保管と大容量Bot API運用、SecretとHost admission、実DB移行・Runtime/Telegram E2E、外部商用規約と出品者への適法なStars受取方式の確定。現状の実機状態は未確認・未配備・未公開であり、これはMasterによる販売禁止ではない。PRは現在Draftのまま。
