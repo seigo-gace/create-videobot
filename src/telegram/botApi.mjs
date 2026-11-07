@@ -14,7 +14,21 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
    method:'POST',headers:{'content-type':'application/json'},
    body:JSON.stringify(params),signal:AbortSignal.timeout(timeoutMs),redirect:'error'
   });
-  if(!response || response.status!==200) throw new Error('Telegram API request failed');
+  if(!response)throw new Error('Telegram API request failed');
+  // Only known edit-screen failures may be converted into predictable UI
+  // outcomes. Other Telegram descriptions can contain user-supplied data;
+  // never pass them through to logs or the caller.
+  if(response.status===400&&method==='editMessageText'){
+    let reply;
+    try{reply=await response.json();}catch{throw new Error('Telegram API request failed');}
+    const description=typeof reply?.description==='string'?reply.description.toLowerCase():'';
+    if(/^bad request: message is not modified$/.test(description))
+      throw new Error('message is not modified');
+    if(/^bad request: (message to edit not found|message to be edited not found|message can.t be edited|message cannot be edited|message_id_invalid)$/.test(description))
+      throw new Error('message cannot be edited');
+    throw new Error('Telegram API request failed');
+  }
+  if(response.status!==200)throw new Error('Telegram API request failed');
   const reply=await response.json();
   if(reply?.ok!==true || !reply.result) throw new Error('Telegram API rejected request');
   return reply.result;
