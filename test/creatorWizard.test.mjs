@@ -102,10 +102,10 @@ test('my videos uses owner-filtered existing listing store; edit uses original',
   const x=setup();
   await x.callback('menu:manage');
   assert.ok(x.screens.at(-1).panel.text.includes('1〜1 / 1件'));
-  await x.callback('video:edit:my1');
+  await x.callback('video:edit:my1|r1');
   assert.equal(x.states.get(33).draft.mode,'edit');
   assert.equal(x.states.get(33).draft.title,'自分の動画');
-  await assert.rejects(()=>x.callback('video:edit:other'),/LISTING_NOT_OWNED/);
+  await assert.rejects(()=>x.callback('video:edit:other|r2'),/VIDEO_SCREEN_STALE|LISTING_NOT_OWNED/);
 });
 test('cannot silently publish on preview or create an external Stars payout',async()=>{
   const x=setup();
