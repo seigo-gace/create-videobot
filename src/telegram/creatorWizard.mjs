@@ -1,6 +1,7 @@
 import { menuPage } from './menuPanel.mjs';
 import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorReviewPanel, myVideosPanel } from './creatorUi.mjs';
 import { randomUUID } from 'node:crypto';
+import {salesOverviewPanel,salesWithdrawalPanel,salesHistoryPanel} from './salesPanel.mjs';
 
 function privateUser(update) {
   const message=update?.message??update?.callback_query?.message;
@@ -31,7 +32,7 @@ function statusPanel(draft,rev,extra='') {
  * implemented by GateApp-Bot PR#11; VideoBot does not clone its transport.
  * sessionStore owns durable optimistic CAS, must not use GATE admin sessions.
  */
-export function createCreatorWizard({api,sessionStore,screenTransport,listingStore,mediaProcessor,publishListing}={}) {
+export function createCreatorWizard({api,sessionStore,screenTransport,listingStore,mediaProcessor,publishListing,salesProvider}={}) {
   if(typeof api!=='function'||typeof screenTransport?.show!=='function')
     throw new Error('trusted Telegram/screen transport unavailable');
   requireFunctions(sessionStore,['read','write','setScreen']);
@@ -70,10 +71,40 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       },panel);
     }
     if(code==='menu:sales'||code==='menu:home') {
-      const panel=menuPage(code==='menu:sales'?'sales':'home');
+      const summary=code==='menu:sales'&&typeof salesProvider?.getSummary==='function'
+        ? await salesProvider.getSummary(ownerId):null;
+      const panel=summary
+        ? rev=>salesOverviewPanel(summary,rev)
+        :menuPage(code==='menu:sales'?'sales':'home');
       return persistAndRender(ownerId,old,{
-        screenMessageId:messageId,draft:old?.draft??null,waiting:null
+        screenMessageId:messageId,draft:old?.draft??null,waiting:null,
+        screen:code==='menu:sales'?'sales':'home'
       },panel);
+    }
+    if(code.startsWith('sales:')||code.startsWith('menu:home|r')) {
+      if(old?.screenMessageId!==messageId || !['sales','sales_history','sales_withdrawal'].includes(old?.screen))
+        throw new Error('SALES_SCREEN_STALE');
+      const action=validateRevision(code,old);
+      if(action==='menu:home')return persistAndRender(ownerId,old,
+        {...old,screen:'home',waiting:null},menuPage('home'));
+      if(typeof salesProvider?.getSummary!=='function')
+        throw new Error('verified sales ledger unavailable');
+      const summary=await salesProvider.getSummary(ownerId);
+      if(action==='sales:history') {
+        if(typeof salesProvider.getHistory!=='function')throw new Error('sales history unavailable');
+        const history=await salesProvider.getHistory(ownerId);
+        return persistAndRender(ownerId,old,{...old,screen:'sales_history',waiting:null},
+          rev=>salesHistoryPanel(history,rev));
+      }
+      if(action==='sales:withdraw') {
+        // Do not enable a third-party Stars transfer based on an ordinary
+        // internal balance. The official creator payout path is not verified.
+        return persistAndRender(ownerId,old,{...old,screen:'sales_withdrawal',waiting:null},
+          rev=>salesWithdrawalPanel({...summary,payoutReady:false},rev));
+      }
+      if(action==='sales:back')return persistAndRender(ownerId,old,
+        {...old,screen:'sales',waiting:null},rev=>salesOverviewPanel(summary,rev));
+      throw new Error('UNKNOWN_SALES_ACTION');
     }
     if(code.startsWith('edit:')) {
       expectSession(old,messageId);
