@@ -206,3 +206,19 @@ test('existing sales summary and history are shown through injected owner ledger
  await x.callback('menu:home|r4');
  assert.equal(x.states.get(33).screen,'home');
 });
+
+test('existing My Videos title and price buttons show seller-only detail, fee disclosure and back',async()=>{
+ const x=setup();
+ await x.callback('menu:manage');
+ await x.callback('video:open:my1|r1');
+ assert.equal(x.states.get(33).screen,'video_detail');
+ assert.match(x.screens.at(-1).panel.text,/自分の動画/);
+ assert.match(x.screens.at(-1).panel.text,/運営管理費/);
+ assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard[0][0].callback_data,'video:back:my1|r2');
+ await x.callback('video:back:my1|r2');
+ assert.equal(x.states.get(33).screen,'my_videos');
+ await x.callback('video:price:my1|r3');
+ assert.equal(x.states.get(33).screen,'video_detail');
+ assert.match(x.screens.at(-1).panel.text,/管理費30 Stars／投稿者分70 Stars/);
+ await assert.rejects(()=>x.callback('video:back:my1|r2'),/STALE_CREATOR_BUTTON/);
+});
