@@ -1,15 +1,18 @@
 const PAGES=Object.freeze({
- home:{text:'🎬 動画販売・出品サポート\n\n下のボタンから操作を選択してください。',buttons:[[['🎥 動画を出品','menu:listing']],[['📋 出品・販売管理','menu:manage']],[['❓ 利用案内','menu:help']]]},
- listing:{text:'🎥 動画の出品\n\n動画登録と価格設定は現在準備中です。公開や販売はまだ開始されません。',buttons:[[['🏠 メニューへ','menu:home']]]},
- manage:{text:'📋 出品・販売管理\n\n出品一覧・販売履歴の表示は準備中です。',buttons:[[['🏠 メニューへ','menu:home']]]},
- help:{text:'❓ ご利用案内\n\nこのBotは動画の出品準備と販売管理を支援します。権利確認と承認が必要です。現在、販売機能は開発中です。',buttons:[[['🏠 メニューへ','menu:home']]]}
+ home:{text:'🎬 クリエータービデオ\\n\\n動画の投稿・管理・売上確認ができます。',buttons:[
+  [['🎬 動画を投稿','menu:listing'],['📦 マイ動画','menu:manage']],
+  [['⭐ 売上・引き出し','menu:sales']]
+ ]},
+ listing:{text:'🎬 新しい動画を投稿\\n\\n動画登録・サムネ・サンプル・タイトル・Stars価格の共通編集処理は開発中です。実Telegram投稿はまだ接続されていません。',buttons:[[['↩ 戻る','menu:home']]]},
+ manage:{text:'📦 マイ動画\\n\\n本人の動画一覧・編集・削除は現在開発中です。実データにはまだ接続されていません。',buttons:[[['↩ 戻る','menu:home']]]},
+ sales:{text:'⭐ 売上・引き出し\\n\\nStars残高・履歴の実データは未接続です。クリエーターへのStars払出が検証できるまで引き出しを有効化しません。',buttons:[[['↩ 戻る','menu:home']]]}
 });
 export function menuPage(page='home'){
  const p=PAGES[page];if(!p)throw new Error('unknown menu page');
  return {text:p.text,reply_markup:{inline_keyboard:p.buttons.map(row=>row.map(([text,callback_data])=>({text,callback_data})))}};
 }
 export function parseMenuCallback(value){
- if(typeof value!=='string'||!/^menu:(home|listing|manage|help)$/.test(value))throw new Error('unknown menu action');
+ if(typeof value!=='string'||!/^menu:(home|listing|manage|sales)$/.test(value))throw new Error('unknown menu action');
  return value.slice(5);
 }
 export async function handleMenuUpdate({update,api}){
