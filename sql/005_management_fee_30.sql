@@ -4,7 +4,11 @@
 -- transaction-by-transaction migration rather than retroactively charging.
 DO $$
 BEGIN
- IF EXISTS (SELECT 1 FROM videobot_stars_ledger) THEN
+ IF NOT EXISTS (
+   SELECT 1 FROM information_schema.columns
+   WHERE table_schema=current_schema() AND table_name='videobot_stars_ledger'
+    AND column_name='management_fee_bps'
+ ) AND EXISTS (SELECT 1 FROM videobot_stars_ledger) THEN
    RAISE EXCEPTION 'Existing Stars records require an explicit historical fee transition before migration 005';
  END IF;
 END $$;
