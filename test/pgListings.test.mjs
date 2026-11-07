@@ -32,6 +32,16 @@ function fakeDb(){
       const next={...old,...defaults(id,owner,draft),revision:revision+1,status:old.status};
       rows.set(id,next);return {rowCount:1,rows:[next]};
     }
+    if(sql.startsWith("UPDATE videobot_listings SET status='published'")){
+      const [owner,id,revision]=params,old=rows.get(id);
+      if(!old||old.seller_user_id!==owner||old.revision!==revision||
+         !['draft','ready'].includes(old.status)||!old.rights_verified||
+         !old.adult_consent_verified||!old.title||!old.price_stars||
+         !old.thumbnail_file_id||!old.sample_file_id||!old.paid_video_file_id)
+        return {rowCount:0,rows:[]};
+      old.status='published';old.revision++;
+      return {rowCount:1,rows:[old]};
+    }
     if(sql.startsWith("UPDATE videobot_listings SET status='removed'")){
       const [owner,id,revision]=params,old=rows.get(id);
       if(!old||old.seller_user_id!==owner||old.revision!==revision||
@@ -89,4 +99,19 @@ test('reject invalid prices and overlength or unverified free samples before SQL
   await assert.rejects(()=>store.createDraft(33,'v1',example({sample:{fileId:'s001',durationSeconds:30.1}})),/30 seconds/);
   await assert.rejects(()=>store.createDraft(-1,'v1',example()),/owner/);
   assert.equal(db.queries.length,0);
+});
+
+test('published status requires both Telegram receipts and rights/consent; paid media becomes immutable',async()=>{
+  const db=fakeDb(),store=createPostgresListingStore(db);
+  await store.createDraft(33,'vid002',example());
+  const receipt={posted:true,freeMessageIds:[101,102],paidMessageId:103};
+  await assert.rejects(()=>store.markPublished(33,'vid002',1,{posted:true,paidMessageId:103}),/receipt required/);
+  await assert.rejects(()=>store.markPublished(33,'vid002',1,{...receipt,freeMessageIds:[-1,102]}),/receipt required/);
+  assert.equal(db.rows.get('vid002').status,'draft');
+  const published=await store.markPublished(33,'vid002',1,receipt);
+  assert.equal(published.status,'published');
+  assert.equal(published.revision,2);
+  await assert.rejects(()=>store.updateDraft(33,'vid002',2,example({priceStars:500})),/STALE_OR_PUBLISHED/);
+  await assert.rejects(()=>store.removeUnpublished(33,'vid002',2),/STALE_OR_PUBLISHED/);
+  assert.equal(db.rows.get('vid002').price_stars,300);
 });
