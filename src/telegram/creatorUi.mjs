@@ -1,3 +1,4 @@
+import {managementFeeDisclosure} from '../sales/managementFee.mjs';
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const USER_ID = /^[A-Za-z0-9_-]{1,128}$/;
 export const PRICE_PRESETS = Object.freeze([50, 100, 300, 500, 1000]);
@@ -101,6 +102,7 @@ export function creatorEditorPanel(draft, revision = 0) {
     '🎬 本編：' + (draft.paidVideo ? '登録済み' : '未登録'),
     '📝 タイトル：' + (draft.title || '未入力'),
     '⭐ 価格：' + (draft.priceStars == null ? '未設定' : draft.priceStars + ' Stars'),
+    managementFeeDisclosure(draft.priceStars),
     '', draft.priceMode === 'custom'
       ? 'タイトルを1行目に入力し、改行して2行目に希望するStars数を数字で入力してください。\n例：夏の思い出動画\n250'
       : 'タイトルはTelegramの通常のメッセージ入力欄から送信してください。'
@@ -137,7 +139,7 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {
   if (page + 1 < pages) nav.push({ text: '次へ ▶', callback_data: 'video:page:' + (page + 1) });
   if (nav.length) keyboard.push(nav);
   keyboard.push([{ text: '↩ 戻る', callback_data: 'menu:home' }]);
-  return { text: '📦 マイ動画\n' + (owned.length ? (page * 10 + 1) + '〜' + Math.min(owned.length, page * 10 + 10) + ' / ' + owned.length + '件' : 'まだ登録された動画はありません。'), reply_markup: { inline_keyboard: revision ? keyboard.map(row => row.map(b=>({...b,callback_data:b.callback_data==='menu:home'?'menu:home':b.callback_data+'|r'+revision}))) : keyboard } };
+  return { text: '📦 マイ動画\n※ 販売売上から管理費30%が差し引かれ、投稿者分は70%です。\n' + (owned.length ? (page * 10 + 1) + '〜' + Math.min(owned.length, page * 10 + 10) + ' / ' + owned.length + '件' : 'まだ登録された動画はありません。'), reply_markup: { inline_keyboard: revision ? keyboard.map(row => row.map(b=>({...b,callback_data:b.callback_data==='menu:home'?'menu:home':b.callback_data+'|r'+revision}))) : keyboard } };
 }
 
 export function withdrawalPrompt(availableStars) {
@@ -179,11 +181,13 @@ export function creatorReviewPanel(draft, revision = 0, note = '') {
   const text=['👁 動画販売プレビュー','',
     'タイトル：'+(draft.title||'未入力'),
     '価格：'+(draft.priceStars==null?'未設定':'⭐ '+draft.priceStars+' Stars'),
+    managementFeeDisclosure(draft.priceStars),
     '🖼 サムネ：'+(draft.thumbnail?'登録済み（ネタバレ）':'未登録'),
     '🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒・ネタバレ）':'未登録'),
     '🎬 有料本編：'+(draft.paidVideo?'登録済み・Starsロック':'未登録'),
     '📜 権利・同意：'+(draft.rightsVerified&&draft.adultConsentVerified?'確認済み':'未確認（出演者全員の成人・掲載同意）'),
     '', missing.length?'⚠️ 未登録：'+missing.join('・'):ready?'✅ 投稿内容を確認してください。':'⚠️ この動画の権利・出演者全員の成人と掲載同意を確認してください。',
-    '無料アルバムとStars有料本編は別メッセージで投稿します。',note].filter(Boolean).join('\n');
+    '無料アルバムとStars有料本編は別メッセージで投稿します。',
+    '［✅ 投稿する］を押すと、売上の30%を運営管理費として差し引く条件に同意した扱いになります。',note].filter(Boolean).join('\n');
   return {text,reply_markup:{inline_keyboard:keys}};
 }
