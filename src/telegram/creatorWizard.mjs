@@ -1,5 +1,5 @@
 import { menuPage } from './menuPanel.mjs';
-import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorReviewPanel, myVideosPanel } from './creatorUi.mjs';
+import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorReviewPanel, myVideosPanel, videoInfoPanel } from './creatorUi.mjs';
 import { randomUUID } from 'node:crypto';
 import {salesOverviewPanel,salesWithdrawalPanel,salesHistoryPanel} from './salesPanel.mjs';
 
@@ -215,7 +215,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       throw new Error('UNKNOWN_REVIEW_ACTION');
     }
     if(code.startsWith('video:')) {
-      if(old?.screenMessageId!==messageId || !['my_videos','delete_confirm'].includes(old?.screen))
+      if(old?.screenMessageId!==messageId || !['my_videos','delete_confirm','video_detail'].includes(old?.screen))
         throw new Error('VIDEO_SCREEN_STALE');
       const action=validateRevision(code,old);
       const parts=action.split(':');
@@ -267,9 +267,14 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         return persistAndRender(ownerId,old,{...old,screen:'my_videos',deleteId:null,page:0},
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
       }
-      if(parts[1]==='price'||parts[1]==='open') {
+      if((parts[1]==='price'||parts[1]==='open')&&old.screen==='my_videos') {
+        return persistAndRender(ownerId,old,{
+          ...old,screen:'video_detail',detailId:id
+        },rev=>videoInfoPanel(v,rev,parts[1]));
+      }
+      if(parts[1]==='back'&&old.screen==='video_detail'&&old.detailId===id) {
         const items=await listingStore.listByOwner(ownerId);
-        return persistAndRender(ownerId,old,{...old,screen:'my_videos'},
+        return persistAndRender(ownerId,old,{...old,screen:'my_videos',detailId:null},
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:old.page??0,revision:rev}));
       }
       throw new Error('VIDEO_ACTION_NOT_CONNECTED');
