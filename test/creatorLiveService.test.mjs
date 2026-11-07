@@ -5,7 +5,7 @@ import {createCreatorLiveService} from '../src/runtime/creatorLiveService.mjs';
 const token='123456:'+('x'.repeat(36));
 const secret='S'.repeat(30);
 function dependencies({dbReady=true,identityOk=true}={}){
- const events=[],updates=new Map();
+ const events=[],updates=new Map(),sessions=new Map();
  const pool={async query(sql,args=[]){
   if(sql.startsWith('SELECT to_regclass')){
    return {rows:[{updates:dbReady?'videobot_webhook_updates':null,
@@ -26,6 +26,27 @@ function dependencies({dbReady=true,identityOk=true}={}){
   }
   if(sql.startsWith("UPDATE videobot_webhook_updates SET status='needs_reconcile'")){
    const r=updates.get(args[0]);r.status='needs_reconcile';return {rowCount:1};
+  }
+  if(sql.startsWith('SELECT revision,screen_message_id,state FROM videobot_creator_sessions')){
+   const session=sessions.get(args[0]);
+   return {rows:session?[{revision:session.revision,screen_message_id:session.screenMessageId,
+    state:session.state}]:[]};
+  }
+  if(sql.startsWith('INSERT INTO videobot_creator_sessions')){
+   if(sessions.has(args[0]))return {rowCount:0};
+   sessions.set(args[0],{revision:args[1],screenMessageId:args[2],state:JSON.parse(args[3])});
+   return {rowCount:1};
+  }
+  if(sql.startsWith('UPDATE videobot_creator_sessions SET screen_message_id=')){
+   const session=sessions.get(args[0]);
+   if(session?.revision!==args[1])return {rowCount:0};
+   session.screenMessageId=args[2];return {rowCount:1};
+  }
+  if(sql.startsWith('UPDATE videobot_creator_sessions SET revision=')){
+   const session=sessions.get(args[0]);
+   if(!session||session.revision!==args[4])return {rowCount:0};
+   sessions.set(args[0],{revision:args[1],screenMessageId:args[2],state:JSON.parse(args[3])});
+   return {rowCount:1};
   }
   throw Error('unexpected database access: '+sql.slice(0,45));
  }};
@@ -50,7 +71,7 @@ function dependencies({dbReady=true,identityOk=true}={}){
   fetchSource:async()=>{throw Error('not connected');},
   saveGenerated:async()=>{throw Error('not connected');}
  };
- return {pool,fetchImpl,gateOwner,mediaPorts,events,updates};
+ return {pool,fetchImpl,gateOwner,mediaPorts,events,updates,sessions};
 }
 test('actual private runtime listens only after Bot identity and SQL migrations pass',async()=>{
  const deps=dependencies();
@@ -70,6 +91,8 @@ test('actual private runtime listens only after Bot identity and SQL migrations 
   assert.equal((await req()).status,200);
   assert.equal((await req()).status,200);
   assert.equal(deps.events.filter(x=>x.method==='sendMessage').length,1);
+  assert.equal(deps.sessions.get(33).screenMessageId,22);
+  assert.equal(deps.sessions.get(33).revision,1);
   assert.equal(deps.updates.get(17).status,'completed');
  }finally{await svc.close();}
 });
