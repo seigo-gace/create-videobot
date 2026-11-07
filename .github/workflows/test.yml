@@ -6,9 +6,31 @@ on:
 jobs:
   unit:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: videobot_ci
+          POSTGRES_PASSWORD: ci_only_not_a_secret
+          POSTGRES_DB: videobot_ci
+        options: >-
+          --health-cmd "pg_isready -U videobot_ci -d videobot_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: npm test
+      - name: Verify VideoBot PostgreSQL migrations and purchase schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          container='${{ job.services.postgres.id }}'
+          test -n "$container"
+          for sql in sql/001_video_post_receipts.sql sql/002_creator_sessions.sql sql/003_video_listings.sql sql/004_stars_ledger.sql; do
+            docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < "$sql"
+          done
+          docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < test/sqlSchemaSmoke.sql
