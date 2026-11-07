@@ -58,4 +58,52 @@ BEGIN
     RAISE EXCEPTION 'Published listing constraints not persisted';
   END IF;
 END $$;
+-- Regression: a listing cannot become published from a forged API response
+-- without a matching, durable free-album + paid-media receipt row.
+INSERT INTO videobot_listings
+ (listing_id,seller_user_id,revision,title,price_stars,price_mode,
+  thumbnail_file_id,sample_file_id,sample_duration_seconds,paid_video_file_id,
+  rights_verified,adult_consent_verified,status)
+VALUES
+ ('ci_draft_02',44,1,'CI PUBLISH TEST',300,'preset',
+  'photo_ci2','sample_ci2',30,'paid_ci2',TRUE,TRUE,'draft');
+
+UPDATE videobot_listings AS l
+ SET status='published',revision=l.revision+1,updated_at=NOW()
+ WHERE l.seller_user_id=44 AND l.listing_id='ci_draft_02' AND l.revision=1
+  AND l.status IN ('draft','ready') AND l.rights_verified=TRUE
+  AND l.adult_consent_verified=TRUE
+  AND EXISTS (
+   SELECT 1 FROM videobot_post_receipts AS r
+   WHERE r.delivery_key='ci_draft_02:1' AND r.listing_id=l.listing_id
+    AND r.revision=1 AND r.status='sent'
+    AND r.free_message_ids=ARRAY[201,202]::BIGINT[] AND r.paid_message_id=203
+  );
+DO $
+BEGIN
+ IF (SELECT status FROM videobot_listings WHERE listing_id='ci_draft_02') <> 'draft'
+ THEN RAISE EXCEPTION 'Published without durable media receipt'; END IF;
+END $;
+
+INSERT INTO videobot_post_receipts
+ (delivery_key,listing_id,revision,topic_id,status,free_message_ids,paid_message_id)
+VALUES ('ci_draft_02:1','ci_draft_02',1,15,'sent',ARRAY[201,202]::BIGINT[],203);
+
+UPDATE videobot_listings AS l
+ SET status='published',revision=l.revision+1,updated_at=NOW()
+ WHERE l.seller_user_id=44 AND l.listing_id='ci_draft_02' AND l.revision=1
+  AND l.status IN ('draft','ready') AND l.rights_verified=TRUE
+  AND l.adult_consent_verified=TRUE
+  AND EXISTS (
+   SELECT 1 FROM videobot_post_receipts AS r
+   WHERE r.delivery_key='ci_draft_02:1' AND r.listing_id=l.listing_id
+    AND r.revision=1 AND r.status='sent'
+    AND r.free_message_ids=ARRAY[201,202]::BIGINT[] AND r.paid_message_id=203
+  );
+DO $
+BEGIN
+ IF (SELECT status FROM videobot_listings WHERE listing_id='ci_draft_02') <> 'published'
+ THEN RAISE EXCEPTION 'Valid durable media receipt rejected'; END IF;
+END $;
+
 ROLLBACK;
