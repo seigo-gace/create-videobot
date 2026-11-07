@@ -181,6 +181,7 @@ export function creatorReviewPanel(draft, revision = 0, note = '') {
     '🖼 サムネ：'+(draft.thumbnail?'登録済み（ネタバレ）':'未登録'),
     '🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒・ネタバレ）':'未登録'),
     '🎬 有料本編：'+(draft.paidVideo?'登録済み・Starsロック':'未登録'),
+    '📜 権利・同意：'+(draft.rightsVerified&&draft.adultConsentVerified?'確認済み':'未確認（出演者全員の成人・掲載同意）'),
     '', missing.length?'⚠️ 未登録：'+missing.join('・'):ready?'✅ 投稿内容を確認してください。':'⚠️ この動画の権利・出演者全員の成人と掲載同意を確認してください。',
     '無料アルバムとStars有料本編は別メッセージで投稿します。',note].filter(Boolean).join('\n');
   return {text,reply_markup:{inline_keyboard:keys}};
