@@ -8,7 +8,8 @@ function fakeDb(){
     return {listing_id:id,seller_user_id:owner,revision:1,title:d[0],price_stars:d[1],
       price_mode:d[2],thumbnail_file_id:d[3],sample_file_id:d[4],
       sample_duration_seconds:d[5],paid_video_file_id:d[6],
-      rights_verified:d[7],adult_consent_verified:d[8],status:'draft'};
+      rights_verified:d[7],adult_consent_verified:d[8],fee_terms_accepted_at:d[9]?'CI-consented':null,
+      management_fee_bps:3000,status:'draft'};
   }
   const query=async(sql,params)=>{
     queries.push({sql,params});
@@ -37,7 +38,7 @@ function fakeDb(){
       const receipt=receipts.get(id+':'+revision);
       if(!old||old.seller_user_id!==owner||old.revision!==revision||
          !['draft','ready'].includes(old.status)||!old.rights_verified||
-         !old.adult_consent_verified||!old.title||!old.price_stars||
+         !old.adult_consent_verified||!old.fee_terms_accepted_at||old.management_fee_bps!==3000||!old.title||!old.price_stars||
          !old.thumbnail_file_id||!old.sample_file_id||!old.paid_video_file_id||
          receipt?.status!=='sent'||
          JSON.stringify(receipt.freeMessageIds)!==JSON.stringify(freeMessageIds)||
@@ -107,7 +108,7 @@ test('reject invalid prices and overlength or unverified free samples before SQL
 
 test('published status requires both Telegram receipts and rights/consent; paid media becomes immutable',async()=>{
   const db=fakeDb(),store=createPostgresListingStore(db);
-  await store.createDraft(33,'vid002',example());
+  await store.createDraft(33,'vid002',example({feeTermsAccepted:true}));
   const receipt={posted:true,freeMessageIds:[101,102],paidMessageId:103};
   await assert.rejects(()=>store.markPublished(33,'vid002',1,{posted:true,paidMessageId:103}),/receipt required/);
   await assert.rejects(()=>store.markPublished(33,'vid002',1,{...receipt,freeMessageIds:[-1,102]}),/receipt required/);
@@ -120,4 +121,21 @@ test('published status requires both Telegram receipts and rights/consent; paid 
   await assert.rejects(()=>store.updateDraft(33,'vid002',2,example({priceStars:500})),/STALE_OR_PUBLISHED/);
   await assert.rejects(()=>store.removeUnpublished(33,'vid002',2),/STALE_OR_PUBLISHED/);
   assert.equal(db.rows.get('vid002').price_stars,300);
+});
+
+test('published listing requires explicit 30 percent fee acceptance snapshot',async()=>{
+ const db=fakeDb(),store=createPostgresListingStore(db);
+ await store.createDraft(33,'fee001',example());
+ db.receipts.set('fee001:1',{status:'sent',freeMessageIds:[81,82],paidMessageId:83});
+ await assert.rejects(()=>store.markPublished(33,'fee001',1,{
+   posted:true,freeMessageIds:[81,82],paidMessageId:83
+ }),/RECONCILE/);
+ const accepted=await store.updateDraft(33,'fee001',1,example({feeTermsAccepted:true}));
+ db.receipts.set('fee001:2',{status:'sent',freeMessageIds:[91,92],paidMessageId:93});
+ const approved=await store.markPublished(33,'fee001',2,{
+   posted:true,freeMessageIds:[91,92],paidMessageId:93
+ });
+ assert.equal(accepted.feeTermsAccepted,true);
+ assert.equal(approved.status,'published');
+ assert.equal(approved.managementFeeBps,3000);
 });
