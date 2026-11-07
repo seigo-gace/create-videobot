@@ -39,7 +39,7 @@ test('Source composition refuses missing verified GATE and screen providers',()=
   x.moduleConfig.gateOwner[key]=previous;
  }
  assert.ok(typeof createVideoBotSourceModule({...x.moduleConfig,screenTransport:null}).handleTelegramWebhook==='function');
- assert.throws(()=>createVideoBotSourceModule({...x.moduleConfig,mediaPorts:null}),/owned dependencies/);
+ assert.throws(()=>createVideoBotSourceModule({...x.moduleConfig,mediaPorts:null}),/Telegram fetcher credentials unavailable/);
 });
 test('verified GATE membership deny is applied from composed creator publisher before any SQL or send',async()=>{
  const x=deps();
