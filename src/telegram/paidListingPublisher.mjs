@@ -24,7 +24,9 @@ export async function publishVideoListing({
       typeof listing.title !== 'string' || !listing.title.trim() ||
       !listing.thumbnail?.fileId || !listing.sample?.fileId || !listing.paidVideo?.fileId ||
       listing.rightsVerified !== true || listing.adultConsentVerified !== true ||
-      listing.ownerConfirmedPublish !== true) throw new Error('listing not ready for publication');
+      listing.ownerConfirmedPublish !== true ||
+      listing.feeTermsAccepted !== true || listing.managementFeeBps !== 3000)
+      throw new Error('listing not ready for publication: seller fee agreement required');
   for (const fn of [getVerifiedVideoTopic,verifyMembership,verifyReview,verifyRelease,telegramApi]) {
     if (typeof fn !== 'function') throw new Error('trusted provider missing');
   }
