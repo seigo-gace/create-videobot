@@ -106,7 +106,7 @@ DO $$
 BEGIN
  IF (SELECT status FROM videobot_listings WHERE listing_id='ci_draft_02') <> 'draft'
  THEN RAISE EXCEPTION 'Published without seller 30-percent fee acceptance'; END IF;
-END $;
+END $$;
 
 -- The seller accepted the displayed 30% management deduction by tapping the
 -- existing publish button; now and only now can a receipt-matched item publish.
@@ -124,7 +124,7 @@ UPDATE videobot_listings AS l
    AND r.free_message_ids=ARRAY[201,202]::BIGINT[]
    AND r.paid_message_id=203
  );
-DO $
+DO $$
 BEGIN
  IF NOT EXISTS (SELECT 1 FROM videobot_listings
     WHERE listing_id='ci_draft_02' AND status='published'
@@ -135,6 +135,6 @@ BEGIN
       AND management_fee_bps=3000
       AND fee_policy_id='video-admin-30-20261107')
  THEN RAISE EXCEPTION 'Purchase fee terms snapshot missing'; END IF;
-END $;
+END $$;
 
 ROLLBACK;
