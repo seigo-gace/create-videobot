@@ -41,5 +41,5 @@ test('refuse missing files or unowned transaction pool without touching database
  const db=pool();
  await assert.rejects(()=>applyCreatorSchema({pool:db,loadSql:async()=>''}),/migration unavailable/);
  assert.equal(db.calls.length,0);
- assert.throws(()=>applyCreatorSchema(),/VideoBot migration pool required/);
+ await assert.rejects(()=>applyCreatorSchema(),/VideoBot migration pool required/);
 });
