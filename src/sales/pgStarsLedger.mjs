@@ -1,4 +1,5 @@
 import {parsePaidMediaPurchase,reconcilePaidMediaPurchase} from './telegramPurchase.mjs';
+import {splitStarsExact,MANAGEMENT_FEE_BASIS_POINTS,MANAGEMENT_FEE_POLICY_ID} from './managementFee.mjs';
 
 function owner(id) {
   if(!Number.isSafeInteger(id)||id<=0)throw new Error('invalid Stars ledger owner');
@@ -30,24 +31,27 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
       if(typeof key!=='string'||!/^[A-Za-z0-9_-]{1,40}:[1-9][0-9]*$/.test(key))
         throw new Error('invalid Stars purchase product payload');
       const selected=await pool.query(
-        "SELECT r.listing_id,l.price_stars,l.seller_user_id FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id WHERE r.delivery_key=$1 AND r.status='sent' AND r.paid_message_id IS NOT NULL AND l.status IN ('published','paused')",
+        "SELECT r.listing_id,l.price_stars,l.seller_user_id,l.management_fee_bps,l.fee_policy_id,l.fee_terms_accepted_at FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id WHERE r.delivery_key=$1 AND r.status='sent' AND r.paid_message_id IS NOT NULL AND l.status IN ('published','paused')",
         [key]
       );
       const result=validatedResult(selected);
       if(result.length!==1)throw new Error('published Stars item receipt not found');
       const listing=result[0];
+      if(listing.fee_terms_accepted_at==null || Number(listing.management_fee_bps)!==MANAGEMENT_FEE_BASIS_POINTS ||
+         listing.fee_policy_id!==MANAGEMENT_FEE_POLICY_ID)
+        throw new Error('seller 30 percent management-fee acceptance missing');
       const purchase=parsePaidMediaPurchase(update,payload=>
         payload===key?{id:listing.listing_id,priceStars:Number(listing.price_stars)}:null
       );
       const verified=await reconcilePaidMediaPurchase({purchase,telegramApi});
       const write=await pool.query(
-        "INSERT INTO videobot_stars_ledger (telegram_transaction_id,kind,delivery_key,listing_id,seller_user_id,buyer_user_id,stars,telegram_update_id) SELECT $2,'paid',r.delivery_key,r.listing_id,l.seller_user_id,$3,$4,$5 FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id WHERE r.delivery_key=$1 AND r.status='sent' AND r.paid_message_id IS NOT NULL AND l.status IN ('published','paused') AND l.price_stars=$4 AND l.seller_user_id=$6 ON CONFLICT (telegram_transaction_id,kind) DO NOTHING RETURNING ledger_id",
+        "INSERT INTO videobot_stars_ledger (telegram_transaction_id,kind,delivery_key,listing_id,seller_user_id,buyer_user_id,stars,telegram_update_id,management_fee_bps,fee_policy_id) SELECT $2,'paid',r.delivery_key,r.listing_id,l.seller_user_id,$3,$4,$5,l.management_fee_bps,l.fee_policy_id FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id WHERE r.delivery_key=$1 AND r.status='sent' AND r.paid_message_id IS NOT NULL AND l.status IN ('published','paused') AND l.price_stars=$4 AND l.seller_user_id=$6 AND l.fee_terms_accepted_at IS NOT NULL AND l.management_fee_bps=3000 AND l.fee_policy_id='video-admin-30-20261107' ON CONFLICT (telegram_transaction_id,kind) DO NOTHING RETURNING ledger_id",
         [key,verified.telegramTransactionId,verified.buyerId,verified.stars,
           purchase.updateId,listing.seller_user_id]
       );
       if(write?.rowCount===1)return {recorded:true,duplicate:false,listingId:purchase.listingId};
       const existing=await pool.query(
-        "SELECT delivery_key,listing_id,seller_user_id,buyer_user_id,stars FROM videobot_stars_ledger WHERE telegram_transaction_id=$1 AND kind='paid'",
+        "SELECT delivery_key,listing_id,seller_user_id,buyer_user_id,stars,management_fee_bps,fee_policy_id FROM videobot_stars_ledger WHERE telegram_transaction_id=$1 AND kind='paid'",
         [verified.telegramTransactionId]
       );
       const rows=validatedResult(existing);
@@ -55,7 +59,9 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
         rows[0].listing_id!==purchase.listingId ||
         String(rows[0].seller_user_id)!==String(listing.seller_user_id) ||
         String(rows[0].buyer_user_id)!==String(verified.buyerId) ||
-        safeAmount(rows[0].stars)!==verified.stars)
+        safeAmount(rows[0].stars)!==verified.stars ||
+        Number(rows[0].management_fee_bps)!==MANAGEMENT_FEE_BASIS_POINTS ||
+        rows[0].fee_policy_id!==MANAGEMENT_FEE_POLICY_ID)
         throw new Error('Stars transaction conflict requires reconciliation');
       return {recorded:true,duplicate:true,listingId:purchase.listingId};
     },
@@ -91,7 +97,7 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
       if(refunds.length!==1 || refunds[0].amount!==-expected)
         throw new Error('official Stars refund not verified or ambiguous');
       const written=await pool.query(
-        "INSERT INTO videobot_stars_ledger (telegram_transaction_id,kind,delivery_key,listing_id,seller_user_id,buyer_user_id,stars,telegram_update_id) SELECT p.telegram_transaction_id,'refunded',p.delivery_key,p.listing_id,p.seller_user_id,p.buyer_user_id,p.stars,NULL FROM videobot_stars_ledger p WHERE p.telegram_transaction_id=$1 AND p.kind='paid' ON CONFLICT(telegram_transaction_id,kind) DO NOTHING RETURNING ledger_id",
+        "INSERT INTO videobot_stars_ledger (telegram_transaction_id,kind,delivery_key,listing_id,seller_user_id,buyer_user_id,stars,telegram_update_id,management_fee_bps,fee_policy_id) SELECT p.telegram_transaction_id,'refunded',p.delivery_key,p.listing_id,p.seller_user_id,p.buyer_user_id,p.stars,NULL,p.management_fee_bps,p.fee_policy_id FROM videobot_stars_ledger p WHERE p.telegram_transaction_id=$1 AND p.kind='paid' ON CONFLICT(telegram_transaction_id,kind) DO NOTHING RETURNING ledger_id",
         [telegramTransactionId]
       );
       if(written?.rowCount===1)return {recorded:true,duplicate:false};
@@ -106,7 +112,7 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
         throw new Error('Stars refund persistence conflict');
       return {recorded:true,duplicate:true};
     },
-    /** Seller-specific verified income only. No hypothetical 70/30 or payouts. */
+    /** Seller-only verified gross/net, then exact accounting-only 30/70 quote. */
     async getSummary(ownerId) {
       owner(ownerId);
       const q=await pool.query(
@@ -116,8 +122,11 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
       const row=validatedResult(q)[0];
       if(!row)throw new Error('Stars balance query unavailable');
       // "net" is not "withdrawable". Bot owns the actual Stars balance.
-      return {grossStars:safeAmount(row.gross_stars),netRecordedStars:safeAmount(row.net_stars),
-        payoutReady:false};
+      const netRecordedStars=safeAmount(row.net_stars);
+      const split=splitStarsExact(netRecordedStars);
+      return {grossStars:safeAmount(row.gross_stars),netRecordedStars,
+        managementFeeTenths:split.managementFeeTenths,creatorShareTenths:split.creatorShareTenths,
+        feePolicyId:MANAGEMENT_FEE_POLICY_ID,payoutReady:false};
     },
     async getHistory(ownerId) {
       owner(ownerId);
