@@ -5,6 +5,7 @@ import {createPostgresCreatorSessionStore} from '../sales/pgCreatorSessions.mjs'
 import {createPostgresListingStore} from '../sales/pgListings.mjs';
 import {createPostgresPostingReceiptStore} from '../sales/pgPostingReceipts.mjs';
 import {createPostgresStarsLedger} from '../sales/pgStarsLedger.mjs';
+import {createPostgresWebhookUpdateStore} from '../sales/pgWebhookUpdates.mjs';
 import {createVideoMediaProcessor} from './mediaProcessor.mjs';
 
 /**
@@ -29,6 +30,7 @@ export function createVideoBotSourceModule({
   const sessionStore=createPostgresCreatorSessionStore(pool);
   const listingStore=createPostgresListingStore(pool);
   const receiptStore=createPostgresPostingReceiptStore(pool);
+  const updateStore=createPostgresWebhookUpdateStore(pool);
   const starsLedger=createPostgresStarsLedger({pool,telegramApi});
   const mediaProcessor=createVideoMediaProcessor({
     ...mediaPorts,run:mediaRun,storageApproved
@@ -46,12 +48,12 @@ export function createVideoBotSourceModule({
     salesProvider:starsLedger,starsLedger
   });
   const handleTelegramWebhook=createCreatorWebhookAdmission({
-    expectedSecret:webhookSecret,handleCreatorUpdate
+    expectedSecret:webhookSecret,handleCreatorUpdate,updateStore
   });
   return Object.freeze({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
-    listingStore,sessionStore,receiptStore,starsLedger,
+    listingStore,sessionStore,receiptStore,starsLedger,updateStore,
     publishListing,handleCreatorUpdate
   });
 }
