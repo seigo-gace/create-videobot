@@ -49,6 +49,7 @@ test('uses existing paid/free builders, requires approval and persists both resp
   assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','sendPaidMedia']);
   assert.deepEqual(d.calls[0].params.media.map(x=>x.has_spoiler),[true,true]);
   assert.equal(d.calls[1].params.star_count,300);
+  assert.equal(d.calls[1].params.payload,'sale001:1');
   assert.equal(d.calls[0].params.message_thread_id,777);
   assert.equal(d.calls[1].params.message_thread_id,777);
   assert.deepEqual(result.freeMessageIds,[10,11]);
