@@ -45,6 +45,31 @@ services:
       timeout: 6s
       retries: 3
       start_period: 25s
+  videobot-migrate:
+    profiles: ["schema-migrate"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: create-videobot:local-telegram
+    pull_policy: never
+    init: true
+    restart: "no"
+    read_only: true
+    user: "1000:1000"
+    command: ["node", "src/runtime/creatorMigrateMain.mjs"]
+    networks:
+      - gserver-private
+    environment:
+      NODE_ENV: production
+      VIDEOBOT_SCHEMA_MIGRATE: "YES"
+      VIDEOBOT_DATABASE_URL_FILE: /run/secrets/videobot_database_url
+    volumes:
+      - ${VIDEOBOT_DATABASE_URL_SOURCE:?database_url_file_required}:/run/secrets/videobot_database_url:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 16
+    mem_limit: 128m
+    cpus: 0.25
 networks:
   gserver-private:
     external: true
