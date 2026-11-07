@@ -39,6 +39,8 @@ export function openCreatorEditor({ sellerId, existing = null } = {}) {
     thumbnail: existing?.thumbnail ?? null,
     sample: existing?.sample ?? null,
     paidVideo: existing?.paidVideo ?? null,
+    rightsVerified: existing?.rightsVerified === true,
+    adultConsentVerified: existing?.adultConsentVerified === true,
     dirtyFields: []
   };
 }
@@ -54,7 +56,15 @@ export function editCreatorDraft(draft, action) {
     case 'paidVideo':
       field = action.type;
       value = media(action.media, field);
+      if (field === 'paidVideo') return { ...draft, paidVideo: value, rightsVerified:false, adultConsentVerified:false,
+        dirtyFields: [...new Set([...draft.dirtyFields,'paidVideo','rightsVerified','adultConsentVerified'])] };
       break;
+    case 'confirmRights':
+      if (!draft.paidVideo) throw new Error('paid video required before rights confirmation');
+      if (action.rightsVerified !== true || action.adultConsentVerified !== true)
+        throw new Error('rights, adult and performer consent required');
+      return { ...draft, rightsVerified:true, adultConsentVerified:true,
+        dirtyFields: [...new Set([...draft.dirtyFields,'rightsVerified','adultConsentVerified'])] };
     case 'removeThumbnail':
       field = 'thumbnail'; value = null; break;
     case 'removeSample':
@@ -149,4 +159,29 @@ export function confirmedWithdrawal({ amount, availableBefore, officialTransferC
   if (officialTransferConfirmed !== true) throw new Error('official Stars transfer not confirmed');
   if (!Number.isSafeInteger(amount) || !Number.isSafeInteger(availableBefore) || amount < 1 || availableBefore < amount) throw new Error('invalid confirmed transfer');
   return { text: '✅ 引き出し完了\n今回引き出したStars数：' + amount + '\n差引後の引き出し可能残高：' + (availableBefore - amount) + ' Stars' };
+}
+
+/** Creator can see exactly what will publish, then explicitly confirm rights
+ * for the current paid-video revision before publishing. No side effects.
+ */
+export function creatorReviewPanel(draft, revision = 0, note = '') {
+  expectDraft(draft);
+  if(!Number.isSafeInteger(revision)||revision<1)throw new Error('invalid review revision');
+  const missing=['thumbnail','sample','paidVideo','title','priceStars'].filter(k=>!draft[k]);
+  const ready=missing.length===0 && draft.rightsVerified===true && draft.adultConsentVerified===true;
+  const keys=[
+    [{text:draft.rightsVerified&&draft.adultConsentVerified?'✅ 権利・出演者確認済み':'📜 権利・出演者を確認',callback_data:'review:rights|r'+revision}],
+    [{text:'✅ 投稿する',callback_data:'review:publish|r'+revision},
+     {text:'✏️ 修正',callback_data:'review:edit|r'+revision},
+     {text:'❌ 中止',callback_data:'review:cancel|r'+revision}]
+  ];
+  const text=['👁 動画販売プレビュー','',
+    'タイトル：'+(draft.title||'未入力'),
+    '価格：'+(draft.priceStars==null?'未設定':'⭐ '+draft.priceStars+' Stars'),
+    '🖼 サムネ：'+(draft.thumbnail?'登録済み（ネタバレ）':'未登録'),
+    '🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒・ネタバレ）':'未登録'),
+    '🎬 有料本編：'+(draft.paidVideo?'登録済み・Starsロック':'未登録'),
+    '', missing.length?'⚠️ 未登録：'+missing.join('・'):ready?'✅ 投稿内容を確認してください。':'⚠️ この動画の権利・出演者全員の成人と掲載同意を確認してください。',
+    '無料アルバムとStars有料本編は別メッセージで投稿します。',note].filter(Boolean).join('\n');
+  return {text,reply_markup:{inline_keyboard:keys}};
 }
