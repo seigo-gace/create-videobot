@@ -1,3 +1,4 @@
+import {splitStarsExact} from './managementFee.mjs';
 /**
  * Pure ledger transition. Caller must persist event IDs and ledger atomically
  * in the final Gserver adapter; no actual payout or Stars redemption is performed.
@@ -17,4 +18,14 @@ export function applySalesEvent(state, event) {
 }
 export function starsNetForListing(state, listingId) {
   return state.entries.filter(x=>x.listingId===listingId).reduce((v,x)=>v + (x.kind==='paid'?x.stars:-x.stars),0);
+}
+
+/** Derived accounting-only 30/70 split on the EXISTING immutable ledger.
+ * Retains starsNetForListing as gross minus refunds; never authorizes payout.
+ */
+export function sellerFeeBreakdownForListing(state,listingId) {
+ const netStars=starsNetForListing(state,listingId);
+ if(!Number.isSafeInteger(netStars)||netStars<0)
+  throw new Error('unbalanced refund ledger for fee computation');
+ return splitStarsExact(netStars);
 }
