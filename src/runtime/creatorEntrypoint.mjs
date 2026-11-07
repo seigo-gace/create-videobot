@@ -24,12 +24,13 @@ function runtimeOptions(env){
 
 export async function startCreatorFromPrivateMounts({
   env=process.env,pgPoolCtor=Pool,
-  importOwner=specifier=>import(specifier)
+  importOwner=specifier=>import(specifier),
+  readSecret=requiredSecret,createService=createCreatorLiveService
 }={}) {
  const options=runtimeOptions(env);
- const botToken=requiredSecret(env,'VIDEOBOT_TELEGRAM_TOKEN_FILE');
- const webhookSecret=requiredSecret(env,'VIDEOBOT_WEBHOOK_SECRET_FILE');
- const databaseUrl=requiredSecret(env,'VIDEOBOT_DATABASE_URL_FILE');
+ const botToken=readSecret(env,'VIDEOBOT_TELEGRAM_TOKEN_FILE');
+ const webhookSecret=readSecret(env,'VIDEOBOT_WEBHOOK_SECRET_FILE');
+ const databaseUrl=readSecret(env,'VIDEOBOT_DATABASE_URL_FILE');
  if(typeof pgPoolCtor!=='function')throw new Error('PostgreSQL pool driver required');
  const pool=new pgPoolCtor({
    connectionString:databaseUrl,
@@ -48,7 +49,7 @@ export async function startCreatorFromPrivateMounts({
       storage.private!==true||!Number.isSafeInteger(storage.chatId)||
       storage.chatId>=0)
      throw new Error('private Creator media storage not verified');
-   service=createCreatorLiveService({
+   service=createService({
      botToken,webhookSecret,pool,gateOwner,storageApproved:true,
      verifyPrivateMediaStore:checkStorage,host:options.host,port:options.port
    });
@@ -66,8 +67,8 @@ export async function startCreatorFromPrivateMounts({
  }
 }
 
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {
-  startCreatorFromPrivateMounts().then(runtime=>{
+export async function runCreatorEntrypoint(){
+  return startCreatorFromPrivateMounts().then(runtime=>{
     process.stdout.write('CREATOR_BOT_RUNTIME=LISTENING_PRIVATE\n');
     let closing=false;
     for(const signal of ['SIGINT','SIGTERM']){
@@ -90,4 +91,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {
     process.stderr.write(code+'\n');
     process.exitCode=1;
   });
+}
+
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+  await runCreatorEntrypoint();
 }
