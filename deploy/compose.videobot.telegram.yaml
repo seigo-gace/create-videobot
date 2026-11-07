@@ -1,0 +1,51 @@
+# CreateVdoBot's real private Telegram HTTP runtime. It is NOT started by
+# the existing bootstrap compose and has NO host port/public listener.
+# Requires verified Gserver private network, owner-supplied GATE bridge,
+# PostgreSQL DSN and private Bot/webhook secrets already installed on the host.
+services:
+  videobot-telegram:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: create-videobot:local-telegram
+    pull_policy: never
+    init: true
+    restart: unless-stopped
+    read_only: true
+    user: "1000:1000"
+    networks:
+      - gserver-private
+    expose:
+      - "8766"
+    environment:
+      NODE_ENV: production
+      VIDEOBOT_RUN_MODE: telegram
+      VIDEOBOT_PRIVATE_INGRESS_ONLY: "true"
+      VIDEOBOT_PRIVATE_BIND: "0.0.0.0"
+      VIDEOBOT_PRIVATE_PORT: "8766"
+      VIDEOBOT_GATE_OWNER_ADAPTER: /opt/videobot/owner/gateOwner.mjs
+      VIDEOBOT_TELEGRAM_TOKEN_FILE: /run/secrets/videobot_telegram_token
+      VIDEOBOT_WEBHOOK_SECRET_FILE: /run/secrets/videobot_webhook_secret
+      VIDEOBOT_DATABASE_URL_FILE: /run/secrets/videobot_database_url
+    volumes:
+      - ${VIDEOBOT_GATE_OWNER_SOURCE:?existing_owner_adapter_required}:/opt/videobot/owner/gateOwner.mjs:ro
+      - ${VIDEOBOT_TELEGRAM_TOKEN_SOURCE:?telegram_token_file_required}:/run/secrets/videobot_telegram_token:ro
+      - ${VIDEOBOT_WEBHOOK_SECRET_SOURCE:?webhook_secret_file_required}:/run/secrets/videobot_webhook_secret:ro
+      - ${VIDEOBOT_DATABASE_URL_SOURCE:?database_url_file_required}:/run/secrets/videobot_database_url:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m,mode=0700
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8766/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 6s
+      retries: 3
+      start_period: 25s
+networks:
+  gserver-private:
+    external: true
+    name: ${GSERVER_PRIVATE_NETWORK:?verified_private_network_required}
