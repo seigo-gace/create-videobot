@@ -1,3 +1,4 @@
+import {isIP} from 'node:net';
 import {verifyCreateVdoBot} from './identityCheck.mjs';
 
 const UPDATES=Object.freeze(['message','callback_query','purchased_paid_media']);
@@ -10,7 +11,7 @@ function requireVerifiedIngress({url,verifiedIngress}){
  try{parsed=new URL(url);}catch{throw new Error('invalid CreatorBot HTTPS endpoint');}
  if(parsed.protocol!=='https:'||parsed.username||parsed.password||parsed.search||
     parsed.hash||parsed.pathname!=='/telegram/creator'||
-    !parsed.hostname.includes('.')||parsed.hostname==='localhost'||
+    !parsed.hostname.includes('.')||isIP(parsed.hostname)>0||parsed.hostname==='localhost'||
     parsed.hostname.endsWith('.local')||parsed.port)
   throw new Error('invalid CreatorBot HTTPS endpoint');
  return parsed.href;
