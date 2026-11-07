@@ -1,11 +1,11 @@
 const PAGES=Object.freeze({
- home:{text:'🎬 クリエータービデオ\n\n動画の投稿・管理・売上確認ができます。',buttons:[
+ home:{text:'🎬 クリエータービデオ\n\n動画の投稿・管理・売上確認ができます。\n販売売上から運営管理費30%を控除し、投稿者分は70%です。',buttons:[
   [['🎬 動画を投稿','menu:listing'],['📦 マイ動画','menu:manage']],
   [['⭐ 売上・引き出し','menu:sales']]
  ]},
- listing:{text:'🎬 新しい動画を投稿\n\n動画登録・サムネ・サンプル・タイトル・Stars価格の共通編集処理は開発中です。実Telegram投稿はまだ接続されていません。',buttons:[[['↩ 戻る','menu:home']]]},
+ listing:{text:'🎬 新しい動画を投稿\n\n管理費は売上の30%、投稿者分は70%です。実Telegram投稿はまだ接続されていません。',buttons:[[['↩ 戻る','menu:home']]]},
  manage:{text:'📦 マイ動画\n\n本人の動画一覧・編集・削除は現在開発中です。実データにはまだ接続されていません。',buttons:[[['↩ 戻る','menu:home']]]},
- sales:{text:'⭐ 売上・引き出し\n\nStars残高・履歴の実データは未接続です。クリエーターへのStars払出が検証できるまで引き出しを有効化しません。',buttons:[[['↩ 戻る','menu:home']]]}
+ sales:{text:'⭐ 売上・引き出し\n\n販売売上の30%を運営管理費として差し引き、投稿者分は70%です。\nStars残高・履歴の実データは未接続です。クリエーターへのStars払出が検証できるまで引き出しを有効化しません。',buttons:[[['↩ 戻る','menu:home']]]}
 });
 export function menuPage(page='home'){
  const p=PAGES[page];if(!p)throw new Error('unknown menu page');
