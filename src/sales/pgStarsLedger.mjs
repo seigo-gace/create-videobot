@@ -59,6 +59,53 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
         throw new Error('Stars transaction conflict requires reconciliation');
       return {recorded:true,duplicate:true,listingId:purchase.listingId};
     },
+    /** Read-only refund reconciliation. This does NOT call refundStarPayment,
+     * transfer Stars or change already-purchased media rights. It records a
+     * negative transaction only after the Bot API confirms a matching outgoing
+     * reversal for a previously credited purchase.
+     */
+    async confirmRefund(telegramTransactionId,maxPages=3) {
+      if(typeof telegramTransactionId!=='string'||telegramTransactionId.length<1||
+         telegramTransactionId.length>256||!Number.isSafeInteger(maxPages)||
+         maxPages<1||maxPages>20)throw new Error('invalid refund reconciliation request');
+      const paid=await pool.query(
+        "SELECT delivery_key,listing_id,seller_user_id,buyer_user_id,stars FROM videobot_stars_ledger WHERE telegram_transaction_id=$1 AND kind='paid'",
+        [telegramTransactionId]
+      );
+      const rows=validatedResult(paid);
+      if(rows.length!==1)throw new Error('original verified Stars sale not found');
+      const sale=rows[0],expected=safeAmount(sale.stars);
+      let refunds=[];
+      for(let page=0;page<maxPages;page++) {
+        const tx=await telegramApi('getStarTransactions',{offset:page*100,limit:100});
+        if(!Array.isArray(tx?.transactions))throw new Error('Telegram refund history unavailable');
+        for(const item of tx.transactions) {
+          if(item?.id!==telegramTransactionId)continue;
+          if(item.receiver?.type==='user'&&
+             String(item.receiver.user?.id)===String(sale.buyer_user_id)) {
+            refunds.push(item);
+          }
+        }
+        if(tx.transactions.length<100)break;
+      }
+      if(refunds.length!==1 || refunds[0].amount!==-expected)
+        throw new Error('official Stars refund not verified or ambiguous');
+      const written=await pool.query(
+        "INSERT INTO videobot_stars_ledger (telegram_transaction_id,kind,delivery_key,listing_id,seller_user_id,buyer_user_id,stars,telegram_update_id) SELECT p.telegram_transaction_id,'refunded',p.delivery_key,p.listing_id,p.seller_user_id,p.buyer_user_id,p.stars,NULL FROM videobot_stars_ledger p WHERE p.telegram_transaction_id=$1 AND p.kind='paid' ON CONFLICT(telegram_transaction_id,kind) DO NOTHING RETURNING ledger_id",
+        [telegramTransactionId]
+      );
+      if(written?.rowCount===1)return {recorded:true,duplicate:false};
+      const existing=await pool.query(
+        "SELECT kind,stars,listing_id,buyer_user_id FROM videobot_stars_ledger WHERE telegram_transaction_id=$1 AND kind='refunded'",
+        [telegramTransactionId]
+      );
+      const matches=validatedResult(existing);
+      if(matches.length!==1||matches[0].kind!=='refunded'||safeAmount(matches[0].stars)!==expected||
+         matches[0].listing_id!==sale.listing_id||
+         String(matches[0].buyer_user_id)!==String(sale.buyer_user_id))
+        throw new Error('Stars refund persistence conflict');
+      return {recorded:true,duplicate:true};
+    },
     /** Seller-specific verified income only. No hypothetical 70/30 or payouts. */
     async getSummary(ownerId) {
       owner(ownerId);
