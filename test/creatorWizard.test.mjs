@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCreatorWizard } from '../src/telegram/creatorWizard.mjs';
 
-function setup(){
+function setup({listingStoreOverride={},publishListing}={}){
   const states=new Map(),calls=[],screens=[];
   const sessionStore={
     async read(id){return states.get(id)??null;},
@@ -43,7 +43,7 @@ function setup(){
       return {thumbnail:{fileId:'photo_auto_1'},sample:{fileId:'sample_auto_1',durationSeconds:30}};
     }
   };
-  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:store,mediaProcessor});
+  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor,publishListing});
   const callback=(action,id=101,from=33)=>handler.handle({
     callback_query:{id:'cq_'+action,from:{id:from},data:action,
       message:{chat:{id:33,type:'private'},message_id:id}}
@@ -114,4 +114,74 @@ test('cannot silently publish on preview or create an external Stars payout',asy
   assert.match(x.screens.at(-1).panel.text,/未登録/);
   assert.equal(x.calls.filter(c=>c.method==='sendPaidMedia').length,0);
   await assert.rejects(()=>x.callback('edit:publish|r2'),/UNKNOWN_CREATOR_ACTION/);
+});
+
+test('creator confirms rights and explicitly publishes only after verified store/receipt response',async()=>{
+ const published=[],saved=[],calls=[];
+ const x=setup({
+   listingStoreOverride:{
+     async createDraft(owner,id,draft){
+       saved.push({owner,id,draft});
+       return {id,revision:1,sellerId:String(owner),...draft};
+     },
+     async updateDraft(){throw new Error('update not expected');},
+     async markPublished(owner,id,rev,proof){
+       calls.push({owner,id,rev,proof});
+       return {status:'published'};
+     }
+   },
+   publishListing:async data=>{
+     published.push(data);
+     return {posted:true,freeMessageIds:[101,102],paidMessageId:103};
+   }
+ });
+ await x.callback('menu:listing');
+ await x.callback('edit:paidVideo|r1');
+ await x.send({video:{file_id:'main001'}},301);
+ await x.callback('edit:price:300|r3');
+ await x.callback('edit:title|r4');
+ await x.send({text:'動画タイトル'},302);
+ await x.callback('edit:preview|r6');
+ assert.equal(x.states.get(33).screen,'review');
+ assert.match(x.screens.at(-1).panel.text,/出演者全員の成人/);
+ await x.callback('review:publish|r7');
+ assert.equal(published.length,0);
+ assert.match(x.screens.at(-1).panel.text,/未登録項目と権利/);
+ await x.callback('review:rights|r8');
+ assert.equal(x.states.get(33).draft.rightsVerified,true);
+ await x.callback('review:publish|r9');
+ assert.equal(saved.length,1);
+ assert.equal(published.length,1);
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].proof.paidMessageId,103);
+ assert.equal(saved[0].owner,33);
+ assert.equal(x.states.get(33).draft,null);
+ assert.match(x.screens.at(-1).panel.text,/投稿を確認しました/);
+ await assert.rejects(()=>x.callback('review:publish|r9'),/CREATOR_SCREEN_STALE|CREATOR_NOT_IN_REVIEW/);
+ assert.equal(published.length,1);
+});
+test('unknown paid-media send result locks creator flow for explicit reconciliation',async()=>{
+ let attempts=0;
+ const x=setup({
+   listingStoreOverride:{
+     async createDraft(owner,id,draft){return {id,revision:1,sellerId:String(owner),...draft};},
+     async updateDraft(){throw Error('unexpected');},
+     async markPublished(){throw Error('unexpected');}
+   },
+   publishListing:async()=>{attempts++;throw new Error('network result unknown');}
+ });
+ await x.callback('menu:listing');
+ await x.callback('edit:paidVideo|r1');
+ await x.send({video:{file_id:'main001'}},301);
+ await x.callback('edit:price:300|r3');
+ await x.callback('edit:title|r4');
+ await x.send({text:'動画タイトル'},302);
+ await x.callback('edit:preview|r6');
+ await x.callback('review:rights|r7');
+ await x.callback('review:publish|r8');
+ const revision=x.states.get(33).revision;
+ assert.equal(x.states.get(33).publishing,'needs_reconcile');
+ assert.equal(attempts,1);
+ await assert.rejects(()=>x.callback('review:publish|r'+revision),/PUBLISH_NEEDS_RECONCILE/);
+ assert.equal(attempts,1);
 });
