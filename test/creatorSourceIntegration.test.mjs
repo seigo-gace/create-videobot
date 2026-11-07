@@ -89,7 +89,7 @@ test('source-composed offline Telegram webhook drives real wizard route with dur
  assert.equal(state().revision,1);
  assert.equal(state().payload.draft.mode,'create');
  assert.ok(x.calls.some(y=>y.method==='editMessageText'&&
-  y.params.text.includes('投稿者分70%')));
+  y.params.text.includes('残り70%')));
  await x.send(callback(3,'edit:title|r1'));
  assert.equal(state().revision,2);
  assert.equal(state().payload.waiting,'title');
