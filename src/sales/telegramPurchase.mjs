@@ -32,10 +32,12 @@ export async function reconcilePaidMediaPurchase({purchase,telegramApi,maxPages=
     !Number.isSafeInteger(purchase.expectedStars)||purchase.expectedStars<1||
     purchase.confirmedPayment!==false)throw new Error('unverified purchase intent required');
  let candidates=[];
+ const transactionsSeen=[];
  for(let page=0;page<maxPages;page++) {
   const res=await telegramApi('getStarTransactions',{offset:page*100,limit:100});
   if(!Array.isArray(res?.transactions))throw new Error('Telegram transactions unavailable');
   for(const transaction of res.transactions){
+    transactionsSeen.push(transaction);
     if(transaction?.source?.type!=='user'||
        transaction.source.transaction_type!=='paid_media_payment'||
        transaction.source.paid_media_payload!==purchase.payload||
@@ -49,6 +51,9 @@ export async function reconcilePaidMediaPurchase({purchase,telegramApi,maxPages=
    throw new Error('paid media Stars transaction mismatch or refund requires reconciliation');
  if(candidates.length!==1)throw new Error('paid media transaction unverified or ambiguous');
  const transaction=candidates[0];
+ if(transactionsSeen.some(t=>t?.id===transaction.id && t!==transaction &&
+      (t.receiver || (Number.isSafeInteger(t.amount)&&t.amount<0))))
+   throw new Error('Stars transaction includes refund or conflicting record');
  const idDigest=createHash('sha256').update(transaction.id).digest('hex');
  return {
   verifiedByTelegram:true,eventId:'paid_'+idDigest.slice(0,40),kind:'paid',
