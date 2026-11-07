@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   openCreatorEditor, editCreatorDraft, creatorEditorPanel, myVideosPanel,
-  validateWithdrawalText, withdrawalPrompt, confirmedWithdrawal, WithdrawalInputError
+  validateWithdrawalText, withdrawalPrompt, confirmedWithdrawal, WithdrawalInputError, creatorReviewPanel
 } from '../src/telegram/creatorUi.mjs';
 
 test('new and existing listing share field editor, edit protects existing fields', () => {
@@ -76,4 +76,22 @@ test('withdrawal text uses Telegram chat input, shows deficits, never transfers 
   assert.throws(()=>validateWithdrawalText('300',210),x=>x.code==='INSUFFICIENT'&&x.message.includes('90 Stars'));
   assert.throws(()=>confirmedWithdrawal({amount:100,availableBefore:210,officialTransferConfirmed:false}),/not confirmed/);
   assert.match(confirmedWithdrawal({amount:100,availableBefore:210,officialTransferConfirmed:true}).text,/110 Stars/);
+});
+
+test('rights confirmation is per-video; replacement invalidates previous consent',()=>{
+ let d=openCreatorEditor({sellerId:'seller1'});
+ d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main001'}});
+ assert.throws(()=>editCreatorDraft(d,{type:'confirmRights',rightsVerified:false,adultConsentVerified:true}),/rights/);
+ d=editCreatorDraft(d,{type:'confirmRights',rightsVerified:true,adultConsentVerified:true});
+ assert.equal(d.rightsVerified,true);
+ assert.equal(d.adultConsentVerified,true);
+ let panel=creatorReviewPanel(d,5);
+ assert.match(panel.text,/未登録/);
+ assert.equal(panel.reply_markup.inline_keyboard[1].length,3);
+ assert.equal(panel.reply_markup.inline_keyboard[0][0].callback_data,'review:rights|r5');
+ d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main002'}});
+ assert.equal(d.rightsVerified,false);
+ assert.equal(d.adultConsentVerified,false);
+ panel=creatorReviewPanel(d,6);
+ assert.match(panel.text,/出演者全員の成人/);
 });
