@@ -9,6 +9,14 @@ import { createCreatorWizard } from './creatorWizard.mjs';
 export function createCreatorBotUpdateHandler(options={}) {
   const wizard=createCreatorWizard(options);
   return async function handleCreatorBotUpdate(update) {
+    // Paid-media purchase updates have no DM message envelope. They are not
+    // ordinary creator input and must never be counted without transaction proof.
+    if (update?.purchased_paid_media) {
+      if (typeof options.starsLedger?.confirmPurchase !== 'function')
+        throw new Error('verified Stars receipt ledger unavailable');
+      const receipt=await options.starsLedger.confirmPurchase(update);
+      return {handled:true,purchaseRecorded:receipt?.recorded===true,duplicate:receipt?.duplicate===true};
+    }
     const message=update?.message;
     if (message && message.chat?.type !== 'private') return {handled:false};
     if (update?.callback_query && update.callback_query.message?.chat?.type !== 'private') return {handled:false};
