@@ -25,7 +25,22 @@ export function createCreatorBotUpdateHandler(options={}) {
        /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text)) {
       return handleMenuUpdate({api:options.api,update});
     }
-    const creatorResult=await wizard.handle(update);
+    let creatorResult;
+    try {
+      creatorResult=await wizard.handle(update);
+    } catch(error) {
+      // Old keyboard revisions and screens are routine Telegram navigation,
+      // not a payment or delivery failure. The wizard already acknowledged
+      // their callback before checking the stored revision. Never lock the
+      // entire webhook update as "needs_reconcile" for a stale tap.
+      const harmless=new Set([
+        'STALE_CREATOR_BUTTON','CREATOR_SCREEN_STALE','VIDEO_SCREEN_STALE',
+        'SALES_SCREEN_STALE','CREATOR_NOT_IN_REVIEW'
+      ]);
+      if(update?.callback_query&&harmless.has(error?.message))
+        return {handled:true,staleButton:true};
+      throw error;
+    }
     if(creatorResult?.handled)return creatorResult;
     if(update?.callback_query?.data?.startsWith('menu:'))
       return handleMenuUpdate({api:options.api,update});
