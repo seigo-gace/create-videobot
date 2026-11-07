@@ -17,8 +17,13 @@ test('native Telegram start opens existing main menu; callback enters reuse-base
    mediaProcessor:{prepareUserSample:async()=>({fileId:'ok',durationSeconds:15})}
  });
  await handler({message:{from:{id:33},chat:{id:33,type:'private'},message_id:5,text:'/start'}});
- assert.equal(calls[0].m,'sendMessage');
+ assert.equal(calls[0].m,'screen');
  assert.ok(calls[0].p.reply_markup.inline_keyboard[0][0].text.includes('動画を投稿'));
+ assert.equal(states.get(33).screenMessageId,11);
+ await handler({message:{from:{id:33},chat:{id:33,type:'private'},message_id:6,text:'/start'}});
+ assert.equal(calls.filter(c=>c.m==='screen').length,2,
+  'repeated /start edits the existing Bot DM screen, not sendMessage');
+ assert.equal(calls.filter(c=>c.m==='sendMessage').length,0);
  await handler({callback_query:{id:'cq1',from:{id:33},
    data:'menu:listing',message:{chat:{id:33,type:'private'},message_id:11}}});
  assert.equal(states.get(33).draft.mode,'create');
