@@ -5,7 +5,7 @@ import { publishVideoListing } from '../src/telegram/paidListingPublisher.mjs';
 function listing(){
   return {id:'sale001', sellerId:'creator1', revision:1, title:'夏の思い出', priceStars:300,
     thumbnail:{fileId:'photo001'}, sample:{fileId:'sample001',durationSeconds:30},
-    paidVideo:{fileId:'main001'},rightsVerified:true,adultConsentVerified:true,ownerConfirmedPublish:true};
+    paidVideo:{fileId:'main001'},rightsVerified:true,adultConsentVerified:true,ownerConfirmedPublish:true,feeTermsAccepted:true,managementFeeBps:3000};
 }
 function memoryReceiptStore() {
   const map=new Map();
@@ -89,4 +89,13 @@ test('missing seller consent and source tokens never bypass publish guards',asyn
   d.listing.ownerConfirmedPublish=false;
   await assert.rejects(()=>publishVideoListing(d),/not ready/);
   assert.equal(d.store.map.size,0);
+});
+
+test('reject missing seller 30-percent consent before any free or paid Telegram send',async()=>{
+ for(const override of [{feeTermsAccepted:false},{managementFeeBps:0}]) {
+   const d=deps();Object.assign(d.listing,override);
+   await assert.rejects(()=>publishVideoListing(d),/fee agreement required/);
+   assert.equal(d.calls.length,0);
+   assert.equal(d.store.map.size,0);
+ }
 });
