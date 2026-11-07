@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createPostgresListingStore} from '../src/sales/pgListings.mjs';
 
 function fakeDb(){
-  const rows=new Map(),queries=[];
+  const rows=new Map(),queries=[],receipts=new Map();
   function defaults(id,owner,d){
     return {listing_id:id,seller_user_id:owner,revision:1,title:d[0],price_stars:d[1],
       price_mode:d[2],thumbnail_file_id:d[3],sample_file_id:d[4],
@@ -32,12 +32,16 @@ function fakeDb(){
       const next={...old,...defaults(id,owner,draft),revision:revision+1,status:old.status};
       rows.set(id,next);return {rowCount:1,rows:[next]};
     }
-    if(sql.startsWith("UPDATE videobot_listings SET status='published'")){
-      const [owner,id,revision]=params,old=rows.get(id);
+    if(sql.startsWith("UPDATE videobot_listings AS l SET status='published'")){
+      const [owner,id,revision,freeMessageIds,paidMessageId]=params,old=rows.get(id);
+      const receipt=receipts.get(id+':'+revision);
       if(!old||old.seller_user_id!==owner||old.revision!==revision||
          !['draft','ready'].includes(old.status)||!old.rights_verified||
          !old.adult_consent_verified||!old.title||!old.price_stars||
-         !old.thumbnail_file_id||!old.sample_file_id||!old.paid_video_file_id)
+         !old.thumbnail_file_id||!old.sample_file_id||!old.paid_video_file_id||
+         receipt?.status!=='sent'||
+         JSON.stringify(receipt.freeMessageIds)!==JSON.stringify(freeMessageIds)||
+         receipt.paidMessageId!==paidMessageId)
         return {rowCount:0,rows:[]};
       old.status='published';old.revision++;
       return {rowCount:1,rows:[old]};
@@ -50,7 +54,7 @@ function fakeDb(){
     }
     throw new Error('unknown SQL');
   };
-  return {rows,queries,query};
+  return {rows,queries,receipts,query};
 }
 function example(overrides={}){
   return {title:'夏の思い出',priceStars:300,priceMode:'preset',thumbnail:{fileId:'photo001'},
@@ -108,6 +112,8 @@ test('published status requires both Telegram receipts and rights/consent; paid 
   await assert.rejects(()=>store.markPublished(33,'vid002',1,{posted:true,paidMessageId:103}),/receipt required/);
   await assert.rejects(()=>store.markPublished(33,'vid002',1,{...receipt,freeMessageIds:[-1,102]}),/receipt required/);
   assert.equal(db.rows.get('vid002').status,'draft');
+  await assert.rejects(()=>store.markPublished(33,'vid002',1,receipt),/RECONCILE/);
+  db.receipts.set('vid002:1',{status:'sent',freeMessageIds:[101,102],paidMessageId:103});
   const published=await store.markPublished(33,'vid002',1,receipt);
   assert.equal(published.status,'published');
   assert.equal(published.revision,2);
