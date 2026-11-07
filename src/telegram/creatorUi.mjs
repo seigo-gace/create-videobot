@@ -80,8 +80,9 @@ export function editCreatorDraft(draft, action) {
 }
 
 /** Telegram has one ordinary chat input; it does not provide inline numeric fields. */
-export function creatorEditorPanel(draft) {
+export function creatorEditorPanel(draft, revision = 0) {
   expectDraft(draft);
+  if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('invalid screen revision');
   const row = items => items.map(([text, callback_data]) => ({ text, callback_data }));
   const text = [
     draft.mode === 'edit' ? '✏️ 動画を編集' : '🎬 新しい動画を投稿',
@@ -101,7 +102,7 @@ export function creatorEditorPanel(draft) {
     row([...PRICE_PRESETS.slice(3).map(n => [String(n) + (draft.priceStars === n && draft.priceMode === 'preset' ? ' ✓' : ''), 'edit:price:' + n]),['自分で決める','edit:price:custom']]),
     row([['👁 プレビュー','edit:preview'],['❌ キャンセル','edit:cancel']])
   ];
-  return { text, reply_markup: { inline_keyboard: keyboard } };
+  return { text, reply_markup: { inline_keyboard: keyboard.map(row => row.map(button => ({...button, callback_data: revision ? button.callback_data + '|r' + revision : button.callback_data}))) } };
 }
 
 export function myVideosPanel({ sellerId, listings, page = 0 } = {}) {
