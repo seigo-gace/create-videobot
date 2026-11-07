@@ -20,6 +20,13 @@ function fixture(){
      return {rows:p===state.delivery_key&&state.status==='sent'&&state.listing_status==='published'
         ?[{listing_id:'myvid',price_stars:300,seller_user_id:'44'}]:[]};
    }
+   if(sql.startsWith('INSERT INTO videobot_stars_ledger') && sql.includes("SELECT p.telegram_transaction_id")) {
+     const original=rows.find(r=>r.telegram_transaction_id===args[0]&&r.kind==='paid');
+     const existing=rows.find(r=>r.telegram_transaction_id===args[0]&&r.kind==='refunded');
+     if(!original||existing)return {rowCount:0,rows:[]};
+     rows.push({...original,kind:'refunded'});
+     return {rowCount:1,rows:[{ledger_id:rows.length}]};
+   }
    if(sql.startsWith('INSERT INTO videobot_stars_ledger')){
      const [key,id,buyer,stars,updateId,seller]=args;
      if(key!==state.delivery_key||state.status!=='sent'||state.listing_status!=='published'||
@@ -30,6 +37,10 @@ function fixture(){
      rows.push({telegram_transaction_id:id,kind:'paid',delivery_key:key,listing_id:'myvid',
        seller_user_id:'44',buyer_user_id:String(buyer),stars,updateId});
      return {rowCount:1,rows:[{ledger_id:1}]};
+   }
+   if(sql.startsWith("SELECT kind,stars,listing_id,buyer_user_id")) {
+     const existing=rows.find(r=>r.telegram_transaction_id===args[0]&&r.kind==='refunded');
+     return {rows:existing?[{...existing}]:[]};
    }
    if(sql.startsWith('SELECT delivery_key')){
      const found=rows.find(r=>r.telegram_transaction_id===args[0]);
@@ -106,4 +117,42 @@ test('invalid seller IDs are rejected before SQL and no payouts can be requested
  await assert.rejects(()=>ledger.getHistory(0),/owner/);
  assert.throws(()=>createPostgresStarsLedger(),/trusted/);
  assert.equal(x.calls.length,0);
+});
+
+test('official Telegram negative refund is idempotently recorded without transferring Stars',async()=>{
+ const x=fixture();
+ await createPostgresStarsLedger(x).confirmPurchase(purchase);
+ x.telegramApi=async(method,params)=>{
+   x.tgCalls.push({method,params});
+   return {transactions:[{id:'transaction-true-123',amount:-300,
+     receiver:{type:'user',user:{id:77}}}]};
+ };
+ const ledger=createPostgresStarsLedger(x);
+ assert.deepEqual(await ledger.confirmRefund('transaction-true-123'),
+   {recorded:true,duplicate:false});
+ assert.deepEqual(await ledger.confirmRefund('transaction-true-123'),
+   {recorded:true,duplicate:true});
+ assert.deepEqual(await ledger.getSummary(44),
+   {grossStars:300,netRecordedStars:0,payoutReady:false});
+ assert.deepEqual(await ledger.getHistory(44),[
+   {type:'refund',stars:300},{type:'sale',stars:300}
+ ]);
+ assert.ok(x.tgCalls.every(c=>c.method==='getStarTransactions'));
+});
+test('refund with unknown sale, wrong buyer, or wrong amount fails closed',async()=>{
+ const x=fixture();
+ const before=createPostgresStarsLedger(x);
+ await assert.rejects(()=>before.confirmRefund('no-such-charge'),/original verified/);
+ await before.confirmPurchase(purchase);
+ for(const wrong of [
+   {id:'transaction-true-123',amount:-299,receiver:{type:'user',user:{id:77}}},
+   {id:'transaction-true-123',amount:-300,receiver:{type:'user',user:{id:66}}},
+   {id:'transaction-true-123',amount:300,source:{type:'user',user:{id:77}}}
+ ]) {
+   const bad=createPostgresStarsLedger({
+     pool:x.pool,telegramApi:async()=>({transactions:[wrong]})
+   });
+   await assert.rejects(()=>bad.confirmRefund('transaction-true-123'),/not verified/);
+ }
+ assert.equal(x.rows.filter(r=>r.kind==='refunded').length,0);
 });
