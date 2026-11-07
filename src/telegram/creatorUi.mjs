@@ -137,7 +137,7 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {
   if (page + 1 < pages) nav.push({ text: '次へ ▶', callback_data: 'video:page:' + (page + 1) });
   if (nav.length) keyboard.push(nav);
   keyboard.push([{ text: '↩ 戻る', callback_data: 'menu:home' }]);
-  return { text: '📦 マイ動画\n' + (owned.length ? (page * 10 + 1) + '〜' + Math.min(owned.length, page * 10 + 10) + ' / ' + owned.length + '件' : 'まだ登録された動画はありません。'), reply_markup: { inline_keyboard: revision ? keyboard.map(row => row.map(b=>({...b,callback_data:b.callback_data+'|r'+revision}))) : keyboard } };
+  return { text: '📦 マイ動画\n' + (owned.length ? (page * 10 + 1) + '〜' + Math.min(owned.length, page * 10 + 10) + ' / ' + owned.length + '件' : 'まだ登録された動画はありません。'), reply_markup: { inline_keyboard: revision ? keyboard.map(row => row.map(b=>({...b,callback_data:b.callback_data==='menu:home'?'menu:home':b.callback_data+'|r'+revision}))) : keyboard } };
 }
 
 export function withdrawalPrompt(availableStars) {
