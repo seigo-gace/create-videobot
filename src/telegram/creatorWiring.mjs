@@ -7,6 +7,7 @@ import {createPostgresPostingReceiptStore} from '../sales/pgPostingReceipts.mjs'
 import {createPostgresStarsLedger} from '../sales/pgStarsLedger.mjs';
 import {createPostgresWebhookUpdateStore} from '../sales/pgWebhookUpdates.mjs';
 import {createVideoMediaProcessor} from './mediaProcessor.mjs';
+import {createVideoBotScreenTransport} from './creatorScreenTransport.mjs';
 
 /**
  * Source-only wiring for the existing VideoBot owner. This does NOT create an
@@ -20,13 +21,14 @@ export function createVideoBotSourceModule({
   mediaRun,storageApproved=false
 }={}) {
   if(typeof pool?.query!=='function'||typeof telegramApi!=='function'||
-      typeof screenTransport?.show!=='function'||!gateOwner||
+      (screenTransport!=null&&typeof screenTransport?.show!=='function')||!gateOwner||
       !mediaPorts||typeof mediaPorts.fetchSource!=='function'||
       typeof mediaPorts.saveGenerated!=='function')
     throw new Error('VideoBot source module missing owned dependencies');
   for(const name of ['getVerifiedVideoTopic','verifyMembership','verifyReview','verifyRelease']) {
     if(typeof gateOwner[name]!=='function')throw new Error('verified GATE owner provider missing: '+name);
   }
+  const screen=screenTransport??createVideoBotScreenTransport(telegramApi);
   const sessionStore=createPostgresCreatorSessionStore(pool);
   const listingStore=createPostgresListingStore(pool);
   const receiptStore=createPostgresPostingReceiptStore(pool);
@@ -44,7 +46,7 @@ export function createVideoBotSourceModule({
   });
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
     api:telegramApi,sessionStore,listingStore,
-    screenTransport,mediaProcessor,publishListing,
+    screenTransport:screen,mediaProcessor,publishListing,
     salesProvider:starsLedger,starsLedger
   });
   const handleTelegramWebhook=createCreatorWebhookAdmission({
