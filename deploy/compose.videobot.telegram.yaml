@@ -45,6 +45,33 @@ services:
       timeout: 6s
       retries: 3
       start_period: 25s
+  videobot-webhook-register:
+    profiles: ["webhook-register"]
+    image: create-videobot:local-telegram
+    pull_policy: never
+    init: true
+    restart: "no"
+    read_only: true
+    user: "1000:1000"
+    command: ["node", "src/runtime/creatorWebhookInstallMain.mjs"]
+    networks:
+      - gserver-private
+    environment:
+      NODE_ENV: production
+      VIDEOBOT_WEBHOOK_REGISTER: "YES"
+      VIDEOBOT_GATE_OWNER_ADAPTER: /opt/videobot/owner/gateOwner.mjs
+      VIDEOBOT_WEBHOOK_URL: ${VIDEOBOT_WEBHOOK_URL:?owner_verified_https_ingress_required}
+      VIDEOBOT_TELEGRAM_TOKEN_FILE: /run/secrets/videobot_telegram_token
+      VIDEOBOT_WEBHOOK_SECRET_FILE: /run/secrets/videobot_webhook_secret
+    volumes:
+      - ${VIDEOBOT_GATE_OWNER_SOURCE:?existing_owner_adapter_required}:/opt/videobot/owner/gateOwner.mjs:ro
+      - ${VIDEOBOT_TELEGRAM_TOKEN_SOURCE:?telegram_token_file_required}:/run/secrets/videobot_telegram_token:ro
+      - ${VIDEOBOT_WEBHOOK_SECRET_SOURCE:?webhook_secret_file_required}:/run/secrets/videobot_webhook_secret:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 16
+    mem_limit: 128m
+    cpus: 0.25
   videobot-migrate:
     profiles: ["schema-migrate"]
     build:
