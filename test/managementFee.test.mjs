@@ -30,7 +30,7 @@ test('fractional Star is shown accurately, not arbitrarily rounded and not treat
  assert.match(msg,/端数処理は未決定/);
  assert.match(msg,/引き出し可能残高ではありません/);
 });
-test('seller's 300 Stars example explicitly shows 90 Stars fee, 210 Stars share',()=>{
+test('a 300 Stars sale shows a 90 Stars fee and a 210 Stars creator share',()=>{
  const msg=managementFeeDisclosure(300);
  assert.match(msg,/300 Stars販売 → 管理費90 Stars／投稿者分210 Stars/);
  assert.equal(splitStarsExact(300).integralSettlementReady,true);
