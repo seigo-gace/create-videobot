@@ -42,6 +42,7 @@ export function openCreatorEditor({ sellerId, existing = null } = {}) {
     paidVideo: existing?.paidVideo ?? null,
     rightsVerified: existing?.rightsVerified === true,
     adultConsentVerified: existing?.adultConsentVerified === true,
+    feeTermsAccepted: existing?.feeTermsAccepted === true,
     dirtyFields: []
   };
 }
@@ -72,7 +73,7 @@ export function editCreatorDraft(draft, action) {
       field = 'sample'; value = null; break;
     case 'preset':
       if (!PRICE_PRESETS.includes(action.stars)) throw new Error('unknown price preset');
-      return { ...draft, priceStars: action.stars, priceMode: 'preset', dirtyFields: [...new Set([...draft.dirtyFields, 'priceStars'])] };
+      return { ...draft, priceStars: action.stars, priceMode: 'preset', feeTermsAccepted:false, dirtyFields: [...new Set([...draft.dirtyFields, 'priceStars'])] };
     case 'custom':
       return { ...draft, priceMode: 'custom' };
     case 'titleInput': {
@@ -81,7 +82,7 @@ export function editCreatorDraft(draft, action) {
         const lines = action.text.replace(/\r\n/g, '\n').split('\n');
         if (lines.length !== 2 || !/^[0-9]+$/.test(lines[1].trim())) throw new Error('enter title on first line and numeric Stars on second line: 夏の思い出動画\\n250');
         const stars = price(Number(lines[1].trim()));
-        return { ...draft, title: title(lines[0]), priceStars: stars, dirtyFields: [...new Set([...draft.dirtyFields, 'title','priceStars'])] };
+        return { ...draft, title: title(lines[0]), priceStars: stars, feeTermsAccepted:false, dirtyFields: [...new Set([...draft.dirtyFields, 'title','priceStars'])] };
       }
       field = 'title'; value = title(action.text); break;
     }
