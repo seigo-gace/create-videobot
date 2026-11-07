@@ -15,6 +15,7 @@
 - 動画添付・タイトル・価格は同じDM画面で管理し、変更箇所だけを更新。既存商品編集時は本人と商品IDを確認、Revision/購入済み権利の保護が必要。
 - 価格ボタン：［50］［100］［300］［500］［1000］［自分で決める］。プリセットはタイトルを1行で送信。自由価格はTelegram通常入力欄から「タイトル」「Stars数」の2行を1メッセージとして送信し検証。新しい独立入力フィールドは増設しない。
 - サンプル動画が30秒超過なら**先頭0〜30秒をFFmpegで自動切り出し**。30秒以下は変換不要。新規と編集に共通の`src/sales/sampleMedia.mjs`を使用。元ファイルは上書きせず、生成失敗時は確定済みデータを維持する。Telegramファイル取得／生成ファイルの再アップロード接続は未実装。
+- ユーザーがサムネ／サンプルを未登録であれば本編動画から**欠けた素材だけ自動生成**（`src/sales/autoPreview.mjs`）。サムネは本編の1フレーム、30秒超の本編からは先頭30秒を無料サンプルへ。30秒以下の有料本編を丸ごと無料公開することはしない（短い動画は本編の約1/3、2秒以下は自動生成を拒否して安全側に倒す）。手動登録済み素材を上書きせず、どのケースも公開前にプレビュー確認する。FFmpegの画像・切り出しコマンドと出力の検証は、商品確定／Telegram実送信とは分離する。
 - サムネとサンプルは`sendMediaGroup`の2件の通常アルバムで各`has_spoiler=true`。Stars購入本編は`sendPaidMedia`の独立メッセージ。送信順、message ID/購入者の既存権利、部分失敗時の補償記録ができるまで公開しない。独自Starsマークを画像に焼き込まない。
 
 ## マイ動画
@@ -27,6 +28,6 @@
 - 実受取・第三者クリエーターへの公式Stars移転経路は未確定。Sourceの`confirmedWithdrawal`は公式移転成功を明示した場合だけ完了表示を作る補助関数であり、送金機能は存在しない。運営換金代行は採用しない。
 
 ## 実装状況と受入
-- 現在のSource：`creatorUi.mjs`、`sampleMedia.mjs`、`freeAlbum.mjs`、`menuPanel.mjs`、`botApi.mjs`を単体テストし、実FFmpegの別途Smokeを実施。
+- 現在のSource：`creatorUi.mjs`、`sampleMedia.mjs`、`autoPreview.mjs`、`freeAlbum.mjs`、`menuPanel.mjs`、`botApi.mjs`を単体テストし、実FFmpegの別途Smokeを実施。
 - **未実施**：Telegram受信からEditorへの配線・取得／アップロード・永続下書き・部分失敗復旧・編集公開・GATE実接続・売上台帳・Stars実受取/払出・権利/規約確認・実機E2E・deploy。
 - 関連Current：[動画販売 #6](https://github.com/seigo-gace/GateApp-Bot/issues/6) と既存[PR #1](https://github.com/seigo-gace/create-videobot/pull/1)。本番公開禁止の現行境界を維持。
