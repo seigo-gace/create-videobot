@@ -9,12 +9,12 @@ import {randomUUID} from 'node:crypto';
  * separately approved Local Bot API Server, not an accidental fallback.
  */
 export function createTelegramVideoFetcher({
-  telegramApi,token,fetchImpl=globalThis.fetch,maxBytes=20_000_000
+  telegramApi,token,fetchImpl=globalThis.fetch,maxBytes=20_000_000,openFile=open
 }={}) {
   if(typeof telegramApi!=='function' || typeof token!=='string' ||
      !/^\d+:[A-Za-z0-9_-]{30,}$/.test(token))
     throw new Error('Telegram fetcher credentials unavailable');
-  if(typeof fetchImpl!=='function'||!Number.isSafeInteger(maxBytes)||
+  if(typeof fetchImpl!=='function'||typeof openFile!=='function'||!Number.isSafeInteger(maxBytes)||
      maxBytes<1||maxBytes>20_000_000)throw new Error('invalid download boundary');
   return async function fetchSource(fileId,dir) {
     if(typeof fileId!=='string'||!/^[A-Za-z0-9_-]{3,256}$/.test(fileId))throw new Error('invalid Telegram file ID');
@@ -33,13 +33,22 @@ export function createTelegramVideoFetcher({
     try {
       const response=await fetchImpl(url,{redirect:'error',signal:AbortSignal.timeout(60000)});
       if(response?.ok!==true||!response.body)throw new Error('Telegram file download failed');
-      fd=await open(target,'wx',0o600);created=true;
+      fd=await openFile(target,'wx',0o600);created=true;
       let size=0;
       for await(const chunk of response.body) {
         const bytes=Buffer.from(chunk);
         size+=bytes.length;
         if(size>maxBytes)throw new Error('download exceeds configured limit');
-        await fd.write(bytes);
+        // FileHandle.write may complete only part of a chunk. A short write
+        // must never result in a silently truncated paid-video preview.
+        let offset=0;
+        while(offset<bytes.length){
+          const result=await fd.write(bytes,offset,bytes.length-offset);
+          const written=result?.bytesWritten;
+          if(!Number.isSafeInteger(written)||written<=0||written>bytes.length-offset)
+            throw new Error('incomplete Telegram media write');
+          offset+=written;
+        }
       }
       if(size===0)throw new Error('downloaded media empty');
       await fd.sync();await fd.close();fd=null;
