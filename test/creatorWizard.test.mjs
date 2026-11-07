@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCreatorWizard } from '../src/telegram/creatorWizard.mjs';
 
-function setup({listingStoreOverride={},publishListing}={}){
+function setup({listingStoreOverride={},publishListing,salesProvider}={}){
   const states=new Map(),calls=[],screens=[];
   const sessionStore={
     async read(id){return states.get(id)??null;},
@@ -43,7 +43,7 @@ function setup({listingStoreOverride={},publishListing}={}){
       return {thumbnail:{fileId:'photo_auto_1'},sample:{fileId:'sample_auto_1',durationSeconds:30}};
     }
   };
-  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor,publishListing});
+  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor,publishListing,salesProvider});
   const callback=(action,id=101,from=33)=>handler.handle({
     callback_query:{id:'cq_'+action,from:{id:from},data:action,
       message:{chat:{id:33,type:'private'},message_id:id}}
@@ -184,4 +184,25 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
  assert.equal(attempts,1);
  await assert.rejects(()=>x.callback('review:publish|r'+revision),/PUBLISH_NEEDS_RECONCILE/);
  assert.equal(attempts,1);
+});
+
+test('existing sales summary and history are shown through injected owner ledger, not duplicate records',async()=>{
+ const x=setup({salesProvider:{
+   async getSummary(id){assert.equal(id,33);return {grossStars:850,availableStars:210,payoutReady:true};},
+   async getHistory(id){assert.equal(id,33);return [{type:'sale',stars:300},{type:'refund',stars:100}];}
+ }});
+ await x.callback('menu:sales');
+ assert.equal(x.states.get(33).screen,'sales');
+ assert.match(x.screens.at(-1).panel.text,/累計売上：850 Stars/);
+ await x.callback('sales:history|r1');
+ assert.equal(x.states.get(33).screen,'sales_history');
+ assert.match(x.screens.at(-1).panel.text,/返金：−100 Stars/);
+ await x.callback('sales:back|r2');
+ assert.equal(x.states.get(33).screen,'sales');
+ await x.callback('sales:withdraw|r3');
+ assert.equal(x.states.get(33).screen,'sales_withdrawal');
+ assert.match(x.screens.at(-1).panel.text,/引き出しは利用できません/);
+ assert.equal(x.states.get(33).waiting,null);
+ await x.callback('menu:home|r4');
+ assert.equal(x.states.get(33).screen,'home');
 });
