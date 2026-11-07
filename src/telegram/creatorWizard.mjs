@@ -41,7 +41,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
 
   async function persistAndRender(ownerId,old,patch,panel) {
     const expected=old?.revision??0;
-    const next={...patch,revision:expected+1};
+    // Never let an unrelated menu screen discard an ambiguous Stars
+    // publication result. Only the verified reconciliation owner may
+    // clear that lock; ordinary UI navigation must preserve it.
+    const next={...patch,revision:expected+1,
+      ...(old?.publishing==='needs_reconcile'?{publishing:'needs_reconcile'}:{})};
     const drawn=typeof panel==='function'?panel(next.revision):panel;
     await sessionStore.write(ownerId,expected,next);
     const result=await screenTransport.show(ownerId,patch.screenMessageId??old?.screenMessageId,drawn);
