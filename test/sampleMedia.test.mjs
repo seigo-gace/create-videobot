@@ -71,7 +71,7 @@ test('no overwriting completed sample; failure does not leave temporary file', (
 
 test('rejects bad duration, broken files and generated overlength without publishing', () => fixture(async ({ dir, input, output }) => {
   await assert.rejects(probeDurationSeconds(input, { run: async () => ({ stdout: 'NaN' }) }), /invalid video duration/);
-  await assert.rejects(prepareSampleVideo({ inputPath: input, outputPath: output, run: fakeMediaRun({ duration: 60, resultDuration: 30.1 }) }), /exceeds 30 seconds/);
+  await assert.rejects(prepareSampleVideo({ inputPath: input, outputPath: output, run: fakeMediaRun({ duration: 60, resultDuration: 30.1 }) }), /exceeds requested length/);
   assert.deepEqual((await readdir(dir)).sort(), ['source.mp4']);
   await assert.rejects(prepareSampleVideo({ inputPath: join(dir, 'missing.mp4'), run: fakeMediaRun({ duration: 10 }) }));
 }));
