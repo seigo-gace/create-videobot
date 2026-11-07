@@ -10,6 +10,8 @@ export function createCreatorBotUpdateHandler(options={}) {
   const wizard=createCreatorWizard(options);
   return async function handleCreatorBotUpdate(update) {
     const message=update?.message;
+    if (message && message.chat?.type !== 'private') return {handled:false};
+    if (update?.callback_query && update.callback_query.message?.chat?.type !== 'private') return {handled:false};
     if(message?.chat?.type==='private' &&
        typeof message.text==='string' &&
        /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text)) {
