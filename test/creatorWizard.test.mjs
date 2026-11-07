@@ -184,6 +184,18 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
  assert.equal(attempts,1);
  await assert.rejects(()=>x.callback('review:publish|r'+revision),/PUBLISH_NEEDS_RECONCILE/);
  assert.equal(attempts,1);
+ await x.callback('menu:home');
+ assert.equal(x.states.get(33).publishing,'needs_reconcile',
+  'returning to home must never clear an ambiguous paid-video send');
+ await x.callback('menu:listing');
+ assert.equal(x.states.get(33).publishing,'needs_reconcile',
+  'reopening the creator editor must preserve reconciliation lock');
+ const reopened=x.states.get(33);
+ await x.callback('edit:preview|r'+reopened.revision);
+ const afterPreview=x.states.get(33);
+ await assert.rejects(()=>x.callback('review:publish|r'+afterPreview.revision),
+  /PUBLISH_NEEDS_RECONCILE/);
+ assert.equal(attempts,1,'menu navigation cannot cause duplicate paid media sends');
 });
 
 test('existing sales summary and history are shown through injected owner ledger, not duplicate records',async()=>{
