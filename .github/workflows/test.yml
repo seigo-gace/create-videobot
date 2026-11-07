@@ -66,3 +66,12 @@ jobs:
           fi
           cols=$(docker exec "$container" psql -X -tA -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_legacy_fee_ci -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='videobot_stars_ledger' AND column_name='management_fee_bps'")
           test "$cols" = "0"
+      - name: Prove actual Docker Node runtime applies six migrations to real PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          container='${{ job.services.postgres.id }}'
+          test -n "$container"
+          docker exec "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d postgres -c 'CREATE DATABASE videobot_migration_ci'
+          docker run --rm --network "container:$container"             -e CI_DOCKER_DB_TEST_ONLY=YES             -e CI_VIDEO_DB_DSN=postgres://videobot_ci:ci_only_not_a_secret@127.0.0.1:5432/videobot_migration_ci             create-videobot:ci node src/runtime/creatorMigrateDockerSmoke.mjs
+
