@@ -68,7 +68,7 @@ export function createPostgresStickerInventory(pool){
       return q.rows?.[0]??null;
     },
     async confirmRegistration({operationId,ownerId,packName,kind:packKind,
-      title,format,fileId,fileUniqueId,position,isDefault=true}){
+      title,format,fileId,fileUniqueId,position,emoji='🙂',isDefault=true}){
       const o=owner(ownerId),op=requiredText(operationId,'OPERATION',128),
         name=requiredText(packName,'PACK_NAME',64),type=kind(packKind),
         t=requiredText(title,'TITLE',64),file=requiredText(fileId,'FILE'),
@@ -86,7 +86,7 @@ export function createPostgresStickerInventory(pool){
         const row=claimed.rows?.[0];
         if(!row||row.pack_name!==name||row.kind!==type||
            row.file_unique_id!==unique||row.format!==format||
-           !['submission_started','needs_reconcile'].includes(row.phase))
+           !['uploaded','submission_started','needs_reconcile','registered'].includes(row.phase))
           throw new Error('STICKER_CONFIRM_RECEIPT_MISMATCH');
         const p=await client.query(
           "INSERT INTO videobot_sticker_packs"+
@@ -105,7 +105,7 @@ export function createPostgresStickerInventory(pool){
           " ON CONFLICT(pack_name,file_unique_id) DO UPDATE"+
           " SET file_id=EXCLUDED.file_id,position=EXCLUDED.position,"+
           " telegram_verified_at=NOW() RETURNING file_unique_id",
-          [name,unique,file,format,'🙂',position]);
+          [name,unique,file,format,requiredText(emoji,'EMOJI',16),position]);
         if(item.rowCount!==1)throw new Error('STICKER_ITEM_SAVE_FAILED');
         const ok=await client.query(
           "UPDATE videobot_sticker_registration_receipts SET phase='registered',"+
