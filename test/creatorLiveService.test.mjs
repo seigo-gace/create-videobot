@@ -6,7 +6,7 @@ const token='123456:'+('x'.repeat(36));
 const secret='S'.repeat(30);
 function dependencies({dbReady=true,identityOk=true}={}){
  const events=[],updates=new Map(),sessions=new Map();
- const pool={async query(sql,args=[]){
+ const pool={async connect(){return {query:this.query.bind(this),release(){}};},async query(sql,args=[]){
   if(sql.startsWith('SELECT to_regclass')){
    return {rows:[{updates:dbReady?'videobot_webhook_updates':null,
     sessions:'videobot_creator_sessions',listings:'videobot_listings',
