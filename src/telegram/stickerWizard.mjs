@@ -16,9 +16,35 @@ function panel(session,revision){
     text:'🎨 ステッカー・絵文字作成\n作成する種類を選択してください。',
     reply_markup:{inline_keyboard:[
       [btn('🎨 ステッカー','sticker:type:regular'),btn('😀 絵文字','sticker:type:custom_emoji')],
+      [btn('📦 マイパック','sticker:packs')],
       [btn('↩ 戻る','sticker:cancel')]
     ]}
   };
+  if(session.screen==='sticker_packs') {
+    const rows=Array.isArray(session.stickerPackRows)?session.stickerPackRows:[];
+    const page=session.stickerPackPage??0;
+    const keys=rows.map((r,i)=>[btn(String(r.title).slice(0,48)+
+      (r.kind==='custom_emoji'?' 😀':' 🎨'),'sticker:pick:'+i)]);
+    keys.push([
+      ...(page>0?[btn('◀ 前へ','sticker:prev')]:[]),
+      ...(rows.length===10?[btn('次へ ▶','sticker:next')]:[])
+    ]);
+    keys.push([btn('↩ 戻る','sticker:back')]);
+    return {text:'📦 マイパック（'+(page+1)+'ページ）'+
+      (rows.length?'\n編集するパックを選択してください。':'\n登録済みパックはありません。'),
+      reply_markup:{inline_keyboard:keys.filter(x=>x.length>0)}};
+  }
+  if(session.screen==='sticker_pack') {
+    const p=session.stickerSelectedPack;
+    if(!p||typeof p.title!=='string')throw new Error('STICKER_PACK_SELECTION_INVALID');
+    return {text:'📦 '+p.title+'\n'+
+      (p.kind==='custom_emoji'?'カスタム絵文字':'ステッカー')+
+      '｜'+(p.item_count??0)+'個\n\n素材を追加できます。',
+      reply_markup:{inline_keyboard:[
+        [btn('➕ このパックに追加','sticker:add')],
+        [btn('↩ マイパックへ','sticker:packs')]
+      ]}};
+  }
   if(session.screen==='sticker_title')return {
     text:'📦 初回のパック名を1行で送信してください（64文字以内）。\n2回目以降は同じパックへ追加します。',
     reply_markup:{inline_keyboard:[[btn('↩ 戻る','sticker:back')]]}
@@ -61,11 +87,14 @@ function mediaFileId(message){
  * session and shared screen transport; preserves video draft and sales state.
  * Conversion/Telegram API mutations are passed as a bounded port.
  */
-export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker}={}){
+export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker,packInventory}={}){
   if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
     typeof screenTransport?.show!=='function'||typeof publishSticker!=='function'||
-    (reconcileSticker!==undefined&&typeof reconcileSticker!=='function'))
+    (reconcileSticker!==undefined&&typeof reconcileSticker!=='function')||
+    (packInventory!==undefined&&(
+      typeof packInventory?.listPacks!=='function'||
+      typeof packInventory?.getOwnedPack!=='function')))
     throw new Error('STICKER_WIZARD_DEPENDENCIES_MISSING');
 
   async function persist(id,old,patch){
@@ -113,10 +142,42 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
         return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null,
           screenMessageId:messageId});
       }
-      const match=/^(sticker:[a-z_]+(?::[a-z_]+)?)\|r([1-9][0-9]*)$/.exec(data);
+      const match=/^(sticker:[a-z_]+(?::[a-z_0-9]+)?)\|r([1-9][0-9]*)$/.exec(data);
       if(!match||Number(match[2])!==old?.revision||messageId!==old?.screenMessageId)
         return {handled:true,staleButton:true};
       const action=match[1],draft=old.stickerDraft??{};
+      if(action==='sticker:packs'||action==='sticker:next'||action==='sticker:prev') {
+        if(!packInventory)throw new Error('STICKER_PACK_INVENTORY_UNAVAILABLE');
+        const prior=old.screen==='sticker_packs'?(old.stickerPackPage??0):0;
+        const page=action==='sticker:next'?prior+1:
+          action==='sticker:prev'?Math.max(0,prior-1):
+          old.screen==='sticker_pack'?(old.stickerPackPage??0):0;
+        const rows=await packInventory.listPacks(id,{limit:10,offset:page*10});
+        return persist(id,old,{screen:'sticker_packs',stickerPackPage:page,
+          stickerPackRows:rows,stickerSelectedPack:null});
+      }
+      if(action.startsWith('sticker:pick:')){
+        if(old.screen!=='sticker_packs'||!packInventory)
+          return {handled:true,staleButton:true};
+        const idx=Number(action.slice('sticker:pick:'.length));
+        const candidate=old.stickerPackRows?.[idx];
+        if(!Number.isSafeInteger(idx)||idx<0||idx>=10||!candidate)
+          return {handled:true,staleButton:true};
+        const p=await packInventory.getOwnedPack(id,candidate.pack_name);
+        if(!p||p.kind!==candidate.kind)return {handled:true,staleButton:true};
+        return persist(id,old,{screen:'sticker_pack',stickerSelectedPack:p});
+      }
+      if(action==='sticker:add'){
+        if(old.screen!=='sticker_pack'||!packInventory||
+           !old.stickerSelectedPack?.pack_name)return {handled:true,staleButton:true};
+        const p=await packInventory.getOwnedPack(id,old.stickerSelectedPack.pack_name);
+        if(!p||p.kind!==old.stickerSelectedPack.kind)
+          return {handled:true,staleButton:true};
+        return persist(id,old,{screen:'sticker_input',stickerDraft:{
+          kind:p.kind,title:p.title,setName:p.pack_name,
+          nonce:randomBytes(8).toString('hex'),fileId:null
+        }});
+      }
       if(action==='sticker:cancel')return persist(id,old,{screen:'home',stickerDraft:null,waiting:null});
       if(action==='sticker:back')return persist(id,old,{
         screen:old.screen==='sticker_ready'?'sticker_input':'sticker_choose',
