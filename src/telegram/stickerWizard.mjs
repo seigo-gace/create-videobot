@@ -37,8 +37,10 @@ function panel(session,revision){
   };
   if(session.screen==='sticker_registering'||session.screen==='sticker_reconcile')return {
     text:session.screen==='sticker_registering'?'⏳ 素材を変換・登録中です。':
-      '⚠️ 登録結果を確認できません。二重登録を避けるため自動再実行しません。',
-    reply_markup:{inline_keyboard:[[btn('↩ メニューへ','sticker:cancel')]]}
+      '⚠️ Telegramの登録結果を確認できません。再登録は行わず、確認だけ実行できます。',
+    reply_markup:{inline_keyboard:session.screen==='sticker_reconcile'
+      ?[[btn('🔄 登録結果を確認','sticker:check')]]
+      :[]}
   };
   if(session.screen==='sticker_done')return {
     text:'✅ Telegramパックへの登録を確認しました。\n'+d.link+
@@ -59,10 +61,11 @@ function mediaFileId(message){
  * session and shared screen transport; preserves video draft and sales state.
  * Conversion/Telegram API mutations are passed as a bounded port.
  */
-export function createStickerWizard({api,sessionStore,screenTransport,publishSticker}={}){
+export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker}={}){
   if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
-    typeof screenTransport?.show!=='function'||typeof publishSticker!=='function')
+    typeof screenTransport?.show!=='function'||typeof publishSticker!=='function'||
+    (reconcileSticker!==undefined&&typeof reconcileSticker!=='function'))
     throw new Error('STICKER_WIZARD_DEPENDENCIES_MISSING');
 
   async function persist(id,old,patch){
@@ -83,11 +86,28 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       const {id,messageId}=privateActor(update);
       await api('answerCallbackQuery',{callback_query_id:cb.id});
       const old=await sessionStore.read(id);
-      // Design v0.6 X10: a Telegram write with unknown result is a durable
-      // registration lock. A menu or stale callback must not erase it.
+      // Design v0.6 X10: allow read-only reconciliation, never a fresh write.
       if(old?.stickerPending?.status==='in_progress'||
          old?.stickerPending?.status==='needs_reconcile'){
-        return {handled:true,registrationLocked:true};
+        const check=/^sticker:check\\|r([1-9][0-9]*)$/.exec(data);
+        if(!check||old.stickerPending.status!=='needs_reconcile'||
+           Number(check[1])!==old.revision||
+           messageId!==old.screenMessageId||
+           typeof reconcileSticker!=='function')
+          return {handled:true,registrationLocked:true};
+        const outcome=await reconcileSticker({owner:id,pending:old.stickerPending})
+          .catch(()=>({status:'unknown',verified:false}));
+        const current=await sessionStore.read(id);
+        if(outcome?.verified!==true||outcome.status!=='registered'||!outcome.name)
+          return {handled:true,registrationLocked:true};
+        const draft=current.stickerDraft??{};
+        const set={name:outcome.name,title:current.stickerPending.title};
+        const saved={...current.stickerSets,[current.stickerPending.kind]:set};
+        const link=current.stickerPending.kind==='custom_emoji'
+          ?'https://t.me/addemoji/'+outcome.name
+          :'https://t.me/addstickers/'+outcome.name;
+        return persist(id,current,{screen:'sticker_done',stickerPending:null,
+          stickerSets:saved,stickerDraft:{...draft,setName:outcome.name,link,fileId:null}});
       }
       if(data==='menu:stickers'){
         return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null,
@@ -124,10 +144,25 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
         const claimed={...old,revision:old.revision+1,screen:'sticker_registering',
           stickerPending:{status:'in_progress',kind:draft.kind,
             setName:draft.setName??null,nonce:draft.nonce,fileId:draft.fileId,
-            title:draft.title}};
+            title:draft.title,phase:'preparing'}};
         await sessionStore.write(id,old.revision,claimed);
         try{
-          const result=await publishSticker({owner:id,draft});
+          const checkpoint=async(stage,receipt)=>{
+            const current=await sessionStore.read(id);
+            if(current?.stickerPending?.status!=='in_progress'||
+               current.stickerPending.fileId!==draft.fileId||
+               current.stickerPending.nonce!==draft.nonce)
+              throw new Error('STICKER_PENDING_SESSION_MISMATCH');
+            await sessionStore.write(id,current.revision,{
+              ...current,revision:current.revision+1,
+              stickerPending:{...current.stickerPending,
+                packName:receipt.name,fileUniqueId:receipt.fileUniqueId,
+                format:receipt.format,phase:stage}
+            });
+          };
+          const result=await publishSticker({owner:id,draft,
+            onUploaded:receipt=>checkpoint('uploaded',receipt),
+            onBeforeMutation:receipt=>checkpoint('submission_started',receipt)});
           if(result?.verified!==true||!result.name)throw new Error('STICKER_REGISTRATION_UNVERIFIED');
           const current=await sessionStore.read(id);
           const set={name:result.name,title:draft.title};
