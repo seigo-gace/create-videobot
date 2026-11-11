@@ -23,6 +23,10 @@ export function createCreatorBotUpdateHandler(options={}) {
     if(message?.chat?.type==='private' &&
        typeof message.text==='string' &&
        /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text)) {
+      if(/\\s+sticker$/.test(message.text.trim())&&typeof options.stickerHandler==='function') {
+        const sticker=await options.stickerHandler(update);
+        if(sticker?.handled)return sticker;
+      }
       return wizard.openHome(update);
     }
     // Sticker-specific private updates share the durable DM screen/session but
