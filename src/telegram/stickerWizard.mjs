@@ -192,13 +192,13 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       // could still show [Register]. Recover the panel without re-registering.
       // This only changes UI state: the Telegram mutation is NEVER reissued.
       if(typeof message.text==='string'&&
-         /^\\/start(?:@[A-Za-z0-9_]+)?(?:\\s|$)/.test(message.text.trim())&&
+         /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text.trim())&&
          old.stickerPending.status==='in_progress'){
         return persist(id,old,{screen:'sticker_reconcile',
           stickerPending:{...old.stickerPending,status:'needs_reconcile'}});
       }
       if(typeof message.text==='string'&&
-         /^\\/start(?:@[A-Za-z0-9_]+)?(?:\\s|$)/.test(message.text.trim())&&
+         /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text.trim())&&
          old.screen!=='sticker_reconcile'){
         return persist(id,old,{screen:'sticker_reconcile'});
       }
