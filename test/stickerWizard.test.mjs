@@ -169,3 +169,35 @@ test('negative readback never retries registration or clears unknown state',asyn
  assert.equal(f.state().stickerPending.status,'needs_reconcile');
  assert.equal(writes,1);
 });
+
+test('interrupted registration restores read-only reconciliation screen on /start',async()=>{
+ const f=fixture();
+ const state=f.state();
+ state.revision=6;
+ state.screen='sticker_registering';
+ state.stickerDraft={kind:'regular',title:'Recovered',fileId:'fileabc',nonce:'112233aabbccddff'};
+ state.stickerPending={status:'in_progress',kind:'regular',title:'Recovered',
+   fileId:'fileabc',nonce:'112233aabbccddff',format:'static',
+   fileUniqueId:'unique-42',packName:'s42_112233aabbccddff_by_CreateVdobot',
+   phase:'submission_started'};
+ let writes=0;
+ const store={read:async()=>structuredClone(state),
+   write:async(_id,rev,next)=>{assert.equal(rev,state.revision);Object.assign(state,structuredClone(next));},
+   setScreen:async(_id,rev,messageId)=>{assert.equal(rev,state.revision);state.screenMessageId=messageId;}};
+ const wizard=createStickerWizard({api:async()=>true,sessionStore:store,
+  screenTransport:{show:async()=>({messageId:301})},
+  publishSticker:async()=>{writes++;throw Error('should never publish');},
+  reconcileSticker:async()=>({status:'registered',verified:true,name:'s42_112233aabbccddff_by_CreateVdobot'})
+ });
+ const res=await wizard.handle(f.msg({text:'/start'}));
+ assert.equal(res.handled,true);
+ assert.equal(state.screen,'sticker_reconcile');
+ assert.equal(state.stickerPending.status,'needs_reconcile');
+ assert.equal(state.stickerPending.fileUniqueId,'unique-42');
+ assert.equal(writes,0);
+ const confirmed=await wizard.handle(f.cb('sticker:check|r'+state.revision));
+ assert.equal(confirmed.handled,true);
+ assert.equal(state.screen,'sticker_done');
+ assert.equal(state.stickerPending,null);
+ assert.equal(writes,0);
+});
