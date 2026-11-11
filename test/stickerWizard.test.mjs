@@ -201,3 +201,35 @@ test('interrupted registration restores read-only reconciliation screen on /star
  assert.equal(state.stickerPending,null);
  assert.equal(writes,0);
 });
+
+test('failure before pack mutation permits retry; after mutation remains locked',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Preflight pack'}));
+ await f.wizard.handle(f.msg({photo:[{file_id:'fileabc'}]}));
+ const store={
+   read:async()=>structuredClone(f.state()),
+   write:async(_id,rev,next)=>{
+     assert.equal(rev,f.state().revision);
+     Object.assign(f.state(),structuredClone(next));
+   },
+   setScreen:async()=>{}
+ };
+ let attempts=0;
+ const wizard=createStickerWizard({
+   api:async()=>true,sessionStore:store,
+   screenTransport:{show:async()=>({messageId:301})},
+   publishSticker:async()=>{
+     attempts++;
+     throw new Error('FFmpeg failed before Telegram pack mutation');
+   }
+ });
+ await wizard.handle(f.cb('sticker:register|r5'));
+ assert.equal(f.state().screen,'sticker_ready');
+ assert.equal(f.state().stickerPending,null);
+ assert.equal(f.state().stickerDraft.fileId,'fileabc');
+ await wizard.handle(f.cb('sticker:register|r'+f.state().revision));
+ assert.equal(attempts,2);
+ assert.equal(f.state().screen,'sticker_ready');
+});
