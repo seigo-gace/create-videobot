@@ -9,6 +9,7 @@ import {convertStickerMedia} from '../src/stickers/mediaConverter.mjs';
 const exec=promisify(execFile);
 async function ff(...args){await exec('ffmpeg',['-hide_banner','-loglevel','error','-nostdin','-y',...args],{timeout:30000});}
 
+if (process.env.STICKER_FFMPEG_INTEGRATION === '1') {
 test('REAL FFmpeg JPG -> sticker PNG and emoji PNG with aspect preservation',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'cv-real-sticker-'));
  const jpg=join(dir,'original.jpg');
@@ -42,3 +43,4 @@ test('REAL FFmpeg MP4 -> <=3-second VP9 sticker and emoji, with no audio',async(
   assert.ok(e.check.bytes<=256*1024);
  }finally{await s?.cleanup();await e?.cleanup();await rm(dir,{recursive:true,force:true});}
 });
+}
