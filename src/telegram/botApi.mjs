@@ -2,7 +2,7 @@
  * Telegram Bot API HTTPS transport. Only explicit allowed methods are exposed.
  * Do not log request URL: it contains the Bot Token.
  */
-const METHODS = new Set(['getMe', 'sendPaidMedia', 'sendMediaGroup', 'deleteMessage', 'getFile', 'getStarTransactions', 'getMyName', 'getMyDescription', 'getMyShortDescription', 'getMyCommands', 'getWebhookInfo', 'setWebhook', 'setMyName', 'setMyDescription', 'setMyShortDescription', 'setMyCommands', 'sendMessage', 'editMessageText', 'answerCallbackQuery']);
+const METHODS = new Set(['getMe', 'sendPaidMedia', 'sendMediaGroup', 'deleteMessage', 'getFile', 'getStarTransactions', 'getMyName', 'getMyDescription', 'getMyShortDescription', 'getMyCommands', 'getWebhookInfo', 'setWebhook', 'setMyName', 'setMyDescription', 'setMyShortDescription', 'setMyCommands', 'sendMessage', 'editMessageText', 'answerCallbackQuery', 'uploadStickerFile', 'getStickerSet', 'createNewStickerSet', 'addStickerToSet', 'replaceStickerInSet', 'deleteStickerFromSet', 'setStickerPositionInSet', 'setStickerEmojiList', 'setStickerSetTitle', 'deleteStickerSet', 'sendInvoice', 'answerPreCheckoutQuery']);
 export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeoutMs=8000}) {
  if(typeof token!=='string' || !/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)) throw new Error('invalid Bot Token');
  if(typeof fetchImpl!=='function') throw new Error('fetch implementation required');
@@ -10,9 +10,31 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
  return async function telegramBotApi(method, params={}) {
   if(!METHODS.has(method)) throw new Error('Telegram method not allowed');
   if(!params || typeof params!=='object'||Array.isArray(params)) throw new Error('invalid Telegram parameters');
+  // Telegram sticker-file upload is multipart, while all existing methods
+  // remain JSON. Keep one authenticated/sanitized transport for both.
+  let body,headers;
+  if(method==='uploadStickerFile'){
+    const bytes=params.sticker;
+    const fmt=params.sticker_format;
+    if(!Number.isSafeInteger(params.user_id)||params.user_id<=0||
+       !(bytes instanceof Uint8Array)||bytes.byteLength===0||
+       !['static','video'].includes(fmt)||
+       bytes.byteLength>(fmt==='video'?256*1024:512*1024))
+      throw new Error('invalid Telegram sticker upload');
+    const form=new FormData();
+    form.set('user_id',String(params.user_id));
+    form.set('sticker_format',fmt);
+    form.set('sticker',new Blob([bytes],{type:fmt==='video'?'video/webm':'image/png'}),
+      fmt==='video'?'sticker.webm':'sticker.png');
+    body=form;
+    headers=undefined; // fetch provides the multipart boundary
+  } else {
+    body=JSON.stringify(params);
+    headers={'content-type':'application/json'};
+  }
   const response=await fetchImpl('https://api.telegram.org/bot'+token+'/'+method,{
-   method:'POST',headers:{'content-type':'application/json'},
-   body:JSON.stringify(params),signal:AbortSignal.timeout(timeoutMs),redirect:'error'
+   method:'POST',...(headers?{headers}:{}),
+   body,signal:AbortSignal.timeout(timeoutMs),redirect:'error'
   });
   if(!response)throw new Error('Telegram API request failed');
   // Only known edit-screen failures may be converted into predictable UI
