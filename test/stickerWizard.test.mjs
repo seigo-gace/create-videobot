@@ -278,3 +278,37 @@ test('pre-submission conversion error tells creator what to do without raw excep
  assert.equal(f.state().stickerPending,null);
  assert.match(f.state().stickerHelp,/容量上限/);
 });
+
+test('PDF is explained and can be replaced by image/video in common DM panel',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Easy pack'}));
+ await f.wizard.handle(f.msg({document:{file_id:'pdf_file',mime_type:'application/pdf',file_size:5000}}));
+ assert.equal(f.state().screen,'sticker_input');
+ assert.match(f.state().stickerHelp,/画像・動画ではありません/);
+ assert.equal(f.state().stickerDraft.fileId,null);
+ await f.wizard.handle(f.msg({photo:[{file_id:'jpg_image',file_size:3000}]}));
+ assert.equal(f.state().screen,'sticker_ready');
+ assert.equal(f.state().stickerHelp,null);
+ await f.wizard.handle(f.cb('sticker:replace|r'+f.state().revision));
+ assert.equal(f.state().screen,'sticker_input');
+ assert.equal(f.state().stickerDraft.fileId,null);
+ await f.wizard.handle(f.msg({video:{file_id:'movie_clip',file_size:8000}}));
+ assert.equal(f.state().screen,'sticker_ready');
+ assert.equal(f.state().stickerDraft.fileId,'movie_clip');
+ assert.equal(f.calls.filter(c=>c[0]==='publish').length,0);
+});
+test('invalid pack title is explained and corrected without new DM message',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'   '}));
+ assert.equal(f.state().screen,'sticker_title');
+ assert.match(f.state().stickerHelp,/1〜64文字/);
+ await f.wizard.handle(f.msg({text:'Corrected name'}));
+ assert.equal(f.state().screen,'sticker_input');
+ assert.equal(f.state().stickerHelp,null);
+ assert.equal(f.state().stickerDraft.title,'Corrected name');
+ assert.equal(f.calls.filter(c=>c[0]==='sendMessage').length,0);
+});
