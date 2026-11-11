@@ -83,6 +83,12 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       const {id,messageId}=privateActor(update);
       await api('answerCallbackQuery',{callback_query_id:cb.id});
       const old=await sessionStore.read(id);
+      // Design v0.6 X10: a Telegram write with unknown result is a durable
+      // registration lock. A menu or stale callback must not erase it.
+      if(old?.stickerPending?.status==='in_progress'||
+         old?.stickerPending?.status==='needs_reconcile'){
+        return {handled:true,registrationLocked:true};
+      }
       if(data==='menu:stickers'){
         return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null,
           screenMessageId:messageId});
@@ -114,7 +120,11 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           return {handled:true,staleButton:true};
         // Claim revision BEFORE side effects; any error remains non-retryable
         // until an explicit reconciliation of the actual Telegram set.
-        const claimed={...old,revision:old.revision+1,screen:'sticker_registering'};
+        if(old.stickerPending) return {handled:true,registrationLocked:true};
+        const claimed={...old,revision:old.revision+1,screen:'sticker_registering',
+          stickerPending:{status:'in_progress',kind:draft.kind,
+            setName:draft.setName??null,nonce:draft.nonce,fileId:draft.fileId,
+            title:draft.title}};
         await sessionStore.write(id,old.revision,claimed);
         try{
           const result=await publishSticker({owner:id,draft});
@@ -125,11 +135,12 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           const link=draft.kind==='custom_emoji'
             ?'https://t.me/addemoji/'+result.name
             :'https://t.me/addstickers/'+result.name;
-          return persist(id,current,{screen:'sticker_done',stickerSets:saved,
+          return persist(id,current,{screen:'sticker_done',stickerPending:null,stickerSets:saved,
             stickerDraft:{...draft,setName:result.name,link,fileId:null}});
         }catch{
           const current=await sessionStore.read(id);
-          return persist(id,current,{screen:'sticker_reconcile'});
+          return persist(id,current,{screen:'sticker_reconcile',
+            stickerPending:{...current.stickerPending,status:'needs_reconcile'}});
         }
       }
       return {handled:true,staleButton:true};
@@ -140,6 +151,9 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     // Telegram standard /start deep-link from the pinned public Topic.
     if(typeof message.text==='string'&&
        /^\/start(?:@[A-Za-z0-9_]+)?\s+sticker$/.test(message.text.trim())) {
+      if(old?.stickerPending?.status==='in_progress'||
+         old?.stickerPending?.status==='needs_reconcile')
+        return {handled:true,registrationLocked:true};
       return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null});
     }
     if(old?.screen==='sticker_title'){
