@@ -53,6 +53,7 @@ jobs:
             docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < "$sql"
           done
           docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < test/sqlSchemaSmoke.sql
+          docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < test/sqlStickerSmoke.sql
           docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < test/sqlWebhookUpdateSmoke.sql
           # Repeating the policy migration must be safe after initial adoption.
           docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < sql/005_management_fee_30.sql
