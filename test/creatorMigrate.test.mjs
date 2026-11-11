@@ -13,7 +13,7 @@ function pool({failAt}={}){
   release(){released.push(true);}
  };}};
 }
-test('all six VideoBot migrations run in one locked transaction with no GATE mutations',async()=>{
+test('all seven VideoBot migrations run in one locked transaction with no GATE mutations',async()=>{
  const db=pool(),loaded=[];
  const result=await applyCreatorSchema({pool:db,loadSql:async name=>{
   loaded.push(name);return 'CREATE TABLE IF NOT EXISTS test_'+loaded.length+' (id int)';
