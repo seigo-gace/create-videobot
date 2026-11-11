@@ -233,3 +233,48 @@ test('failure before pack mutation permits retry; after mutation remains locked'
  assert.equal(attempts,2);
  assert.equal(f.state().screen,'sticker_ready');
 });
+
+test('unsupported material gets explanatory guidance in the same DM screen',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:custom_emoji|r2'));
+ await f.wizard.handle(f.msg({text:'Friendly emoji'}));
+ const r=await f.wizard.handle(f.msg({text:'PDF please'}));
+ assert.equal(r.handled,true);
+ assert.equal(f.state().screen,'sticker_input');
+ assert.match(f.state().stickerHelp,/JPG\/PNG/);
+ assert.equal(f.state().draft.paidVideo.fileId,'preserve-video');
+ await f.wizard.handle(f.msg({document:{file_id:'valid_image'}}));
+ assert.equal(f.state().screen,'sticker_ready');
+ assert.equal(f.state().stickerHelp,null);
+});
+test('oversize media explains 20MB limit before any registration',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Normal pack'}));
+ await f.wizard.handle(f.msg({video:{file_id:'large_video',file_size:20_000_001}}));
+ assert.equal(f.state().screen,'sticker_input');
+ assert.match(f.state().stickerHelp,/20MB/);
+ assert.equal(f.state().stickerDraft.fileId,null);
+ assert.equal(f.calls.filter(c=>c[0]==='publish').length,0);
+});
+test('pre-submission conversion error tells creator what to do without raw exception',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Conversion pack'}));
+ await f.wizard.handle(f.msg({photo:[{file_id:'photo_file'}]}));
+ const store={read:async()=>structuredClone(f.state()),
+   write:async(_id,revision,next)=>{
+     assert.equal(revision,f.state().revision);
+     Object.assign(f.state(),structuredClone(next));
+   },setScreen:async()=>{}};
+ const wizard=createStickerWizard({api:async()=>true,sessionStore:store,
+   screenTransport:{show:async()=>({messageId:301})},
+   publishSticker:async()=>{throw new Error('STICKER_OUTPUT_SIZE_EXCEEDED');}});
+ await wizard.handle(f.cb('sticker:register|r5'));
+ assert.equal(f.state().screen,'sticker_ready');
+ assert.equal(f.state().stickerPending,null);
+ assert.match(f.state().stickerHelp,/容量上限/);
+});
