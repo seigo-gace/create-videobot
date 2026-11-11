@@ -137,6 +137,11 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     if(!message||message.chat?.type!=='private')return {handled:false};
     const {id}=privateActor(update);
     const old=await sessionStore.read(id);
+    // Telegram standard /start deep-link from the pinned public Topic.
+    if(typeof message.text==='string'&&
+       /^\\/start(?:@[A-Za-z0-9_]+)?\\s+sticker$/.test(message.text.trim())) {
+      return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null});
+    }
     if(old?.screen==='sticker_title'){
       const title=message.text?.trim();
       try{
