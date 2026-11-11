@@ -119,6 +119,16 @@ export function createPostgresStickerInventory(pool){
         throw error;
       }finally{client.release();}
     },
+    async getOwnedPack(ownerId,packName){
+      const q=await pool.query(
+        "SELECT p.pack_name,p.owner_user_id,p.kind,p.title,p.format,p.is_default,p.status,"+
+        " (SELECT COUNT(*)::INTEGER FROM videobot_sticker_items i"+
+        " WHERE i.pack_name=p.pack_name) AS item_count"+
+        " FROM videobot_sticker_packs p"+
+        " WHERE p.pack_name=$2 AND p.owner_user_id=$1 AND p.status='active'",
+        [owner(ownerId),requiredText(packName,'PACK_NAME',64)]);
+      return q.rows?.[0]??null;
+    },
     async listPacks(ownerId,{limit=10,offset=0}={}){
       if(!Number.isSafeInteger(limit)||limit<1||limit>10||
          !Number.isSafeInteger(offset)||offset<0)
