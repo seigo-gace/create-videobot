@@ -1,7 +1,8 @@
 const PAGES=Object.freeze({
  home:{text:'🎬 クリエータービデオ\n\n動画の投稿・管理・売上確認ができます。\n販売売上から運営管理費30%を控除し、投稿者分は70%です。',buttons:[
   [['🎬 動画を投稿','menu:listing'],['📦 マイ動画','menu:manage']],
-  [['⭐ 売上・引き出し','menu:sales']]
+  [['⭐ 売上・引き出し','menu:sales']],
+  [['🎨 ステッカー・絵文字','menu:stickers']]
  ]},
  listing:{text:'🎬 新しい動画を投稿\n\n管理費は売上の30%、投稿者分は70%です。実Telegram投稿はまだ接続されていません。',buttons:[[['↩ 戻る','menu:home']]]},
  manage:{text:'📦 マイ動画\n\n本人の動画一覧・編集・削除は現在開発中です。実データにはまだ接続されていません。',buttons:[[['↩ 戻る','menu:home']]]},
