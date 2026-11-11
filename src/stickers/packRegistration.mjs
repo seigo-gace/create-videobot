@@ -1,5 +1,4 @@
-import {readFile,stat} from 'node:fs/promises';
-import {createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 
 function ownerId(value) {
   if(!Number.isSafeInteger(value)||value<=0)throw new Error('STICKER_OWNER_INVALID');
@@ -32,13 +31,37 @@ function validEmoji(value){
      /[\r\n]/.test(value))throw new Error('STICKER_EMOJI_INVALID');
   return value;
 }
-function stickerIdentity(set,uploaded,kind,format) {
+export function stickerIdentity(set,uploaded,kind,format) {
   if(!set||!Array.isArray(set.stickers)||
      set.sticker_type!==kind)return false;
   return set.stickers.some(s=>
     s.file_unique_id===uploaded.file_unique_id &&
     (format==='video'?s.is_video===true:s.is_video!==true&&s.is_animated!==true));
 }
+/**
+ * Reconcile only by the uploaded Telegram file_unique_id and exact pack type.
+ * A missing or unreadable set is UNKNOWN, not permission to resubmit a write.
+ */
+export async function reconcileStickerRegistration({
+  telegramApi,name,kind,format,fileUniqueId
+}={}) {
+  if(typeof telegramApi!=='function'||typeof name!=='string'||
+     !/^[A-Za-z][A-Za-z0-9_]{1,63}$/.test(name)||
+     typeof fileUniqueId!=='string'||fileUniqueId.length<1)
+    throw new Error('STICKER_RECONCILE_RECEIPT_INVALID');
+  const type=packType(kind),fmt=formatValue(format);
+  let set;
+  try {set=await telegramApi('getStickerSet',{name});}
+  catch {return {status:'unknown',verified:false};}
+  if(!set||set.sticker_type!==type||!Array.isArray(set.stickers))
+    return {status:'unknown',verified:false};
+  if(stickerIdentity(set,{file_unique_id:fileUniqueId},type,fmt))
+    return {status:'registered',verified:true,name};
+  // No match in the current snapshot does not prove the write did not occur:
+  // Telegram API visibility, delayed response, and manual removal are distinct.
+  return {status:'not_observed',verified:false,name};
+}
+
 async function safelyReadSet(api,name){
   try{return await api('getStickerSet',{name});}
   catch{return null;}
@@ -50,7 +73,8 @@ async function safelyReadSet(api,name){
  */
 export async function registerStickerAsset({
   telegramApi,owner,botUsername,title,nonce,kind='regular',format,
-  mediaPath,emoji='🙂',existingSetName=null
+  mediaPath,emoji='🙂',existingSetName=null,
+  onUploaded, onBeforeMutation
 }={}){
   if(typeof telegramApi!=='function')throw new Error('STICKER_API_REQUIRED');
   const user_id=ownerId(owner);
@@ -82,6 +106,13 @@ export async function registerStickerAsset({
     typeof uploaded?.file_unique_id!=='string'||!uploaded.file_unique_id)
     throw new Error('STICKER_UPLOAD_RECEIPT_INVALID');
 
+  // Persist Telegram's immutable content identity before any pack mutation.
+  // Callback failures prevent the mutation; they must never be ignored.
+  if(onUploaded!==undefined) {
+    if(typeof onUploaded!=='function')throw new Error('STICKER_RECEIPT_CALLBACK_INVALID');
+    await onUploaded({name,kind:sticker_type,format:stickerFormat,
+      fileUniqueId:uploaded.file_unique_id});
+  }
   const input={sticker:uploaded.file_id,format:stickerFormat,emoji_list:[emojiValue]};
   const before=await safelyReadSet(telegramApi,name);
   if(before){
@@ -91,6 +122,12 @@ export async function registerStickerAsset({
     if(existingSetName===null)throw new Error('STICKER_NEW_PACK_NAME_CONFLICT');
   }else if(existingSetName!==null)throw new Error('STICKER_EXISTING_PACK_NOT_FOUND');
 
+  if(onBeforeMutation!==undefined){
+    if(typeof onBeforeMutation!=='function')throw new Error('STICKER_MUTATION_CALLBACK_INVALID');
+    // Commit the 'may have mutated Telegram' phase before performing it.
+    await onBeforeMutation({name,kind:sticker_type,format:stickerFormat,
+      fileUniqueId:uploaded.file_unique_id});
+  }
   let requestError=null;
   try{
     const result=existingSetName!==null?
