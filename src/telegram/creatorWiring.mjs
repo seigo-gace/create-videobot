@@ -13,6 +13,7 @@ import {createTelegramPrivateMediaUploader} from './privateMediaUpload.mjs';
 import {createStickerWizard} from './stickerWizard.mjs';
 import {convertStickerMedia} from '../stickers/mediaConverter.mjs';
 import {registerStickerAsset,reconcileStickerRegistration,createStickerSetShortName} from '../stickers/packRegistration.mjs';
+import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -51,6 +52,7 @@ export function createVideoBotSourceModule({
   const receiptStore=createPostgresPostingReceiptStore(pool);
   const updateStore=createPostgresWebhookUpdateStore(pool);
   const starsLedger=createPostgresStarsLedger({pool,telegramApi});
+  const stickerInventory=createPostgresStickerInventory(pool);
   const mediaProcessor=createVideoMediaProcessor({
     ...ports,run:mediaRun,storageApproved
   });
@@ -75,10 +77,38 @@ export function createVideoBotSourceModule({
       const identity=await telegramApi('getMe',{});
       if(typeof identity?.username!=='string'||identity.is_bot!==true)
         throw new Error('STICKER_BOT_IDENTITY_INVALID');
-      return registerStickerAsset({telegramApi,owner,
-        botUsername:identity.username,title:draft.title,nonce:draft.nonce,
-        kind:draft.kind,format:converted.format,mediaPath:converted.path,
-        existingSetName:draft.setName??null,onUploaded,onBeforeMutation});
+      const packName=draft.setName??
+        createStickerSetShortName({owner,botUsername:identity.username,nonce:draft.nonce});
+      const operationId='s'+String(owner)+'_'+draft.nonce;
+      await stickerInventory.beginRegistration({operationId,ownerId:owner,
+        packName,kind:draft.kind,sourceFileId:draft.fileId});
+      try{
+        return await registerStickerAsset({telegramApi,owner,
+          botUsername:identity.username,title:draft.title,nonce:draft.nonce,
+          kind:draft.kind,format:converted.format,mediaPath:converted.path,
+          existingSetName:draft.setName??null,
+          onUploaded:async receipt=>{
+            await stickerInventory.uploaded({operationId,ownerId:owner,
+              format:receipt.format,fileUniqueId:receipt.fileUniqueId});
+            await onUploaded?.(receipt);
+          },
+          onBeforeMutation:async receipt=>{
+            await stickerInventory.submitting({operationId,ownerId:owner});
+            await onBeforeMutation?.(receipt);
+          },
+          onVerified:async receipt=>{
+            const item=receipt.item;
+            await stickerInventory.confirmRegistration({
+              operationId,ownerId:owner,packName:receipt.name,kind:draft.kind,
+              title:draft.title,format:receipt.format,fileId:item.file_id,
+              fileUniqueId:item.file_unique_id,position:item.position,
+              emoji:item.emoji??'🙂',isDefault:draft.setName==null
+            });
+          }});
+      }catch(error){
+        await stickerInventory.needsReconcile({operationId,ownerId:owner}).catch(()=>{});
+        throw error;
+      }
     }finally{
       await converted?.cleanup();
       await fetched?.cleanup();
@@ -93,9 +123,23 @@ export function createVideoBotSourceModule({
       createStickerSetShortName({owner,botUsername:identity.username,nonce:pending.nonce});
     if(!pending.fileUniqueId||!pending.format)
       return {status:'unknown',verified:false};
-    return reconcileStickerRegistration({telegramApi,name,
+    const result=await reconcileStickerRegistration({telegramApi,name,
       kind:pending.kind,format:pending.format,
       fileUniqueId:pending.fileUniqueId});
+    if(result.verified===true){
+      const operationId='s'+String(owner)+'_'+pending.nonce;
+      const stored=await stickerInventory.getRegistration({operationId,ownerId:owner});
+      if(!stored||stored.pack_name!==name||stored.file_unique_id!==pending.fileUniqueId)
+        return {status:'unknown',verified:false};
+      await stickerInventory.confirmRegistration({
+        operationId,ownerId:owner,packName:name,kind:pending.kind,
+        title:pending.title,format:pending.format,
+        fileId:result.item.file_id,fileUniqueId:result.item.file_unique_id,
+        position:result.item.position,emoji:result.item.emoji??'🙂',
+        isDefault:pending.setName==null
+      });
+    }
+    return result;
   };
   const stickerWizard=createStickerWizard({
     api:telegramApi,sessionStore,screenTransport:screen,
@@ -114,6 +158,6 @@ export function createVideoBotSourceModule({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
     listingStore,sessionStore,receiptStore,starsLedger,updateStore,
-    publishListing,handleCreatorUpdate
+    stickerInventory,publishListing,handleCreatorUpdate
   });
 }
