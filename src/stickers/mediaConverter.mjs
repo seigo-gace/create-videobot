@@ -30,7 +30,9 @@ function filterGeometry(g,video) {
   const scale='scale='+g.drawWidth+':'+g.drawHeight+':flags=lanczos';
   const pad=(g.canvasWidth===g.drawWidth&&g.canvasHeight===g.drawHeight)
     ?'':'pad='+g.canvasWidth+':'+g.canvasHeight+':'+g.left+':'+g.top+':color=black@0';
-  return [scale,pad,video?'format=yuva420p':'format=rgba'].filter(Boolean).join(',');
+  // Padding must happen in an alpha-capable pixel format; otherwise
+  // black@0 becomes opaque when the source has no alpha channel.
+  return [scale,'format=rgba',pad,...(video?['format=yuva420p']:[])].filter(Boolean).join(',');
 }
 async function verifyOutput(path,kind,isVideo) {
   const file=await stat(path);
