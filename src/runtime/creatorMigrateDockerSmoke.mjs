@@ -9,8 +9,8 @@ const pool=new Pool({connectionString:process.env.CI_VIDEO_DB_DSN,max:1});
 try {
  const result=await applyCreatorSchema({pool});
  if(result.applied!==true||result.migrations!==7)throw new Error('seven migrations not confirmed');
- const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger");
- if(q.rows.length!==1||q.rows[0].webhook!==true||q.rows[0].ledger!==true)
+ const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts");
+ if(q.rows.length!==1||!Object.values(q.rows[0]).every(v=>v===true))
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
