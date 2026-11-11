@@ -83,6 +83,10 @@ test('unknown Telegram registration is locked and never auto retried',async()=>{
  assert.equal(menuAttempt.registrationLocked,true);
  const linkAttempt=await broken.handle(f.msg({text:'/start sticker'}));
  assert.equal(linkAttempt.registrationLocked,true);
+ const genericStart=await broken.handle(f.msg({text:'/start'}));
+ assert.equal(genericStart.registrationLocked,true);
+ const inputAttempt=await broken.handle(f.msg({document:{file_id:'fileghi'}}));
+ assert.equal(inputAttempt.registrationLocked,true);
  assert.equal(f.state().screen,'sticker_reconcile');
  assert.equal(f.state().stickerPending.fileId,'filedef');
 });
