@@ -25,6 +25,12 @@ export function createCreatorBotUpdateHandler(options={}) {
        /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text)) {
       return wizard.openHome(update);
     }
+    // Sticker-specific private updates share the durable DM screen/session but
+    // must not be parsed by the paid-video wizard or sales ledger.
+    if(typeof options.stickerHandler==='function') {
+      const sticker=await options.stickerHandler(update);
+      if(sticker?.handled===true)return sticker;
+    }
     let creatorResult;
     try {
       creatorResult=await wizard.handle(update);
