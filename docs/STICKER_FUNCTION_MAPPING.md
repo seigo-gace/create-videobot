@@ -21,7 +21,7 @@
 | S03 | 長辺512/100、縦横比保持 | src/stickers/geometry.mjs | mediaConverter.mjs | test/stickerGeometry.test.mjs |
 | S04 | PNG、VP9、3秒、容量、透明余白 | src/stickers/mediaConverter.mjs | Gserver既存FFmpeg Docker | stickerRealFfmpeg.test.mjs、全形式Telegram登録未検証 |
 | S05 | uploadStickerFile、create/add、getStickerSet | src/stickers/packRegistration.mjs | telegram/botApi.mjs | stickerPackRegistration.test.mjs、Telegram実登録未検証 |
-| S06 | UNKNOWN再送防止/登録復旧 | stickerWizard.mjs、packRegistration.mjs、pgStickerInventory.mjs | 既存CAS session、Webhook | test/stickerWizard.test.mjs、DB本番/再起動未検証 |
+| S06 | UNKNOWN再送防止/登録復旧 | stickerWizard.mjs、packRegistration.mjs、pgStickerInventory.mjs | 既存CAS session、Webhook | test/stickerWizard.test.mjs、test/sqlStickerSmoke.sql、src/runtime/creatorMigrateDockerSmoke.mjs。CI PostgreSQL 7 migrationあり、DB本番/再起動未検証 |
 | S07 | パック一覧・本人追加 | stickerWizard.mjs、pgStickerInventory.mjs | 既存DM画面/VideoBot PostgreSQL | Sourceあり、実機未検証 |
 | S08 | パック置換・削除・順番・タイトル | Bot API allowlistはbotApi.mjs | 所有者・Telegramセット確認 | 画面/実機受入未完了 |
 | S09 | 販売商品版・購入前承諾 | 現行Source未確認 | VideoBot商品台帳、動画決済とは分離 | 未実装/未検証 |
@@ -36,7 +36,7 @@
 | 保存対象 | 既存Owner | 禁止事項 |
 |---|---|---|
 | DM状態・画面ID・revision | videobot_creator_sessions | 動画下書き消失、共通画面を増殖 |
-| パック/ステッカー/登録受付 | videobot_sticker_packs、videobot_sticker_items、videobot_sticker_registration_receipts | UNKNOWNから無条件再送、Owner不一致の更新 |
+| パック/ステッカー/登録受付 | videobot_sticker_packs、videobot_sticker_items、videobot_sticker_registration_receipts（sql/007_sticker_packs.sql） | UNKNOWNから無条件再送、Owner不一致の更新 |
 | Stars注文/商品/納品 | VideoBot（動画と商品別責務） | 動画sendPaidMediaレシートをinvoice扱いに流用 |
 | Topic/GATE/公開権限 | GateApp-Bot正規台帳・既存Owner | URL末尾4640をthread_idと断定 |
 | 原素材 | getFile/private一時処理 | Public Repoに実データ・Tokenを記録 |
@@ -55,3 +55,12 @@
 各機能Issueに (1)採用仕様と決定者 (2)Source path・commitとOwner (3)CI run (4)Host request/稼働 HEAD (5)Telegram本番 readback/受入 を分けて残す。UNKNOWNやNOT_VERIFIEDを成功へ書き換えない。
 ソース変更は設計確認→実際の担当パスと依存を照合→変更→テスト→CI→Host→Telegramの順に実証。PRは実装の横断統合記録、Issueは機能別受入の入口。
 動画管理費30%は動画のみ確定。通常の返金申請UIなしと法令・Telegramの決済紛争対応は別。公開Telegramパックの購入者限定利用は保証しない。
+
+## 本番反映におけるSource所有境界（2026-11-12実測）
+
+- Gserver read-only request req_20261112064000000000c021: exit0。実行結果は公開メタデータだけで、実stdout回収は未完。
+- Feature HEAD限定の安全照合 req_20261112070000000000c024: exit74（現在のcheckout branchがfeat/assistant-ai-and-sales-coreではない）。
+- 既存feature worktree検索 req_20261112070500000000c025: exit72（該当branchの一意な既存worktreeを確認できない）。
+- 現在checkoutを保護する切替可否 req_20261112071000000000c026: exit80（現branchはmain/masterではなく、別の変更を所有する可能性）。破壊的なgit switch/clone/worktree追加を行わない。
+- Source CI: https://github.com/seigo-gace/create-videobot/actions/runs/43105210091 success。ただしGserver反映/TG登録/Stars購入/Topic pinのPASSではない。
+- 本番完了には既存checkoutの正規所有者・反映先・稼働Compose/Secret/DB/Telegram実機を実測して、所有権を崩さない既存経路で反映する必要がある。現在のデプロイはNOT_VERIFIED。
