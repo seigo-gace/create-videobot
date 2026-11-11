@@ -235,6 +235,14 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
             stickerDraft:{...draft,setName:result.name,link,fileId:null}});
         }catch{
           const current=await sessionStore.read(id);
+          // The only pack-writing APIs run AFTER submission_started is
+          // durably recorded. Failures before that phase cannot have written
+          // a pack, so allow the user to correct/retry the same media safely.
+          // Once submission_started is recorded, never retry without readback.
+          const phase=current?.stickerPending?.phase;
+          if(phase==='preparing'||phase==='uploaded'){
+            return persist(id,current,{screen:'sticker_ready',stickerPending:null});
+          }
           return persist(id,current,{screen:'sticker_reconcile',
             stickerPending:{...current.stickerPending,status:'needs_reconcile'}});
         }
