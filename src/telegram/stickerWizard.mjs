@@ -132,6 +132,18 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       await sessionStore.setScreen(id,revision,result.messageId);
     return {handled:true,revision,messageId:result.messageId};
   }
+  async function deleteInputOrWarn(id,messageId){
+    try{await api('deleteMessage',{chat_id:id,message_id:messageId});}
+    catch{
+      // TGtumbler common DM contract: do not claim that an undeleted input
+      // has disappeared. Preserve previous guidance and the selected draft.
+      const current=await sessionStore.read(id);
+      if(!current||!['sticker_title','sticker_input','sticker_ready'].includes(current.screen))return;
+      const guidance='入力メッセージを自動で削除できませんでした。ご自身で送信したメッセージを長押しして削除してください。';
+      if(current.stickerHelp?.includes(guidance))return;
+      return persist(id,current,{stickerHelp:[current.stickerHelp,guidance].filter(Boolean).join(' ')});
+    }
+  }
   async function handle(update){
     const message=update?.message,cb=update?.callback_query;
     if(cb){
@@ -316,7 +328,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
             stickerHelp:'パック名は1行の1〜64文字で入力してください。空欄や改行は使えません。'});
         return persist(id,old,{screen:'sticker_input',stickerHelp:null,
           stickerDraft:{...old.stickerDraft,title}});
-      }finally{await api('deleteMessage',{chat_id:id,message_id:message.message_id}).catch(()=>{});}
+      }finally{await deleteInputOrWarn(id,message.message_id);}
     }
     if(old?.screen==='sticker_input'){
       const fileId=mediaFileId(message);
@@ -334,7 +346,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
             stickerHelp:stickerHelp(new Error('STICKER_INPUT_SIZE_INVALID'))});
         return persist(id,old,{screen:'sticker_ready',stickerHelp:null,
           stickerDraft:{...old.stickerDraft,fileId}});
-      }finally{await api('deleteMessage',{chat_id:id,message_id:message.message_id}).catch(()=>{});}
+      }finally{await deleteInputOrWarn(id,message.message_id);}
     }
     return {handled:false};
   }
