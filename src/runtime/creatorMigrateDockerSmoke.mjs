@@ -14,6 +14,6 @@ try {
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==6)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==7)throw new Error('schema re-application invalid');
  process.stdout.write('DOCKER_NODE_POSTGRES_MIGRATION=PASS\n');
 }finally{await pool.end();}
