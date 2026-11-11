@@ -90,3 +90,82 @@ test('unknown Telegram registration is locked and never auto retried',async()=>{
  assert.equal(f.state().screen,'sticker_reconcile');
  assert.equal(f.state().stickerPending.fileId,'filedef');
 });
+
+test('readback reconciliation can unlock a successful but timed-out Telegram pack write',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Recovered pack'}));
+ await f.wizard.handle(f.msg({photo:[{file_id:'fileabc'}]}));
+ const store={
+   read:async()=>structuredClone(f.state()),
+   write:async(_owner,prev,next)=>{
+     assert.equal(prev,f.state().revision);
+     Object.assign(f.state(),structuredClone(next));
+   },
+   setScreen:async(_owner,revision,messageId)=>{
+     assert.equal(revision,f.state().revision);
+     f.state().screenMessageId=messageId;
+   }
+ };
+ let writeCount=0,checkCount=0;
+ const wizard=createStickerWizard({
+   api:async()=>true,
+   sessionStore:store,
+   screenTransport:{show:async()=>({messageId:301})},
+   publishSticker:async({onUploaded,onBeforeMutation})=>{
+     await onUploaded({name:'s42_112233aabbccddff_by_CreateVdobot',
+       fileUniqueId:'unique-42',format:'static'});
+     await onBeforeMutation({name:'s42_112233aabbccddff_by_CreateVdobot',
+       fileUniqueId:'unique-42',format:'static'});
+     writeCount++;
+     throw new Error('Telegram lost successful response');
+   },
+   reconcileSticker:async({pending})=>{
+     checkCount++;
+     assert.equal(pending.fileUniqueId,'unique-42');
+     assert.equal(pending.phase,'submission_started');
+     return {status:'registered',verified:true,
+       name:'s42_112233aabbccddff_by_CreateVdobot'};
+   }
+ });
+ await wizard.handle(f.cb('sticker:register|r5'));
+ assert.equal(f.state().screen,'sticker_reconcile');
+ assert.equal(f.state().stickerPending.status,'needs_reconcile');
+ const recovered=await wizard.handle(f.cb('sticker:check|r'+f.state().revision));
+ assert.equal(recovered.handled,true);
+ assert.equal(f.state().screen,'sticker_done');
+ assert.equal(f.state().stickerPending,null);
+ assert.equal(f.state().stickerSets.regular.title,'Recovered pack');
+ assert.equal(writeCount,1);
+ assert.equal(checkCount,1);
+});
+test('negative readback never retries registration or clears unknown state',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Unknown pack'}));
+ await f.wizard.handle(f.msg({photo:[{file_id:'fileabc'}]}));
+ let writes=0;
+ const store={read:async()=>structuredClone(f.state()),write:async(_id,rev,next)=>{
+   assert.equal(rev,f.state().revision);
+   Object.assign(f.state(),structuredClone(next));
+ },setScreen:async()=>{}};
+ const wizard=createStickerWizard({api:async()=>true,sessionStore:store,
+   screenTransport:{show:async()=>({messageId:301})},
+   publishSticker:async({onUploaded,onBeforeMutation})=>{
+     await onUploaded({name:'s42_112233aabbccddff_by_CreateVdobot',
+       fileUniqueId:'unique-42',format:'static'});
+     await onBeforeMutation({name:'s42_112233aabbccddff_by_CreateVdobot',
+       fileUniqueId:'unique-42',format:'static'});
+     writes++;
+     throw new Error('timeout');
+   },
+   reconcileSticker:async()=>({status:'not_observed',verified:false})
+ });
+ await wizard.handle(f.cb('sticker:register|r5'));
+ await wizard.handle(f.cb('sticker:check|r'+f.state().revision));
+ assert.equal(f.state().screen,'sticker_reconcile');
+ assert.equal(f.state().stickerPending.status,'needs_reconcile');
+ assert.equal(writes,1);
+});
