@@ -5,7 +5,7 @@ import {createVideoBotSourceModule} from '../src/telegram/creatorWiring.mjs';
 const secret='v'.repeat(32);
 function offline(){
  const sessions=new Map(),updates=new Map(),calls=[];
- const pool={async query(sql,params){
+ const pool={async connect(){return {query:this.query.bind(this),release(){}};},async query(sql,params){
    const id=params?.[0];
    if(sql.startsWith('INSERT INTO videobot_webhook_updates')){
      if(updates.has(id))return {rowCount:0,rows:[]};
