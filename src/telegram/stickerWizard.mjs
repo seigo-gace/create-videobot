@@ -148,12 +148,15 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     if(!message||message.chat?.type!=='private')return {handled:false};
     const {id}=privateActor(update);
     const old=await sessionStore.read(id);
+    // Protect the common VideoBot DM owner as well as sticker callbacks.
+    // Any private text/media while a registration is unresolved must not be
+    // routed to the video editor or wipe the pending Telegram receipt.
+    if(old?.stickerPending?.status==='in_progress'||
+       old?.stickerPending?.status==='needs_reconcile')
+      return {handled:true,registrationLocked:true};
     // Telegram standard /start deep-link from the pinned public Topic.
     if(typeof message.text==='string'&&
        /^\/start(?:@[A-Za-z0-9_]+)?\s+sticker$/.test(message.text.trim())) {
-      if(old?.stickerPending?.status==='in_progress'||
-         old?.stickerPending?.status==='needs_reconcile')
-        return {handled:true,registrationLocked:true};
       return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null});
     }
     if(old?.screen==='sticker_title'){
