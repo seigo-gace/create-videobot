@@ -31,6 +31,11 @@ function validEmoji(value){
      /[\r\n]/.test(value))throw new Error('STICKER_EMOJI_INVALID');
   return value;
 }
+function matchingItem(set,uploaded,kind,format) {
+  if(!stickerIdentity(set,uploaded,kind,format))return null;
+  const index=set.stickers.findIndex(s=>s.file_unique_id===uploaded.file_unique_id);
+  return index<0?null:{...set.stickers[index],position:index};
+}
 export function stickerIdentity(set,uploaded,kind,format) {
   if(!set||!Array.isArray(set.stickers)||
      set.sticker_type!==kind)return false;
@@ -55,8 +60,8 @@ export async function reconcileStickerRegistration({
   catch {return {status:'unknown',verified:false};}
   if(!set||set.sticker_type!==type||!Array.isArray(set.stickers))
     return {status:'unknown',verified:false};
-  if(stickerIdentity(set,{file_unique_id:fileUniqueId},type,fmt))
-    return {status:'registered',verified:true,name};
+  const item=matchingItem(set,{file_unique_id:fileUniqueId},type,fmt);
+  if(item)return {status:'registered',verified:true,name,item};
   // No match in the current snapshot does not prove the write did not occur:
   // Telegram API visibility, delayed response, and manual removal are distinct.
   return {status:'not_observed',verified:false,name};
@@ -74,7 +79,7 @@ async function safelyReadSet(api,name){
 export async function registerStickerAsset({
   telegramApi,owner,botUsername,title,nonce,kind='regular',format,
   mediaPath,emoji='🙂',existingSetName=null,
-  onUploaded, onBeforeMutation
+  onUploaded, onBeforeMutation, onVerified
 }={}){
   if(typeof telegramApi!=='function')throw new Error('STICKER_API_REQUIRED');
   const user_id=ownerId(owner);
@@ -117,8 +122,15 @@ export async function registerStickerAsset({
   const before=await safelyReadSet(telegramApi,name);
   if(before){
     if(before.sticker_type!==sticker_type)throw new Error('STICKER_SET_TYPE_CONFLICT');
-    if(stickerIdentity(before,uploaded,sticker_type,stickerFormat))
-      return {name,alreadyRegistered:true,verified:true,link:'https://t.me/addstickers/'+name};
+    const existing=matchingItem(before,uploaded,sticker_type,stickerFormat);
+    if(existing){
+      if(onVerified!==undefined){
+        if(typeof onVerified!=='function')throw new Error('STICKER_VERIFIED_CALLBACK_INVALID');
+        await onVerified({name,kind:sticker_type,format:stickerFormat,item:existing});
+      }
+      return {name,alreadyRegistered:true,verified:true,
+        item:existing,link:'https://t.me/'+(sticker_type==='custom_emoji'?'addemoji/':'addstickers/')+name};
+    }
     if(existingSetName===null)throw new Error('STICKER_NEW_PACK_NAME_CONFLICT');
   }else if(existingSetName!==null)throw new Error('STICKER_EXISTING_PACK_NOT_FOUND');
 
@@ -137,9 +149,15 @@ export async function registerStickerAsset({
   }catch(error){requestError=error;}
 
   const after=await safelyReadSet(telegramApi,name);
-  if(!after||!stickerIdentity(after,uploaded,sticker_type,stickerFormat)){
+  const item=matchingItem(after,uploaded,sticker_type,stickerFormat);
+  if(!item){
     // Never resubmit a timeout: Telegram may have accepted the write.
     throw new Error(requestError?'STICKER_REGISTRATION_RESULT_UNKNOWN':'STICKER_REGISTRATION_READBACK_FAILED');
   }
-  return {name,alreadyRegistered:false,verified:true,link:'https://t.me/addstickers/'+name};
+  if(onVerified!==undefined){
+    if(typeof onVerified!=='function')throw new Error('STICKER_VERIFIED_CALLBACK_INVALID');
+    await onVerified({name,kind:sticker_type,format:stickerFormat,item});
+  }
+  return {name,alreadyRegistered:false,verified:true,item,
+    link:'https://t.me/'+(sticker_type==='custom_emoji'?'addemoji/':'addstickers/')+name};
 }
