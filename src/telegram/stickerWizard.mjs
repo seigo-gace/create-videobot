@@ -9,6 +9,24 @@ function privateActor(update){
   return {id:message.chat.id,messageId:message.message_id};
 }
 const button=(name,action,rev)=>({text:name,callback_data:action+'|r'+rev});
+function stickerHelp(error){
+  const code=String(error?.message??'');
+  // Do not display raw Telegram errors, local paths, or secret-bearing URLs.
+  if(/STICKER_INPUT_SIZE_INVALID|file exceeds Bot API download limit|download exceeds configured limit/.test(code))
+    return '素材が20MBの取得上限を超えています。20MB以下に圧縮して送り直してください。';
+  if(/STICKER_DIMENSIONS_UNSUPPORTED/.test(code))
+    return '画像サイズを読み取れません。壊れていない画像・動画を送り直してください。';
+  if(/STICKER_OUTPUT_SIZE_EXCEEDED/.test(code))
+    return '自動調整しても容量上限に収まりません。動きを減らすか短い素材を送ってください。';
+  if(/STICKER_MEDIA_COMMAND_FAILED|STICKER_STATIC_CODEC_INVALID|STICKER_VIDEO_CODEC_INVALID|STICKER_VIDEO_DURATION_INVALID|STICKER_VIDEO_FPS_INVALID/.test(code))
+    return '素材の変換に失敗しました。JPG・PNG・GIF・MP4・WebM形式の再生できる素材を送り直してください。';
+  if(/STICKER_SET_TYPE_CONFLICT|STICKER_EXISTING_PACK_NOT_FOUND|STICKER_NEW_PACK_NAME_CONFLICT/.test(code))
+    return '登録先パックの種類または状態が一致しません。マイパックを確認してください。';
+  if(/STICKER_UPLOAD_RECEIPT_INVALID|Telegram API request failed|Telegram API rejected request/.test(code))
+    return 'Telegramへの素材送信を確認できませんでした。通信状態を確認してからもう一度お試しください。';
+  return '素材を処理できませんでした。別の画像・動画をお試しください。解決しない場合は管理者にご連絡ください。';
+}
+const stickerHint=session=>session?.stickerHelp?'\n\n⚠️ '+session.stickerHelp:'';
 function panel(session,revision){
   const d=session?.stickerDraft??{};
   const btn=(text,action)=>button(text,action,revision);
@@ -46,17 +64,17 @@ function panel(session,revision){
       ]}};
   }
   if(session.screen==='sticker_title')return {
-    text:'📦 初回のパック名を1行で送信してください（64文字以内）。\n2回目以降は同じパックへ追加します。',
+    text:'📦 パック名を1行で送信してください（64文字以内）。\nその後は素材をそのまま送れます。'+stickerHint(session),
     reply_markup:{inline_keyboard:[[btn('↩ 戻る','sticker:back')]]}
   };
   if(session.screen==='sticker_input')return {
     text:(d.kind==='custom_emoji'?'😀 カスタム絵文字':'🎨 ステッカー')+
-      '\nパック：'+d.title+'\n\n画像・GIF・MP4・WebMをTelegramの入力欄から送信してください。\n長辺を自動で合わせ、縦横比は維持します。',
+      '\nパック：'+d.title+'\n\n📎 JPG・PNG・GIF・MP4・WebMをそのまま送ってください。形式を選ぶ操作は不要です（20MB以下）。\n縦横比を維持して自動でリサイズ・変換し、動画は3秒・30fps以内に調整します。'+stickerHint(session),
     reply_markup:{inline_keyboard:[[btn('↩ 戻る','sticker:back')]]}
   };
   if(session.screen==='sticker_ready')return {
     text:'✅ 素材を受信しました。\nパック：'+d.title+
-      '\n\n［登録する］を押すと変換・検証後にTelegramのパックへ追加します。\n動画が3秒を超える場合は先頭3秒を使用します。',
+      '\n\n［登録する］で素材を自動判定・変換しパックへ追加します。動画は先頭3秒に調整します。'+stickerHint(session),
     reply_markup:{inline_keyboard:[
       [btn('📦 登録する','sticker:register'),btn('↩ 戻る','sticker:back')]
     ]}
@@ -140,7 +158,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       }
       if(data==='menu:stickers'){
         return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null,
-          screenMessageId:messageId});
+          screenMessageId:messageId,stickerHelp:null});
       }
       const match=/^(sticker:[a-z_]+(?::[a-z_0-9]+)?)\|r([1-9][0-9]*)$/.exec(data);
       if(!match||Number(match[2])!==old?.revision||messageId!==old?.screenMessageId)
@@ -233,7 +251,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
             :'https://t.me/addstickers/'+result.name;
           return persist(id,current,{screen:'sticker_done',stickerPending:null,stickerSets:saved,
             stickerDraft:{...draft,setName:result.name,link,fileId:null}});
-        }catch{
+        }catch(error){
           const current=await sessionStore.read(id);
           // The only pack-writing APIs run AFTER submission_started is
           // durably recorded. Failures before that phase cannot have written
@@ -241,7 +259,8 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           // Once submission_started is recorded, never retry without readback.
           const phase=current?.stickerPending?.phase;
           if(phase==='preparing'||phase==='uploaded'){
-            return persist(id,current,{screen:'sticker_ready',stickerPending:null});
+            return persist(id,current,{screen:'sticker_ready',stickerPending:null,
+              stickerHelp:stickerHelp(error)});
           }
           return persist(id,current,{screen:'sticker_reconcile',
             stickerPending:{...current.stickerPending,status:'needs_reconcile'}});
@@ -282,15 +301,23 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       const title=message.text?.trim();
       try{
         if(typeof title!=='string'||title.length<1||title.length>64||
-          /[\r\n]/.test(title))return persist(id,old,{screen:'sticker_title'});
-        return persist(id,old,{screen:'sticker_input',stickerDraft:{...old.stickerDraft,title}});
+          /[\r\n]/.test(title))return persist(id,old,{screen:'sticker_title',
+            stickerHelp:'パック名は1行の1〜64文字で入力してください。空欄や改行は使えません。'});
+        return persist(id,old,{screen:'sticker_input',stickerHelp:null,
+          stickerDraft:{...old.stickerDraft,title}});
       }finally{await api('deleteMessage',{chat_id:id,message_id:message.message_id}).catch(()=>{});}
     }
     if(old?.screen==='sticker_input'){
       const fileId=mediaFileId(message);
       try{
-        if(!fileId)return persist(id,old,{screen:'sticker_input'});
-        return persist(id,old,{screen:'sticker_ready',
+        if(!fileId)return persist(id,old,{screen:'sticker_input',
+          stickerHelp:'素材を認識できませんでした。写真・画像（JPG/PNG）・GIF・動画（MP4/WebM）を送ってください。PDFや文章だけでは作成できません。'});
+        const size=message.document?.file_size??message.animation?.file_size??
+          message.video?.file_size??(Array.isArray(message.photo)?message.photo.at(-1)?.file_size:null);
+        if(Number.isFinite(size)&&size>20_000_000)
+          return persist(id,old,{screen:'sticker_input',
+            stickerHelp:stickerHelp(new Error('STICKER_INPUT_SIZE_INVALID'))});
+        return persist(id,old,{screen:'sticker_ready',stickerHelp:null,
           stickerDraft:{...old.stickerDraft,fileId}});
       }finally{await api('deleteMessage',{chat_id:id,message_id:message.message_id}).catch(()=>{});}
     }
