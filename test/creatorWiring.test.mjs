@@ -6,7 +6,7 @@ const secret='a'.repeat(28);
 function deps(){
   const calls=[];
   const moduleConfig={
-    pool:{async query(sql,args){calls.push({type:'sql',sql,args});throw new Error('DB query not expected in blocked test');}},
+    pool:{async query(sql,args){calls.push({type:'sql',sql,args});throw new Error('DB query not expected in blocked test');},async connect(){return {query:this.query.bind(this),release(){}};}},
     telegramApi:async(method)=>{calls.push({type:'telegram',method});throw new Error('network not expected');},
     screenTransport:{show:async()=>{calls.push({type:'screen'});return {messageId:50};}},
     gateOwner:{
