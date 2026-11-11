@@ -63,7 +63,7 @@ test('real registration receipt is persisted before mutating Telegram',async()=>
    if(method==='uploadStickerFile')return {file_id:'file-a',file_unique_id:'identity-a'};
    if(method==='getStickerSet'){if(!set)throw new Error('unknown');return set;}
    if(method==='createNewStickerSet'){
-     assert.deepEqual(events.slice(-3),['upload-receipt','mutation-receipt','createNewStickerSet']);
+     assert.deepEqual(events.filter(v=>v==='upload-receipt'||v==='mutation-receipt'||v==='createNewStickerSet'),['upload-receipt','mutation-receipt','createNewStickerSet']);
      set={sticker_type:'regular',stickers:[
        {file_unique_id:'identity-a',is_video:false,is_animated:false}]};
      return true;
