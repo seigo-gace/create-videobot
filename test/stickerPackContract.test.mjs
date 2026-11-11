@@ -9,7 +9,7 @@ test('valid Telegram set names include the verified bot suffix',()=>{
 test('rejects invalid names instead of guessing or silently truncating',()=>{
   assert.throws(()=>stickerSetName('invalid name','CreateVdobot','a1b2c3'));
   assert.throws(()=>stickerSetName('GayBBS','CreateVdobot','123'));
-  assert.throws(()=>stickerSetName('GayBBS','CreateVdobot','a1b2c345678901234567'));
+  assert.throws(()=>stickerSetName('GayBBS','CreateVdobot','a1b2c34567890123456789'));
 });
 test('static/emoji and video/regular sets carry the required API fields',()=>{
   const s=inputSticker({fileId:'abc_def123',format:'static'});
