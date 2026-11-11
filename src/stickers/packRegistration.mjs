@@ -1,0 +1,108 @@
+import {readFile,stat} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+
+function ownerId(value) {
+  if(!Number.isSafeInteger(value)||value<=0)throw new Error('STICKER_OWNER_INVALID');
+  return value;
+}
+function botName(value){
+  if(typeof value!=='string'||!/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(value))
+    throw new Error('STICKER_BOT_USERNAME_INVALID');
+  return value;
+}
+export function createStickerSetShortName({owner,botUsername,nonce}={}) {
+  ownerId(owner);
+  const username=botName(botUsername);
+  if(typeof nonce!=='string'||!/^[a-f0-9]{8,24}$/.test(nonce))throw new Error('STICKER_PACK_NONCE_INVALID');
+  const suffix='_by_'+username;
+  const stem='s'+String(owner)+'_'+nonce;
+  if(stem.length+suffix.length>64)throw new Error('STICKER_PACK_NAME_TOO_LONG');
+  return stem+suffix;
+}
+function formatValue(value) {
+  if(!['static','video'].includes(value))throw new Error('STICKER_FORMAT_INVALID');
+  return value;
+}
+function packType(value){
+  if(!['regular','custom_emoji'].includes(value))throw new Error('STICKER_TYPE_INVALID');
+  return value;
+}
+function validEmoji(value){
+  if(typeof value!=='string'||value.length<1||value.length>16||
+     /[\r\n]/.test(value))throw new Error('STICKER_EMOJI_INVALID');
+  return value;
+}
+function stickerIdentity(set,uploaded,kind,format) {
+  if(!set||!Array.isArray(set.stickers)||
+     set.sticker_type!==kind)return false;
+  return set.stickers.some(s=>
+    s.file_unique_id===uploaded.file_unique_id &&
+    (format==='video'?s.is_video===true:s.is_video!==true&&s.is_animated!==true));
+}
+async function safelyReadSet(api,name){
+  try{return await api('getStickerSet',{name});}
+  catch{return null;}
+}
+/**
+ * Register a converted local asset using the existing authenticated Bot API.
+ * All uncertainty fails closed; callers MUST persist owner/name/status and
+ * reconcile UNKNOWN results before retrying. This does not publish a sale.
+ */
+export async function registerStickerAsset({
+  telegramApi,owner,botUsername,title,nonce,kind='regular',format,
+  mediaPath,emoji='🙂',existingSetName=null
+}={}){
+  if(typeof telegramApi!=='function')throw new Error('STICKER_API_REQUIRED');
+  const user_id=ownerId(owner);
+  const sticker_type=packType(kind),stickerFormat=formatValue(format);
+  const emojiValue=validEmoji(emoji);
+  if(typeof title!=='string'||title.length<1||title.length>64)
+    throw new Error('STICKER_PACK_TITLE_INVALID');
+  const username=botName(botUsername);
+  let name;
+  if(existingSetName!==null) {
+    if(typeof existingSetName!=='string'||existingSetName.length>64||
+       !existingSetName.toLowerCase().endsWith(('_by_'+username).toLowerCase())||
+       !/^[A-Za-z][A-Za-z0-9_]*$/.test(existingSetName))
+      throw new Error('STICKER_SET_NAME_INVALID');
+    name=existingSetName;
+  }else{
+    name=createStickerSetShortName({owner:user_id,botUsername:username,nonce});
+  }
+  if(typeof mediaPath!=='string'||!mediaPath.startsWith('/'))
+    throw new Error('STICKER_MEDIA_PATH_INVALID');
+  const bytes=await readFile(mediaPath);
+  const max=stickerFormat==='video'?256*1024:512*1024;
+  if(bytes.length<1||bytes.length>max)throw new Error('STICKER_MEDIA_SIZE_INVALID');
+  // uploadStickerFile's transport already builds multipart/form-data.
+  const uploaded=await telegramApi('uploadStickerFile',{
+    user_id,sticker:new Uint8Array(bytes),sticker_format:stickerFormat
+  });
+  if(typeof uploaded?.file_id!=='string'||!uploaded.file_id||
+    typeof uploaded?.file_unique_id!=='string'||!uploaded.file_unique_id)
+    throw new Error('STICKER_UPLOAD_RECEIPT_INVALID');
+
+  const input={sticker:uploaded.file_id,format:stickerFormat,emoji_list:[emojiValue]};
+  const before=await safelyReadSet(telegramApi,name);
+  if(before){
+    if(before.sticker_type!==sticker_type)throw new Error('STICKER_SET_TYPE_CONFLICT');
+    if(stickerIdentity(before,uploaded,sticker_type,stickerFormat))
+      return {name,alreadyRegistered:true,verified:true,link:'https://t.me/addstickers/'+name};
+    if(existingSetName===null)throw new Error('STICKER_NEW_PACK_NAME_CONFLICT');
+  }else if(existingSetName!==null)throw new Error('STICKER_EXISTING_PACK_NOT_FOUND');
+
+  let requestError=null;
+  try{
+    const result=existingSetName!==null?
+      await telegramApi('addStickerToSet',{user_id,name,sticker:input}):
+      await telegramApi('createNewStickerSet',{user_id,name,title,stickers:[input],sticker_type});
+    if(result!==true)requestError=new Error('STICKER_REGISTRATION_NOT_CONFIRMED');
+  }catch(error){requestError=error;}
+
+  const after=await safelyReadSet(telegramApi,name);
+  if(!after||!stickerIdentity(after,uploaded,sticker_type,stickerFormat)){
+    // Never resubmit a timeout: Telegram may have accepted the write.
+    throw new Error(requestError?'STICKER_REGISTRATION_RESULT_UNKNOWN':'STICKER_REGISTRATION_READBACK_FAILED');
+  }
+  return {name,alreadyRegistered:false,verified:true,link:'https://t.me/addstickers/'+name};
+}
