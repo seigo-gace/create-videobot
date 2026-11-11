@@ -12,7 +12,7 @@ import {createTelegramVideoFetcher} from './telegramFileFetch.mjs';
 import {createTelegramPrivateMediaUploader} from './privateMediaUpload.mjs';
 import {createStickerWizard} from './stickerWizard.mjs';
 import {convertStickerMedia} from '../stickers/mediaConverter.mjs';
-import {registerStickerAsset} from '../stickers/packRegistration.mjs';
+import {registerStickerAsset,reconcileStickerRegistration,createStickerSetShortName} from '../stickers/packRegistration.mjs';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -61,7 +61,7 @@ export function createVideoBotSourceModule({
     verifyReview:gateOwner.verifyReview,
     verifyRelease:gateOwner.verifyRelease
   });
-  const stickerPublisher=async({owner,draft})=>{
+  const stickerPublisher=async({owner,draft,onUploaded,onBeforeMutation})=>{
     if(!Number.isSafeInteger(owner)||owner<=0||!draft?.fileId||!draft?.title)
       throw new Error('STICKER_PUBLISH_INPUT_INVALID');
     const scratch=await mkdtemp(join(tmpdir(),'cv-sticker-fetch-'));
@@ -78,16 +78,28 @@ export function createVideoBotSourceModule({
       return registerStickerAsset({telegramApi,owner,
         botUsername:identity.username,title:draft.title,nonce:draft.nonce,
         kind:draft.kind,format:converted.format,mediaPath:converted.path,
-        existingSetName:draft.setName??null});
+        existingSetName:draft.setName??null,onUploaded,onBeforeMutation});
     }finally{
       await converted?.cleanup();
       await fetched?.cleanup();
       await rm(scratch,{recursive:true,force:true});
     }
   };
+  const stickerReconcile=async({owner,pending})=>{
+    const identity=await telegramApi('getMe',{});
+    if(typeof identity?.username!=='string'||identity.is_bot!==true)
+      throw new Error('STICKER_BOT_IDENTITY_INVALID');
+    const name=pending.packName??pending.setName??
+      createStickerSetShortName({owner,botUsername:identity.username,nonce:pending.nonce});
+    if(!pending.fileUniqueId||!pending.format)
+      return {status:'unknown',verified:false};
+    return reconcileStickerRegistration({telegramApi,name,
+      kind:pending.kind,format:pending.format,
+      fileUniqueId:pending.fileUniqueId});
+  };
   const stickerWizard=createStickerWizard({
     api:telegramApi,sessionStore,screenTransport:screen,
-    publishSticker:stickerPublisher
+    publishSticker:stickerPublisher,reconcileSticker:stickerReconcile
   });
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
     api:telegramApi,sessionStore,listingStore,
