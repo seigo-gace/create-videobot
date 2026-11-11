@@ -24,12 +24,6 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Install real media conversion dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
-          ffmpeg -version | head -n 1
-          ffprobe -version | head -n 1
       - run: npm test
       - name: Build actual Telegram runtime image and validate private Compose contract
         shell: bash
@@ -40,6 +34,8 @@ jobs:
           node --check src/runtime/creatorLiveService.mjs
           node --check src/runtime/creatorHttpService.mjs
           docker build --pull=false -f deploy/Dockerfile -t create-videobot:ci .
+          # Actual transcoding in the SAME Node+FFmpeg image used at runtime.
+          docker run --rm -e STICKER_FFMPEG_INTEGRATION=1 -v "$PWD/test:/opt/videobot/test:ro" create-videobot:ci node --test test/stickerRealFfmpeg.test.mjs
           export VIDEOBOT_GATE_OWNER_SOURCE=/tmp/ci-owner-provider-do-not-create
           export VIDEOBOT_TELEGRAM_TOKEN_SOURCE=/tmp/ci-telegram-token-do-not-create
           export VIDEOBOT_WEBHOOK_SECRET_SOURCE=/tmp/ci-webhook-secret-do-not-create
