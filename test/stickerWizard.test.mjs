@@ -312,3 +312,40 @@ test('invalid pack title is explained and corrected without new DM message',asyn
  assert.equal(f.state().stickerDraft.title,'Corrected name');
  assert.equal(f.calls.filter(c=>c[0]==='sendMessage').length,0);
 });
+
+test('shared DM contract: failed user-input deletion displays manual removal guidance',async()=>{
+ let state={revision:1,screen:'home',screenMessageId:301,
+   draft:{paidVideo:{fileId:'do-not-touch'}},stickerSets:{}};
+ const panels=[];
+ const store={
+   read:async()=>structuredClone(state),
+   write:async(_owner,revision,next)=>{
+     assert.equal(revision,state.revision);state=structuredClone(next);
+   },
+   setScreen:async(_owner,revision,messageId)=>{
+     assert.equal(revision,state.revision);state.screenMessageId=messageId;
+   }
+ };
+ const wizard=createStickerWizard({
+   api:async(method)=>{if(method==='deleteMessage')throw new Error('forbidden');return true;},
+   sessionStore:store,
+   screenTransport:{show:async(_owner,_previous,panel)=>{
+     panels.push(panel.text);return {messageId:301};
+   }},
+   publishSticker:async()=>{throw new Error('must not publish');}
+ });
+ const cb=data=>({callback_query:{id:'c',data,from:{id:42},
+   message:{chat:{id:42,type:'private'},message_id:301}}});
+ const msg=attrs=>({message:{chat:{id:42,type:'private'},from:{id:42},
+   message_id:302,...attrs}});
+ await wizard.handle(cb('menu:stickers'));
+ await wizard.handle(cb('sticker:type:regular|r2'));
+ await wizard.handle(msg({text:'Friendly pack'}));
+ assert.equal(state.screen,'sticker_input');
+ assert.match(state.stickerHelp,/長押しして削除/);
+ assert.match(panels.at(-1),/長押しして削除/);
+ assert.equal(state.draft.paidVideo.fileId,'do-not-touch');
+ await wizard.handle(msg({photo:[{file_id:'image_file'}]}));
+ assert.equal(state.screen,'sticker_ready');
+ assert.match(state.stickerHelp,/長押しして削除/);
+});
