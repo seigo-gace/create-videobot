@@ -143,7 +143,8 @@ export function createVideoBotSourceModule({
   };
   const stickerWizard=createStickerWizard({
     api:telegramApi,sessionStore,screenTransport:screen,
-    publishSticker:stickerPublisher,reconcileSticker:stickerReconcile
+    publishSticker:stickerPublisher,reconcileSticker:stickerReconcile,
+    packInventory:stickerInventory
   });
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
     api:telegramApi,sessionStore,listingStore,
