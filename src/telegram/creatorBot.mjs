@@ -23,7 +23,9 @@ export function createCreatorBotUpdateHandler(options={}) {
     if(message?.chat?.type==='private' &&
        typeof message.text==='string' &&
        /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text)) {
-      if(/\s+sticker$/.test(message.text.trim())&&typeof options.stickerHandler==='function') {
+      // The sticker wizard owns unresolved registrations even when a user
+      // reopens the generic /start; it must run before the video home page.
+      if(typeof options.stickerHandler==='function') {
         const sticker=await options.stickerHandler(update);
         if(sticker?.handled)return sticker;
       }
