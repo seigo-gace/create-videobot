@@ -6,7 +6,8 @@ const FILES=Object.freeze([
  '003_video_listings.sql',
  '004_stars_ledger.sql',
  '005_management_fee_30.sql',
- '006_webhook_updates.sql'
+ '006_webhook_updates.sql',
+ '007_sticker_packs.sql'
 ]);
 
 /** Apply the owned VideoBot schema atomically under a PostgreSQL advisory
