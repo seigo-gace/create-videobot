@@ -10,6 +10,12 @@ import {createVideoMediaProcessor} from './mediaProcessor.mjs';
 import {createVideoBotScreenTransport} from './creatorScreenTransport.mjs';
 import {createTelegramVideoFetcher} from './telegramFileFetch.mjs';
 import {createTelegramPrivateMediaUploader} from './privateMediaUpload.mjs';
+import {createStickerWizard} from './stickerWizard.mjs';
+import {convertStickerMedia} from '../stickers/mediaConverter.mjs';
+import {registerStickerAsset} from '../stickers/packRegistration.mjs';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 
 /**
  * Source-only wiring for the existing VideoBot owner. This does NOT create an
@@ -55,10 +61,39 @@ export function createVideoBotSourceModule({
     verifyReview:gateOwner.verifyReview,
     verifyRelease:gateOwner.verifyRelease
   });
+  const stickerPublisher=async({owner,draft})=>{
+    if(!Number.isSafeInteger(owner)||owner<=0||!draft?.fileId||!draft?.title)
+      throw new Error('STICKER_PUBLISH_INPUT_INVALID');
+    const scratch=await mkdtemp(join(tmpdir(),'cv-sticker-fetch-'));
+    let fetched=null,converted=null;
+    try {
+      fetched=await ports.fetchSource(draft.fileId,scratch);
+      converted=await convertStickerMedia({
+        sourcePath:fetched.path,
+        kind:draft.kind==='custom_emoji'?'emoji':'sticker'
+      });
+      const identity=await telegramApi('getMe',{});
+      if(typeof identity?.username!=='string'||identity.is_bot!==true)
+        throw new Error('STICKER_BOT_IDENTITY_INVALID');
+      return registerStickerAsset({telegramApi,owner,
+        botUsername:identity.username,title:draft.title,nonce:draft.nonce,
+        kind:draft.kind,format:converted.format,mediaPath:converted.path,
+        existingSetName:draft.setName??null});
+    }finally{
+      await converted?.cleanup();
+      await fetched?.cleanup();
+      await rm(scratch,{recursive:true,force:true});
+    }
+  };
+  const stickerWizard=createStickerWizard({
+    api:telegramApi,sessionStore,screenTransport:screen,
+    publishSticker:stickerPublisher
+  });
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
     api:telegramApi,sessionStore,listingStore,
     screenTransport:screen,mediaProcessor,publishListing,
-    salesProvider:starsLedger,starsLedger
+    salesProvider:starsLedger,starsLedger,
+    stickerHandler:stickerWizard.handle
   });
   const handleTelegramWebhook=createCreatorWebhookAdmission({
     expectedSecret:webhookSecret,handleCreatorUpdate,updateStore
