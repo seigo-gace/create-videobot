@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {createStickerSetShortName,registerStickerAsset} from '../src/stickers/packRegistration.mjs';
+import {createStickerSetShortName,registerStickerAsset,reconcileStickerRegistration} from '../src/stickers/packRegistration.mjs';
 
 test('short name follows Telegram bot suffix rule',()=>{
   assert.equal(createStickerSetShortName({owner:42,botUsername:'CreateVdobot',nonce:'1234abcd'}),
@@ -51,4 +51,51 @@ test('registration timeout with no readback never claims success',async()=>{
   await assert.rejects(registerStickerAsset({telegramApi:api,owner:42,botUsername:'CreateVdobot',
     title:'Test',nonce:'1234abcd',format:'static',mediaPath:path}),/RESULT_UNKNOWN/);
  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('real registration receipt is persisted before mutating Telegram',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'sticker-receipt-test-'));
+ try{
+  const path=join(dir,'asset.png');await writeFile(path,'stub bytes');
+  const events=[];let set=null;
+  const api=async(method,params)=>{
+   events.push(method);
+   if(method==='uploadStickerFile')return {file_id:'file-a',file_unique_id:'identity-a'};
+   if(method==='getStickerSet'){if(!set)throw new Error('unknown');return set;}
+   if(method==='createNewStickerSet'){
+     assert.deepEqual(events.slice(-3),['upload-receipt','mutation-receipt','createNewStickerSet']);
+     set={sticker_type:'regular',stickers:[
+       {file_unique_id:'identity-a',is_video:false,is_animated:false}]};
+     return true;
+   }
+   throw new Error('unexpected method');
+  };
+  const result=await registerStickerAsset({telegramApi:api,owner:42,
+    botUsername:'CreateVdobot',title:'Test',nonce:'1234abcd',
+    format:'static',mediaPath:path,
+    onUploaded:receipt=>{
+      assert.equal(receipt.fileUniqueId,'identity-a');
+      events.push('upload-receipt');
+    },
+    onBeforeMutation:receipt=>{
+      assert.equal(receipt.name,'s42_1234abcd_by_CreateVdobot');
+      events.push('mutation-receipt');
+    }});
+  assert.equal(result.verified,true);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('reconcile requires matching Telegram file identity and pack type',async()=>{
+ const telegramApi=async()=>({sticker_type:'regular',stickers:[
+   {file_unique_id:'content-1',is_video:false,is_animated:false}]});
+ const args={telegramApi,name:'s42_1234abcd_by_CreateVdobot',
+   kind:'regular',format:'static'};
+ assert.deepEqual((await reconcileStickerRegistration({...args,fileUniqueId:'content-1'})).status,'registered');
+ const miss=await reconcileStickerRegistration({...args,fileUniqueId:'other'});
+ assert.equal(miss.verified,false);
+ assert.equal(miss.status,'not_observed');
+ const mismatch=await reconcileStickerRegistration({...args,kind:'custom_emoji',fileUniqueId:'content-1'});
+ assert.equal(mismatch.verified,false);
+ assert.equal(mismatch.status,'unknown');
+ const unreachable=await reconcileStickerRegistration({...args,telegramApi:async()=>{throw new Error('network');},fileUniqueId:'content-1'});
+ assert.equal(unreachable.status,'unknown');
 });
