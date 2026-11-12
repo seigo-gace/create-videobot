@@ -50,6 +50,20 @@ export function createPostgresStickerInventory(pool){
       if(q.rowCount!==1)throw new Error('STICKER_SUBMISSION_RECEIPT_CONFLICT');
       return {saved:true};
     },
+    // Called only by the registration publisher BEFORE the Telegram pack-write
+    // call has started. A conditional delete retains an uncertain/submitted
+    // receipt and prevents a false UI retry from issuing a second pack write.
+    async abandonBeforeMutation({operationId,ownerId}) {
+      const q=await pool.query(
+        "DELETE FROM videobot_sticker_registration_receipts"+
+        " WHERE operation_id=$1 AND owner_user_id=$2"+
+        " AND phase IN ('preparing','uploaded','submission_started')"+
+        " RETURNING operation_id",
+        [requiredText(operationId,'OPERATION',128),owner(ownerId)]);
+      if(q.rowCount!==1)
+        throw new Error('STICKER_PRE_MUTATION_ABORT_NOT_CONFIRMED');
+      return {abandoned:true};
+    },
     async needsReconcile({operationId,ownerId}){
       const q=await pool.query(
         "UPDATE videobot_sticker_registration_receipts"+
