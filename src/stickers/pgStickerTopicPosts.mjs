@@ -21,7 +21,7 @@ export function createPostgresStickerTopicPosts(pool){
     if(q.rowCount===1)return {claimed:true};
     const existing=await this.getOwned(p,seller);
     if(!existing)throw Error('STICKER_TOPIC_OWNER_OR_PRODUCT_MISMATCH');
-    if(existing.chat_id!==topic.chatId||
+    if(Number(existing.chat_id)!==topic.chatId||
        Number(existing.message_thread_id)!==topic.threadId)
       throw Error('STICKER_TOPIC_ROUTE_CHANGED');
     return {claimed:false,status:existing.status,messageId:existing.telegram_message_id};
