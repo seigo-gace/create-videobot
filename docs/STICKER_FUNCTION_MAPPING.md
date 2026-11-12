@@ -53,7 +53,7 @@
 7. Stars販売→不変商品ID/価格/素材IDをDB保存→購入者へ公開パックの非独占・共有可能性/再取得制約を明示→本人同意→XTR invoice 1回→pre_checkout_query検証→successful_paymentから専用charge台帳へ冪等確定→最大3件ごとのBot DM配送・無償再取得。失敗したWebhookは同一fingerprintの決済通知に限りCAS安全再処理。/paysupport台帳Sourceあり。CI/PG PASS、実Stars決済・商用条件・実保管E2E未検証。
 8. GateApp-Bot実TopicからVerified adapter取得（ボードvideo_chat・正確なTopic名・Chat/thread照合）→CreateVdobot本人の登録商品を1回送信→DBに実message_idと結果を永続化→本人DMのグループ・Topicタイトルとジャンプを表示→編集・削除→販売停止と購入済み版保持。GateApp側Topic固定入口はadmin確認後にCreateVdobot本人のBot APIで送信・pin、DB pin receiptで重複禁止。Source/CIはPASS、本番Adapter・Topic binding・pin・編集/削除のTelegram E2Eは未検証。
 
-9. 購入済み商品→［🎁プレゼントする］→本人の有効な有料注文照合→192bit一回限りの贈答リンク作成（DBはSHA-256のみ保存）→Telegram共有先選択→受取人が`/start gift_<token>`→受取人本人のDB権利を原子的に固定→本人宛DMへ素材バッチ配送→［受け取ったプレゼント］一覧から無償再取得。元の購入者・商品版・課金と台帳は変更しない。期限・贈答回数の追加制限は未決定のため勝手に設定しない。受取リンクは最初の受領者が確定し、第三者へ転送された場合の横取り防止までは保証しない。Source/実DB CIを検証済み、Telegram共有・受取・再取得は実機未検証。
+9. 購入済み商品→［🎁プレゼントする］→本人の有効な有料注文照合→192bit一回限りの贈答リンク作成（贈答台帳はSHA-256のみ保存、発行者の既存プライベートDMセッションに復旧用トークンを保持）→Telegram共有先選択→受取人が`/start gift_<token>`→受取人本人のDB権利を原子的に固定→本人宛DMへ素材バッチ配送→［受け取ったプレゼント］一覧から無償再取得。元の購入者・商品版・課金と台帳は変更しない。期限・贈答回数の追加制限は未決定のため勝手に設定しない。受取リンクは最初の受領者が確定し、第三者へ転送された場合の横取り防止までは保証しない。贈った側は［受取状況を確認］で受取済み表示へ切替え、受取済リンクは再共有ボタンから外す。Source/実DB CIを検証済み、Telegram共有・受取・再取得は実機未検証。
 
 ## 実装・検証の記録契約
 各機能Issueに (1)採用仕様と決定者 (2)Source path・commitとOwner (3)CI run (4)Host request/稼働 HEAD (5)Telegram本番 readback/受入 を分けて残す。UNKNOWNやNOT_VERIFIEDを成功へ書き換えない。
