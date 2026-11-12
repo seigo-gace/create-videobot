@@ -164,6 +164,12 @@ export function createPostgresStickerSales(pool){
      await client.query('COMMIT');return {attempt};
    }catch(e){await client.query('ROLLBACK').catch(()=>{});throw e;}finally{client.release();}
   },
+  async getDeliveryRows(orderId,attempt){
+   const q=await pool.query(
+     "SELECT item_index,status,telegram_message_id FROM videobot_sticker_delivery_items WHERE order_id=$1 AND attempt=$2 ORDER BY item_index ASC",
+     [key(orderId,'so'),positive(attempt,'ATTEMPT')]);
+   return q.rows;
+  },
   async claimItem({orderId,buyerId,attempt,index}){
    const q=await pool.query(
      "UPDATE videobot_sticker_delivery_items d SET status='sending',updated_at=NOW() FROM videobot_sticker_orders o JOIN videobot_sticker_products p ON p.product_id=o.product_id WHERE d.order_id=o.order_id AND d.order_id=$1 AND d.attempt=$2 AND d.item_index=$3 AND o.buyer_user_id=$4 AND o.invoice_state='paid' AND d.status='pending' RETURNING p.items",
