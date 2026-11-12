@@ -92,7 +92,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
       product.pack_name!==d.packName||Number(product.price_stars)!==d.price)
      throw Error('STICKER_SALE_PUBLISH_RECEIPT_MISMATCH');
    const me=await api('getMe',{});
-   if(me?.is_bot!==true||typeof me.username!=='string)
+   if(me?.is_bot!==true||typeof me.username!=='string')
      throw Error('STICKER_SALE_BOT_IDENTITY_UNAVAILABLE');
    return show(userId,await sessionStore.read(userId),{
      screen:'sticker_sale_published',stickerSale:{...d,version:product.version,
