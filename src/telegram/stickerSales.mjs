@@ -11,12 +11,14 @@ function actor(update){
    throw Error('STICKER_SALE_OWNER_REQUIRED');
  return {userId:from.id,messageId:m.message_id};
 }
-export function createStickerSalesFlow({api,sessionStore,screenTransport,salesStore,packInventory,publishSnapshot}={}){
+export function createStickerSalesFlow({api,sessionStore,screenTransport,salesStore,packInventory,publishSnapshot,topicPublisher}={}){
  if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
     typeof screenTransport?.show!=='function'||typeof salesStore?.reserveOrder!=='function'||
     typeof salesStore?.capturePayment!=='function'||typeof packInventory?.getOwnedPack!=='function'||
-    typeof publishSnapshot!=='function')throw Error('STICKER_SALE_DEPENDENCIES_MISSING');
+    typeof publishSnapshot!=='function'||(topicPublisher!==undefined&&topicPublisher!==null&&
+    (typeof topicPublisher.publish!=='function'||typeof topicPublisher.edit!=='function'||
+     typeof topicPublisher.remove!=='function')))throw Error('STICKER_SALE_DEPENDENCIES_MISSING');
  async function show(userId,old,patch){
    const revision=(old?.revision??0)+1,session={...old,...patch,revision};
    await sessionStore.write(userId,revision-1,session);
@@ -32,7 +34,27 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
       keyboard=[[b('✅ この版を公開','sale:publish')],[b('↩ 価格を修正','sale:price'),b('中止','sale:cancel')]];break;
     case 'sticker_sale_published':
       text='✅ 商品版を登録しました。購入者向けリンク：\n'+d.link+
-        '\n\n商品版は固定され、パックの編集で購入者の版が変わることはありません。';
+        '\n\n商品版は固定され、パックの編集で購入者の版が変わることはありません。'+
+        (d.topicStatus==='sent'?'\n\n投稿先：'+d.groupTitle+'／'+d.topicTitle:
+         '\n\n⚠️ 投稿先Topicの接続・公開をまだ確認できません。Topicへの投稿完了ではありません。');
+      keyboard=[
+        ...(d.topicStatus==='sent'?[
+          [b('✏️ 投稿文を編集','sale:post_edit'),b('🗑 投稿を削除','sale:post_delete')],
+          [{text:'🔗 投稿先を開く',url:d.topicLink}]
+        ]:[]),
+        [b('↩ メニューへ','sale:cancel')]
+      ];break;
+    case 'sticker_sale_post_edit':
+      text='✏️ 投稿の紹介文だけを入力してください（400文字以内）。商品素材・価格・購入済み権利は変更しません。';
+      keyboard=[[b('↩ 戻る','sale:post_back')]];break;
+    case 'sticker_sale_post_delete_confirm':
+      text='⚠️ 公開投稿を削除すると新規販売を停止します。すでに購入された商品の再取得権利と決済履歴は残します。';
+      keyboard=[[b('🗑 投稿を削除','sale:post_delete_confirm')],[b('↩ やめる','sale:post_back')]];break;
+    case 'sticker_sale_post_deleted':
+      text='✅ 公開投稿を削除し、商品の新規販売を停止しました。購入済み権利は維持されています。';
+      keyboard=[[b('↩ メニューへ','sale:cancel')]];break;
+    case 'sticker_sale_post_unknown':
+      text='⚠️ Topic投稿または編集・削除の結果を確認できません。二重操作を防ぐため再送しません。管理者による実状態の照合が必要です。';
       keyboard=[[b('↩ メニューへ','sale:cancel')]];break;
     case 'sticker_sale_publish_unknown':
       text='⚠️ 商品版の登録結果を確認できません。二重作成を防ぐため、同じ商品番号で状態を確認します。';
@@ -86,6 +108,18 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      await sessionStore.setScreen(userId,revision,result.messageId);
    return {handled:true};
  }
+ async function sendToTopic(userId,d){
+   if(!topicPublisher)return {topicStatus:'not_connected'};
+   try{
+     const post=await topicPublisher.publish({
+       sellerId:userId,productId:d.productId});
+     if(post.posted!==true)return {topicStatus:'unverified'};
+     return {topicStatus:'sent',groupTitle:post.groupTitle,
+       topicTitle:post.topicTitle,topicLink:post.link};
+   }catch{
+     return {topicStatus:'unverified'};
+   }
+ }
  async function finishPublish(userId,d){
    const product=await salesStore.getPublished(d.productId);
    if(!product||String(product.seller_user_id)!==String(userId)||
@@ -94,9 +128,10 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    const me=await api('getMe',{});
    if(me?.is_bot!==true||typeof me.username!=='string')
      throw Error('STICKER_SALE_BOT_IDENTITY_UNAVAILABLE');
+   const topic=await sendToTopic(userId,d);
    return show(userId,await sessionStore.read(userId),{
      screen:'sticker_sale_published',stickerSale:{...d,version:product.version,
-       link:'https://t.me/'+me.username+'?start=buy_'+d.productId}
+       link:'https://t.me/'+me.username+'?start=buy_'+d.productId,...topic}
    });
  }
  async function attemptPublish(userId,d){
@@ -247,6 +282,23 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
              stickerSale:{...old.stickerSale,supportError:false}});
          }finally{await api('deleteMessage',{chat_id:userId,message_id:m.message_id}).catch(()=>{});}
        }
+       if(old?.screen==='sticker_sale_post_edit'&&old?.stickerSale?.mode==='seller'){
+         const {userId}=actor(update);
+         try{
+           const desc=String(m.text??'').trim();
+           if(desc.length>400||!desc)
+             return show(userId,old,{screen:'sticker_sale_post_edit'});
+           try{
+             if(!topicPublisher)throw Error('STICKER_TOPIC_OWNER_UNAVAILABLE');
+             await topicPublisher.edit({sellerId:userId,
+               productId:old.stickerSale.productId,description:desc});
+             return show(userId,old,{screen:'sticker_sale_published',
+               stickerSale:{...old.stickerSale,description:desc}});
+           }catch{
+             return show(userId,old,{screen:'sticker_sale_post_unknown'});
+           }
+         }finally{await api('deleteMessage',{chat_id:userId,message_id:m.message_id}).catch(()=>{});}
+       }
        if(old?.screen==='sticker_sale_price'&&old?.stickerSale?.mode==='seller'){
          const {userId}=actor(update);
          try{
@@ -273,6 +325,30 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    if(action==='sale:support')
      return show(userId,old,{screen:'sticker_sale_support',
        stickerSale:{...d,mode:'buyer',supportError:false}});
+   if(action==='sale:post_edit'&&old.screen==='sticker_sale_published'&&
+      d.mode==='seller'&&d.topicStatus==='sent'&&topicPublisher)
+     return show(userId,old,{screen:'sticker_sale_post_edit'});
+   if(action==='sale:post_delete'&&old.screen==='sticker_sale_published'&&
+      d.mode==='seller'&&d.topicStatus==='sent'&&topicPublisher)
+     return show(userId,old,{screen:'sticker_sale_post_delete_confirm'});
+   if(action==='sale:post_back'&&['sticker_sale_post_edit','sticker_sale_post_delete_confirm'].includes(old.screen))
+     return show(userId,old,{screen:'sticker_sale_published'});
+   if(action==='sale:post_delete_confirm'&&old.screen==='sticker_sale_post_delete_confirm'&&
+      d.mode==='seller'&&d.topicStatus==='sent'&&topicPublisher){
+     // Claim the DM revision before Telegram deletion, preserving old
+     // purchase entitlements and avoiding a repeat from a stale button.
+     await sessionStore.write(userId,old.revision,{
+       ...old,revision:old.revision+1,screen:'sticker_sale_post_deleting'});
+     try{
+       const removed=await topicPublisher.remove({sellerId:userId,productId:d.productId});
+       if(removed.verified!==true)throw Error('STICKER_TOPIC_DELETE_NOT_VERIFIED');
+       return show(userId,await sessionStore.read(userId),{
+         screen:'sticker_sale_post_deleted',stickerSale:{...d,topicStatus:'deleted'}});
+     }catch{
+       return show(userId,await sessionStore.read(userId),{
+         screen:'sticker_sale_post_unknown',stickerSale:{...d,topicStatus:'unverified'}});
+     }
+   }
    if(action==='sale:price'&&d.mode==='seller')
      return show(userId,old,{screen:'sticker_sale_price'});
    if(action==='sale:publish'&&old.screen==='sticker_sale_confirm'&&d.mode==='seller'){
