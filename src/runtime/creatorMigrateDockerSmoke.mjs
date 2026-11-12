@@ -210,7 +210,7 @@ try {
  const allOrders=await pool.query('SELECT COUNT(*)::integer AS total FROM videobot_sticker_orders');
  if(allGifts.rows[0].total!==1||allOrders.rows[0].total!==1)
    throw Error('STICKER_GIFT_CREATED_EXTRA_CHARGE_OR_ORDER');
- process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_GIFTS=PASS\\n');
+ process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_GIFTS=PASS\n');
  const topicStore=createPostgresStickerTopicPosts(pool);
  const topic={chatId:-1002373696859,threadId:102,groupTitle:'ビデオChatの掲示板',
    title:'ステッカーの公開と販売'};
