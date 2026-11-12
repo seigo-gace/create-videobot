@@ -42,3 +42,20 @@ test('Telegram API rejects unknown edit failure without propagating user data',a
  await assert.rejects(()=>api('sendMessage',{chat_id:1,text:'x'}),
    /Telegram API request failed/);
 });
+
+test('definitive Telegram 400 for sticker mutation is classified without leaking description',async()=>{
+ const api=createTelegramBotApi({token,fetchImpl:async()=>({
+   status:400,json:async()=>({ok:false,description:'private content '+token})
+ })});
+ await assert.rejects(
+   ()=>api('createNewStickerSet',{user_id:42,name:'set_by_CreateVdobot',title:'X',stickers:[]}),
+   error=>error.definitiveTelegramRejection===true &&
+     error.message==='STICKER_TELEGRAM_REGISTRATION_REJECTED' &&
+     !error.message.includes(token));
+});
+test('Telegram server failure is not a confirmed sticker rejection',async()=>{
+ const api=createTelegramBotApi({token,fetchImpl:async()=>({status:503})});
+ await assert.rejects(
+   ()=>api('addStickerToSet',{user_id:42,name:'set_by_CreateVdobot',sticker:{}}),
+   error=>error.definitiveTelegramRejection!==true);
+});
