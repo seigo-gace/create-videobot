@@ -73,6 +73,16 @@ export function createVideoBotSourceModule({
       verifyRelease:gateOwner.verifyRelease,
       receiptStore:stickerTopicPosts,salesStore:stickerSalesStore
     }):null;
+  // GateApp-Bot owns Topic binding/pin receipt. The resident Gserver
+  // adapter must expose the verified owner port; an absent port is not PASS.
+  const ensureStickerEntryPin=async()=>{
+    if(typeof gateOwner.ensureStickerEntryPin!=='function')
+      return {acknowledged:false,readbackVerified:false,reason:'OWNER_PORT_NOT_CONNECTED'};
+    const result=await gateOwner.ensureStickerEntryPin({telegramApi});
+    if(result?.acknowledged!==true)
+      return {acknowledged:false,readbackVerified:false,reason:'PIN_UNVERIFIED'};
+    return {acknowledged:true,readbackVerified:result.readbackVerified===true};
+  };
   const mediaProcessor=createVideoMediaProcessor({
     ...ports,run:mediaRun,storageApproved
   });
@@ -292,6 +302,6 @@ export function createVideoBotSourceModule({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
     listingStore,sessionStore,receiptStore,starsLedger,updateStore,
-    stickerInventory,stickerSalesStore,stickerTopicPosts,publishListing,handleCreatorUpdate
+    stickerInventory,stickerSalesStore,stickerTopicPosts,ensureStickerEntryPin,publishListing,handleCreatorUpdate
   });
 }
