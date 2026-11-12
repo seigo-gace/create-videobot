@@ -23,7 +23,7 @@
 | S05 | uploadStickerFile、create/add、getStickerSet | src/stickers/packRegistration.mjs | telegram/botApi.mjs | stickerPackRegistration.test.mjs、Telegram実登録未検証 |
 | S06 | UNKNOWN再送防止/登録復旧 | stickerWizard.mjs、packRegistration.mjs、pgStickerInventory.mjs | 既存CAS session、Webhook | test/stickerWizard.test.mjs、test/sqlStickerSmoke.sql、src/runtime/creatorMigrateDockerSmoke.mjs。CI PostgreSQL 7 migrationあり、DB本番/再起動未検証 |
 | S07 | パック一覧・本人追加 | stickerWizard.mjs、pgStickerInventory.mjs | 既存DM画面/VideoBot PostgreSQL | Sourceあり、実機未検証 |
-| S08 | パック置換・削除・順番・タイトル | Bot API allowlistはbotApi.mjs | 所有者・Telegramセット確認 | 画面/実機受入未完了 |
+| S08 | 素材置換・削除・並び順・絵文字・タイトル変更、パック全体削除 | stickerWizard.mjs、stickerPackManagement.mjs、creatorWiring.mjs、pgStickerInventory.mjs、botApi.mjs | 本人CAS DM、Telegram set照合、所有者DB同期、購入済み版保護 | Source CI 221/221＋実FFmpeg 2/2＋PostgreSQL同期 PASS（run 43167733069）。全パック削除・購入権利との整合、Gserver/Telegram実機は未達 |
 | S09 | 販売商品版・購入前承諾 | 現行Source未確認 | VideoBot商品台帳、動画決済とは分離 | 未実装/未検証 |
 | S10 | XTR invoice/precheckout/payment/納品再取得 | botApi.mjsは一部allowlistのみ | 共通Webhook、商品専用レシート | 未実装/未検証 |
 | S11 | 販売済み商品の編集・権利維持 | 現行Source未確認 | 購入版固定と素材保管の分離 | 未実装/未検証 |
@@ -47,7 +47,7 @@
 3. 素材送信→getFile→一時保存→ffprobe→比率保持変換→ffprobeとサイズ/時間/形式検証→登録前確認。Sourceあり、Telegram実機未検証。
 4. [登録]→operationをDB claim→uploadStickerFile→file_unique_idとphase永続保存→create/add→getStickerSet readback→pack/item確定→同一DMに登録結果と継続入力。Sourceあり、実機未検証。
 5. タイムアウト→needs_reconcile記録、再送禁止→file_unique_idとset typeをgetStickerSetで照合、一致時のみ確定。失敗なら不明を維持。Sourceあり、本番再起動試験未検証。
-6. マイパック→本人のpack一覧→追加/編集/削除→Telegram結果を読み戻し。現行Sourceの全機能受入は未完。
+6. マイパック→本人pack一覧→タイトル変更/素材一覧/順序/絵文字/削除確認/置換→編集前CAS保護→Telegram書込み→getStickerSet照合→DB台帳同期→元DM画面。結果不明なら再送せず確認のみ。Source/CI検証済み、Gserver・Telegram実機/パック全体削除は未達。
 7. Stars販売→商品版と再共有条件表示→購入者明示同意→XTR invoice→pre_checkout_query→successful_payment→商品配送→無償再取得。未実装/実決済未検証。
 8. 公開Topicへ一回投稿→実message_id保存→本人DMエディターへ切替→編集/削除とTopicジャンプ。未実装/実機未検証。
 
