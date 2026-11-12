@@ -63,12 +63,60 @@ function panel(session,revision){
     if(!p||typeof p.title!=='string')throw new Error('STICKER_PACK_SELECTION_INVALID');
     return {text:'📦 '+p.title+'\n'+
       (p.kind==='custom_emoji'?'カスタム絵文字':'ステッカー')+
-      '｜'+(p.item_count??0)+'個\n\n素材を追加できます。',
+      '｜'+(p.item_count??0)+'個'+stickerHint(session),
       reply_markup:{inline_keyboard:[
         [btn('➕ このパックに追加','sticker:add')],
+        [btn('✏️ タイトル変更','sticker:rename'),btn('🧩 素材を管理','sticker:items')],
         [btn('↩ マイパックへ','sticker:packs')]
       ]}};
   }
+  if(session.screen==='sticker_pack_title')return {
+    text:'✏️ パックの新しいタイトルを1行で入力してください（1〜64文字）。'+stickerHint(session),
+    reply_markup:{inline_keyboard:[[btn('↩ 戻る','sticker:pack_back')]]}
+  };
+  if(session.screen==='sticker_pack_items') {
+    const rows=Array.isArray(session.stickerItemRows)?session.stickerItemRows:[];
+    const page=session.stickerItemPage??0;
+    const keys=rows.map((item,index)=>[
+      btn(String(item.emoji).slice(0,12)+' '+String(item.position+1)+'番目','sticker:item:'+index)
+    ]);
+    keys.push([
+      ...(page>0?[btn('◀ 前へ','sticker:items_prev')]:[]),
+      ...(rows.length===10?[btn('次へ ▶','sticker:items_next')]:[])
+    ]);
+    keys.push([btn('↩ パックへ','sticker:pack_back')]);
+    return {text:'🧩 素材の編集（'+(page+1)+'ページ）'+stickerHint(session),
+      reply_markup:{inline_keyboard:keys.filter(x=>x.length>0)}};
+  }
+  if(session.screen==='sticker_item'||session.screen==='sticker_item_delete_confirm'||
+     session.screen==='sticker_item_emoji') {
+    const item=session.stickerSelectedItem;
+    if(!item)throw new Error('STICKER_ITEM_SELECTION_INVALID');
+    if(session.screen==='sticker_item_emoji')return {
+      text:'😀 この素材に設定する絵文字を送信してください。'+stickerHint(session),
+      reply_markup:{inline_keyboard:[[btn('↩ 戻る','sticker:items_back')]]}
+    };
+    if(session.screen==='sticker_item_delete_confirm')return {
+      text:'⚠️ この素材をTelegramのパックから削除します。購入済みの商品データには触れません。続けますか？',
+      reply_markup:{inline_keyboard:[
+        [btn('🗑 削除する','sticker:delete_confirm')],
+        [btn('↩ やめる','sticker:items_back')]
+      ]}
+    };
+    return {text:'🧩 '+item.emoji+'｜'+(item.position+1)+'番目'+stickerHint(session),
+      reply_markup:{inline_keyboard:[
+        [btn('⬆ 上へ','sticker:move_up'),btn('⬇ 下へ','sticker:move_down')],
+        [btn('😀 絵文字変更','sticker:emoji'),btn('🗑 削除','sticker:delete')],
+        [btn('↩ 一覧へ','sticker:items')]
+      ]}
+    };
+  }
+  if(session.screen==='sticker_edit_pending'||session.screen==='sticker_edit_reconcile')return {
+    text:session.screen==='sticker_edit_pending'?'⏳ パックを更新しています。':
+      '⚠️ 編集結果をまだ確定できません。二重変更を防ぐため再実行せず、Telegramの状態を確認します。',
+    reply_markup:{inline_keyboard:session.screen==='sticker_edit_reconcile'
+      ?[[btn('🔄 編集結果を確認','sticker:edit_check')]]:[]}
+  };
   if(session.screen==='sticker_title')return {
     text:'📦 パック名を1行で送信してください（64文字以内）。\nその後は素材をそのまま送れます。'+stickerHint(session),
     reply_markup:{inline_keyboard:[[btn('↩ 戻る','sticker:back')]]}
@@ -112,14 +160,16 @@ function mediaFileId(message){
  * session and shared screen transport; preserves video draft and sales state.
  * Conversion/Telegram API mutations are passed as a bounded port.
  */
-export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker,packInventory}={}){
+export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker,packInventory,editPack}={}){
   if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
     typeof screenTransport?.show!=='function'||typeof publishSticker!=='function'||
     (reconcileSticker!==undefined&&typeof reconcileSticker!=='function')||
+    (editPack!==undefined&&typeof editPack!=='function')||
     (packInventory!==undefined&&(
       typeof packInventory?.listPacks!=='function'||
-      typeof packInventory?.getOwnedPack!=='function')))
+      typeof packInventory?.getOwnedPack!=='function'||
+      typeof packInventory?.listOwnedItems!=='function')))
     throw new Error('STICKER_WIZARD_DEPENDENCIES_MISSING');
 
   async function persist(id,old,patch){
@@ -138,10 +188,59 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       // TGtumbler common DM contract: do not claim that an undeleted input
       // has disappeared. Preserve previous guidance and the selected draft.
       const current=await sessionStore.read(id);
-      if(!current||!['sticker_title','sticker_input','sticker_ready'].includes(current.screen))return;
+      if(!current||!['sticker_title','sticker_input','sticker_ready','sticker_pack','sticker_pack_items','sticker_pack_title','sticker_item_emoji'].includes(current.screen))return;
       const guidance='入力メッセージを自動で削除できませんでした。ご自身で送信したメッセージを長押しして削除してください。';
       if(current.stickerHelp?.includes(guidance))return;
       return persist(id,current,{stickerHelp:[current.stickerHelp,guidance].filter(Boolean).join(' ')});
+    }
+  }
+  async function itemsPage(id,old,page){
+    if(!old.stickerSelectedPack?.pack_name||!packInventory)
+      throw new Error('STICKER_PACK_SELECTION_INVALID');
+    const rows=await packInventory.listOwnedItems({
+      ownerId:id,packName:old.stickerSelectedPack.pack_name,
+      limit:10,offset:page*10});
+    return persist(id,old,{screen:'sticker_pack_items',stickerItemPage:page,
+      stickerItemRows:rows,stickerSelectedItem:null,stickerHelp:null});
+  }
+  async function editFinished(id,current,pending){
+    const pack=await packInventory.getOwnedPack(id,pending.packName);
+    if(!pack)throw new Error('STICKER_PACK_OWNER_NOT_VERIFIED');
+    if(pending.action==='title')
+      return persist(id,current,{screen:'sticker_pack',stickerSelectedPack:pack,
+        stickerEditPending:null,stickerHelp:null});
+    let page=current.stickerItemPage??0;
+    let rows=await packInventory.listOwnedItems({
+      ownerId:id,packName:pack.pack_name,limit:10,offset:page*10});
+    if(!rows.length&&page>0) {
+      page--;
+      rows=await packInventory.listOwnedItems({
+        ownerId:id,packName:pack.pack_name,limit:10,offset:page*10});
+    }
+    return persist(id,current,{screen:'sticker_pack_items',stickerSelectedPack:pack,
+      stickerItemRows:rows,stickerItemPage:page,stickerSelectedItem:null,
+      stickerEditPending:null,stickerHelp:null});
+  }
+  async function commitEdit(id,old,command){
+    if(!editPack||!packInventory||!old?.stickerSelectedPack?.pack_name)
+      throw new Error('STICKER_PACK_EDIT_DEPENDENCIES_MISSING');
+    const pending={...command,packName:old.stickerSelectedPack.pack_name,
+      status:'in_progress'};
+    // Durable CAS claim BEFORE any Telegram mutation. A restart cannot
+    // blindly replay an edit whose outcome may be unknown.
+    const claimed={...old,revision:old.revision+1,
+      screen:'sticker_edit_pending',stickerEditPending:pending};
+    await sessionStore.write(id,old.revision,claimed);
+    try{
+      const result=await editPack({owner:id,...pending});
+      if(result?.verified!==true)throw new Error('STICKER_PACK_EDIT_RESULT_UNKNOWN');
+      const current=await sessionStore.read(id);
+      return await editFinished(id,current,pending);
+    }catch{
+      const current=await sessionStore.read(id);
+      // Never resubmit the write on timeout, DB failure, or lost UI result.
+      return persist(id,current,{screen:'sticker_edit_reconcile',
+        stickerEditPending:{...pending,status:'needs_reconcile'}});
     }
   }
   async function handle(update){
@@ -152,6 +251,18 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       const {id,messageId}=privateActor(update);
       await api('answerCallbackQuery',{callback_query_id:cb.id});
       const old=await sessionStore.read(id);
+      if(old?.stickerEditPending){
+        const pending=old.stickerEditPending;
+        if(pending.status!=='needs_reconcile'||
+           data!=='sticker:edit_check|r'+old.revision||
+           messageId!==old.screenMessageId||!editPack)
+          return {handled:true,editLocked:true};
+        const checked=await editPack({owner:id,...pending,verifyOnly:true})
+          .catch(()=>({verified:false}));
+        if(checked?.verified!==true)return {handled:true,editLocked:true};
+        const current=await sessionStore.read(id);
+        return editFinished(id,current,pending);
+      }
       // Design v0.6 X10: allow read-only reconciliation, never a fresh write.
       if(old?.stickerPending?.status==='in_progress'||
          old?.stickerPending?.status==='needs_reconcile'){
@@ -203,6 +314,48 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
         const p=await packInventory.getOwnedPack(id,candidate.pack_name);
         if(!p||p.kind!==candidate.kind)return {handled:true,staleButton:true};
         return persist(id,old,{screen:'sticker_pack',stickerSelectedPack:p});
+      }
+      if(action==='sticker:rename'&&old.screen==='sticker_pack')
+        return persist(id,old,{screen:'sticker_pack_title',stickerHelp:null});
+      if(action==='sticker:pack_back'&&
+         ['sticker_pack_title','sticker_pack_items'].includes(old.screen))
+        return persist(id,old,{screen:'sticker_pack',stickerHelp:null});
+      if(action==='sticker:items'||action==='sticker:items_next'||
+         action==='sticker:items_prev'){
+        if(!['sticker_pack','sticker_pack_items','sticker_item'].includes(old.screen))
+          return {handled:true,staleButton:true};
+        const previous=old.screen==='sticker_pack_items'?(old.stickerItemPage??0):0;
+        return itemsPage(id,old,action==='sticker:items_next'?previous+1:
+          action==='sticker:items_prev'?Math.max(0,previous-1):previous);
+      }
+      if(action.startsWith('sticker:item:')&&old.screen==='sticker_pack_items'){
+        const idx=Number(action.slice('sticker:item:'.length));
+        const item=old.stickerItemRows?.[idx];
+        if(!Number.isSafeInteger(idx)||idx<0||idx>=10||!item)
+          return {handled:true,staleButton:true};
+        return persist(id,old,{screen:'sticker_item',stickerSelectedItem:item,
+          stickerHelp:null});
+      }
+      if(action==='sticker:items_back'&&
+         ['sticker_item_emoji','sticker_item_delete_confirm'].includes(old.screen))
+        return persist(id,old,{screen:'sticker_item',stickerHelp:null});
+      if(action==='sticker:emoji'&&old.screen==='sticker_item')
+        return persist(id,old,{screen:'sticker_item_emoji',stickerHelp:null});
+      if(action==='sticker:delete'&&old.screen==='sticker_item')
+        return persist(id,old,{screen:'sticker_item_delete_confirm',stickerHelp:null});
+      if(action==='sticker:delete_confirm'&&old.screen==='sticker_item_delete_confirm')
+        return commitEdit(id,old,{action:'delete_item',
+          stickerUniqueId:old.stickerSelectedItem.file_unique_id});
+      if((action==='sticker:move_up'||action==='sticker:move_down')&&
+         old.screen==='sticker_item'){
+        const item=old.stickerSelectedItem,pack=old.stickerSelectedPack;
+        if(!item||!pack)return {handled:true,staleButton:true};
+        const position=item.position+(action==='sticker:move_up'?-1:1);
+        if(position<0||position>=pack.item_count)
+          return persist(id,old,{screen:'sticker_item',
+            stickerHelp:'これ以上移動できません。'});
+        return commitEdit(id,old,{action:'move_item',
+          stickerUniqueId:item.file_unique_id,position});
       }
       if(action==='sticker:add'){
         if(old.screen!=='sticker_pack'||!packInventory||
@@ -296,6 +449,13 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     if(!message||message.chat?.type!=='private')return {handled:false};
     const {id}=privateActor(update);
     const old=await sessionStore.read(id);
+    if(old?.stickerEditPending){
+      if(typeof message.text==='string'&&
+         /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text.trim()))
+        return persist(id,old,{screen:'sticker_edit_reconcile',
+          stickerEditPending:{...old.stickerEditPending,status:'needs_reconcile'}});
+      return {handled:true,editLocked:true};
+    }
     // Protect the common VideoBot DM owner as well as sticker callbacks.
     // Any private text/media while a registration is unresolved must not be
     // routed to the video editor or wipe the pending Telegram receipt.
@@ -321,6 +481,18 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     if(typeof message.text==='string'&&
        /^\/start(?:@[A-Za-z0-9_]+)?\s+sticker$/.test(message.text.trim())) {
       return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null});
+    }
+    if(old?.screen==='sticker_pack_title'||old?.screen==='sticker_item_emoji'){
+      try {
+        const value=message.text?.trim();
+        if(typeof value!=='string'||!value||value.length>
+           (old.screen==='sticker_pack_title'?64:16)||/[\r\n]/.test(value))
+          return persist(id,old,{stickerHelp:'入力は1行で、指定の文字数以内にしてください。'});
+        return commitEdit(id,old,old.screen==='sticker_pack_title'
+          ?{action:'title',title:value}
+          :{action:'emoji',stickerUniqueId:old.stickerSelectedItem?.file_unique_id,
+            emoji:value});
+      }finally{await deleteInputOrWarn(id,message.message_id);}
     }
     if(old?.screen==='sticker_title'){
       const title=message.text?.trim();
