@@ -71,7 +71,13 @@ test('unknown Telegram registration is locked and never auto retried',async()=>{
     setScreen:async()=>{}
    },
    screenTransport:{show:async()=>({messageId:301})},
-   publishSticker:async()=>{throw new Error('Telegram timeout');}
+   publishSticker:async({onUploaded,onBeforeMutation})=>{
+     const receipt={name:'s42_112233aabbccddff_by_CreateVdobot',
+       fileUniqueId:'unique-42',format:'static'};
+     await onUploaded(receipt);
+     await onBeforeMutation(receipt);
+     throw new Error('Telegram timeout');
+   }
  });
  await broken.handle(f.cb('sticker:register|r5'));
  assert.equal(f.state().screen,'sticker_reconcile');
