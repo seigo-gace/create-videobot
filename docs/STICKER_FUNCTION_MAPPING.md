@@ -24,9 +24,9 @@
 | S06 | UNKNOWN再送防止/登録復旧 | stickerWizard.mjs、packRegistration.mjs、pgStickerInventory.mjs | 既存CAS session、Webhook | test/stickerWizard.test.mjs、test/sqlStickerSmoke.sql、src/runtime/creatorMigrateDockerSmoke.mjs。CI PostgreSQL 7 migrationあり、DB本番/再起動未検証 |
 | S07 | パック一覧・本人追加 | stickerWizard.mjs、pgStickerInventory.mjs | 既存DM画面/VideoBot PostgreSQL | Sourceあり、実機未検証 |
 | S08 | 素材置換・削除・並び順・絵文字・タイトル変更、パック全体削除 | stickerWizard.mjs、stickerPackManagement.mjs、creatorWiring.mjs、pgStickerInventory.mjs、botApi.mjs | 本人CAS DM、Telegram set照合、所有者DB同期、購入済み版保護 | Source CI 221/221＋実FFmpeg 2/2＋PostgreSQL同期 PASS（run 43167733069）。全パック削除・購入権利との整合、Gserver/Telegram実機は未達 |
-| S09 | 販売商品版・購入前承諾 | 現行Source未確認 | VideoBot商品台帳、動画決済とは分離 | 未実装/未検証 |
-| S10 | XTR invoice/precheckout/payment/納品再取得 | botApi.mjsは一部allowlistのみ | 共通Webhook、商品専用レシート | 未実装/未検証 |
-| S11 | 販売済み商品の編集・権利維持 | 現行Source未確認 | 購入版固定と素材保管の分離 | 未実装/未検証 |
+| S09 | 販売商品版・購入前承諾 | stickerSales.mjs、pgStickerSales.mjs、sql/008_sticker_sales.sql | 既存マイパックDM→素材版固定→条件・価格→同意 | Source/CI済、商用条件とGserver/実機未検証 |
+| S10 | XTR invoice/precheckout/payment/納品再取得 | stickerSales.mjs、pgStickerSales.mjs、creatorBot.mjs、creatorWebhookAdmission.mjs、pgWebhookUpdates.mjs、botApi.mjs | 動画のpaidMediaから注文/charge台帳を分離、送信CASとバッチ納品 | Node227件、実DB購入・決済・再取得/重複抑止PASS（Actions 43171467208）。実Stars決済/ファイル保持は未検証 |
+| S11 | 販売済み商品の編集・権利維持 | pgStickerSales.mjs、sql/008_sticker_sales.sql | 商品ID・素材file_id/unique_id固定、注文を商品版へ参照、通常パック編集は商品版不変 | Source/実PostgreSQL検証済。Bot媒体ID失効時の長期再取得保証・版改定UI/実機未検証 |
 | S12 | 指定Topicピン留め→Bot DM | stickerWizard.mjs、creatorBot.mjsにDeep Link入口 | GateApp-Bot Topic台帳/所有者 | Topic実機設置・readbackなし |
 | S13 | 投稿後DMエディター・投稿先ジャンプ・本人編集削除 | Source未確認 | GateApp-Bot Topic/投稿Owner | 未実装/未検証 |
 | S14 | 動画販売回帰維持（動画のみ手数料30%） | creatorWiring.mjs、pgStarsLedger.mjs | 既存動画販売のCurrent | 既存CIあり、Telegram実機回帰なし |
@@ -48,7 +48,7 @@
 4. [登録]→operationをDB claim→uploadStickerFile→file_unique_idとphase永続保存→create/add→getStickerSet readback→pack/item確定→同一DMに登録結果と継続入力。Sourceあり、実機未検証。
 5. タイムアウト→needs_reconcile記録、再送禁止→file_unique_idとset typeをgetStickerSetで照合、一致時のみ確定。失敗なら不明を維持。Sourceあり、本番再起動試験未検証。
 6. マイパック→本人pack一覧→タイトル変更/素材一覧/順序/絵文字/削除確認/置換→編集前CAS保護→Telegram書込み→getStickerSet照合→DB台帳同期→元DM画面。結果不明なら再送せず確認のみ。Source/CI検証済み、Gserver・Telegram実機/パック全体削除は未達。
-7. Stars販売→商品版と再共有条件表示→購入者明示同意→XTR invoice→pre_checkout_query→successful_payment→商品配送→無償再取得。未実装/実決済未検証。
+7. Stars販売→不変商品ID/価格/素材IDをDB保存→購入者へ公開パックの非独占・共有可能性/再取得制約を明示→本人同意→XTR invoice 1回→pre_checkout_query検証→successful_paymentから専用charge台帳へ冪等確定→最大3件ごとのBot DM配送・無償再取得。失敗したWebhookは同一fingerprintの決済通知に限りCAS安全再処理。/paysupport台帳Sourceあり。CI/PG PASS、実Stars決済・商用条件・実保管E2E未検証。
 8. 公開Topicへ一回投稿→実message_id保存→本人DMエディターへ切替→編集/削除とTopicジャンプ。未実装/実機未検証。
 
 ## 実装・検証の記録契約
