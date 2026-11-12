@@ -24,8 +24,8 @@ export function createPostgresStickerSales(pool){
  if(typeof pool?.query!=='function'||typeof pool?.connect!=='function')
    throw Error('STICKER_SALE_DB_REQUIRED');
  return {
-  async publish({sellerId,packName,set,priceStars}={}){
-   const seller=positive(sellerId,'SELLER'),name=pack(packName),stars=price(priceStars);
+  async publish({sellerId,packName,set,priceStars,productId}={}){
+   const seller=positive(sellerId,'SELLER'),name=pack(packName),stars=price(priceStars),product=key(productId,'sp');
    if(set?.name!==name)throw Error('STICKER_SALE_SNAPSHOT_PACK_MISMATCH');
    const items=snapshot(set),client=await pool.connect();
    try{
@@ -35,13 +35,25 @@ export function createPostgresStickerSales(pool){
        [name,seller]);
      if(found.rowCount!==1||found.rows[0].kind!==set.sticker_type)
        throw Error('STICKER_SALE_PACK_OWNER_MISMATCH');
+     const previous=await client.query(
+       "SELECT product_id,version,seller_user_id,pack_name,kind,title,price_stars,items FROM videobot_sticker_products WHERE product_id=$1",
+       [product]);
+     if(previous.rowCount===1){
+       const row=previous.rows[0];
+       if(String(row.seller_user_id)!==String(seller)||row.pack_name!==name||
+          row.kind!==set.sticker_type||row.title!==set.title||
+          Number(row.price_stars)!==stars||
+          JSON.stringify(itemsOf(row))!==JSON.stringify(items))
+         throw Error('STICKER_SALE_PUBLISH_IDEMPOTENCY_CONFLICT');
+       await client.query('COMMIT');
+       return {productId:product,version:Number(row.version),priceStars:stars,duplicate:true};
+     }
      const version=await client.query(
        "SELECT COALESCE(MAX(version),0)+1 AS next FROM videobot_sticker_products WHERE pack_name=$1",
        [name]);
-     const productId=id('sp');
      const result=await client.query(
        "INSERT INTO videobot_sticker_products (product_id,pack_name,version,seller_user_id,kind,title,price_stars,items) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb) RETURNING product_id,version",
-       [productId,name,Number(version.rows[0].next),seller,set.sticker_type,
+       [product,name,Number(version.rows[0].next),seller,set.sticker_type,
         set.title,stars,JSON.stringify(items)]);
      await client.query('COMMIT');
      return {productId:result.rows[0].product_id,version:Number(result.rows[0].version),priceStars:stars};
@@ -49,7 +61,7 @@ export function createPostgresStickerSales(pool){
   },
   async getPublished(productId){
    const q=await pool.query(
-     "SELECT product_id,pack_name,version,title,kind,price_stars,items,status FROM videobot_sticker_products WHERE product_id=$1",
+     "SELECT product_id,pack_name,version,seller_user_id,title,kind,price_stars,items,status FROM videobot_sticker_products WHERE product_id=$1",
      [key(productId,'sp')]);
    return q.rows[0]??null;
   },
