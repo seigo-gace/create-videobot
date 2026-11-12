@@ -18,7 +18,7 @@ test('all twelve VideoBot migrations run in one locked transaction with no GATE 
  const result=await applyCreatorSchema({pool:db,loadSql:async name=>{
   loaded.push(name);return 'CREATE TABLE IF NOT EXISTS test_'+loaded.length+' (id int)';
  }});
- assert.deepEqual(result,{applied:true,migrations:11});
+ assert.deepEqual(result,{applied:true,migrations:12});
  assert.equal(loaded.length,12);
  assert.match(loaded[0],/^001_video_post_receipts/);
  assert.match(loaded.at(-1),/^011_sticker_entry_pin/);
