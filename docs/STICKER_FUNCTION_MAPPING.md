@@ -27,10 +27,10 @@
 | S09 | 販売商品版・購入前承諾 | stickerSales.mjs、pgStickerSales.mjs、sql/008_sticker_sales.sql | 既存マイパックDM→素材版固定→条件・価格→同意 | Source/CI済、商用条件とGserver/実機未検証 |
 | S10 | XTR invoice/precheckout/payment/納品再取得 | stickerSales.mjs、pgStickerSales.mjs、creatorBot.mjs、creatorWebhookAdmission.mjs、pgWebhookUpdates.mjs、botApi.mjs | 動画のpaidMediaから注文/charge台帳を分離、送信CASとバッチ納品 | Node227件、実DB購入・決済・再取得/重複抑止PASS（Actions 43171467208）。実Stars決済/ファイル保持は未検証 |
 | S11 | 販売済み商品の編集・権利維持 | pgStickerSales.mjs、sql/008_sticker_sales.sql | 商品ID・素材file_id/unique_id固定、注文を商品版へ参照、通常パック編集は商品版不変 | Source/実PostgreSQL検証済。Bot媒体ID失効時の長期再取得保証・版改定UI/実機未検証 |
-| S12 | 指定Topicピン留め→Bot DM | stickerWizard.mjs、creatorBot.mjsにDeep Link入口 | GateApp-Bot Topic台帳/所有者 | Topic実機設置・readbackなし |
-| S13 | 投稿後DMエディター・投稿先ジャンプ・本人編集削除 | Source未確認 | GateApp-Bot Topic/投稿Owner | 未実装/未検証 |
+| S12 | 指定Topicピン留め→Bot DM | create-videobot: creatorWiring.mjs、creatorLiveService.mjs、stickerWizard.mjs、botApi.mjs。GateApp-Bot: postingDelivery.ts、topicRouting.ts、topicBindingHandlers.ts、stickerTopicEntryPin.ts、stickerTopicOwnerPort.ts、migrate.ts | GateApp-Bot正規Topic DBから一意に厳密照合、実Bot本人・管理者権限・保存済pin receipt、deep link start=sticker、UNKNOWN再送防止 | GateApp-Bot新Source/Typecheck/Pin contract/Docker CI PASS。実Topic登録・Host owner adapter提供・pin readbackは未検証 |
+| S13 | 公開後DMエディター・投稿先ジャンプ・本人編集削除 | stickerSales.mjs、topicPublication.mjs、pgStickerTopicPosts.mjs、sql/009_sticker_topic_posts.sql | Verified GateApp Topic+Seller owner、実送信message_id保存、価格/商品版不変、購入済み権利保持 | Source/Node231件・実PG Topic smoke PASS。Host・Telegram送信/編集/削除/投稿先遷移の実機未検証 |
 | S14 | 動画販売回帰維持（動画のみ手数料30%） | creatorWiring.mjs、pgStarsLedger.mjs | 既存動画販売のCurrent | 既存CIあり、Telegram実機回帰なし |
-| S15 | 本番Git/Compose/DB/Webhook | deploy/Dockerfile、Gserver既存アプリOwner | 共通ServerTerminal host.command | Host/Token/Telegram E2E未完了 |
+| S15 | 本番Git/Compose/DB/Webhook | deploy/Dockerfile、Gserver既存アプリOwner、GateApp-Bot live owner adapter | 共通ServerTerminal host.command。稼働Userbotは既存常駐IPCのみ、二重起動・logout厳禁 | Source CIのみPASS。Host f102 result not returned、最新HEADデプロイ/9 migrations本番/Telegram E2E/owner port接続はNOT_VERIFIED |
 
 ## 担当・状態DBの分離
 | 保存対象 | 既存Owner | 禁止事項 |
@@ -49,7 +49,7 @@
 5. タイムアウト→needs_reconcile記録、再送禁止→file_unique_idとset typeをgetStickerSetで照合、一致時のみ確定。失敗なら不明を維持。Sourceあり、本番再起動試験未検証。
 6. マイパック→本人pack一覧→タイトル変更/素材一覧/順序/絵文字/削除確認/置換→編集前CAS保護→Telegram書込み→getStickerSet照合→DB台帳同期→元DM画面。結果不明なら再送せず確認のみ。Source/CI検証済み、Gserver・Telegram実機/パック全体削除は未達。
 7. Stars販売→不変商品ID/価格/素材IDをDB保存→購入者へ公開パックの非独占・共有可能性/再取得制約を明示→本人同意→XTR invoice 1回→pre_checkout_query検証→successful_paymentから専用charge台帳へ冪等確定→最大3件ごとのBot DM配送・無償再取得。失敗したWebhookは同一fingerprintの決済通知に限りCAS安全再処理。/paysupport台帳Sourceあり。CI/PG PASS、実Stars決済・商用条件・実保管E2E未検証。
-8. 公開Topicへ一回投稿→実message_id保存→本人DMエディターへ切替→編集/削除とTopicジャンプ。未実装/実機未検証。
+8. GateApp-Bot実TopicからVerified adapter取得（ボードvideo_chat・正確なTopic名・Chat/thread照合）→CreateVdobot本人の登録商品を1回送信→DBに実message_idと結果を永続化→本人DMのグループ・Topicタイトルとジャンプを表示→編集・削除→販売停止と購入済み版保持。GateApp側Topic固定入口はadmin確認後にCreateVdobot本人のBot APIで送信・pin、DB pin receiptで重複禁止。Source/CIはPASS、本番Adapter・Topic binding・pin・編集/削除のTelegram E2Eは未検証。
 
 ## 実装・検証の記録契約
 各機能Issueに (1)採用仕様と決定者 (2)Source path・commitとOwner (3)CI run (4)Host request/稼働 HEAD (5)Telegram本番 readback/受入 を分けて残す。UNKNOWNやNOT_VERIFIEDを成功へ書き換えない。
