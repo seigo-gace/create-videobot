@@ -2,6 +2,7 @@ import pg from 'pg';
 import {applyCreatorSchema} from './creatorMigrate.mjs';
 import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs';
 import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
+import {createPostgresStickerTopicPosts} from '../stickers/pgStickerTopicPosts.mjs';
 const {Pool}=pg;
 if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
    !/^postgres:\/\/videobot_ci:ci_only_not_a_secret@127\.0\.0\.1:5432\/videobot_migration_ci$/.test(process.env.CI_VIDEO_DB_DSN||'')){
@@ -157,6 +158,26 @@ try {
    buyerId:98,orderId:order.order_id,details:'Foreign support case'})
    .then(()=>false,e=>e.message==='STICKER_SALE_SUPPORT_OWNER_MISMATCH');
  if(!foreignSupport)throw new Error('STICKER_STARS_SUPPORT_FOREIGN_OWNER');
+ const topicStore=createPostgresStickerTopicPosts(pool);
+ const topic={chatId:-1002373696859,threadId:102,groupTitle:'ビデオChatの掲示板',
+   title:'ステッカーの公開と販売'};
+ const topicClaim=await topicStore.claim({productId:sold.productId,
+   sellerId:42,topic,text:'Verified sale message'});
+ const repeatClaim=await topicStore.claim({productId:sold.productId,
+   sellerId:42,topic,text:'Verified sale message'});
+ if(!topicClaim.claimed||repeatClaim.claimed||repeatClaim.status!=='sending')
+   throw new Error('STICKER_TOPIC_POST_CLAIM_BROKEN');
+ await topicStore.recorded(sold.productId,42,444);
+ const ownedTopic=await topicStore.getOwned(sold.productId,42);
+ const foreignTopic=await topicStore.getOwned(sold.productId,99);
+ if(ownedTopic.status!=='sent'||Number(ownedTopic.telegram_message_id)!==444||foreignTopic!==null)
+   throw new Error('STICKER_TOPIC_POST_OWNER_READBACK_BROKEN');
+ await topicStore.edited(sold.productId,42,'Edited verified message');
+ await topicStore.deleted(sold.productId,42);
+ if((await topicStore.getOwned(sold.productId,42)).status!=='deleted')
+   throw new Error('STICKER_TOPIC_DELETE_RECEIPT_BROKEN');
+ process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_TOPIC=PASS\n');
+
  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_STARS=PASS\n');
 
  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_INVENTORY=PASS\n');
