@@ -157,6 +157,14 @@ export function createVideoBotSourceModule({
             });
           }});
       }catch(error){
+        if(packWritePossible&&error?.definitiveTelegramRejection===true){
+          // Only an explicit Telegram 400 after remote readback is terminal.
+          // A timed-out operation must never take this release path.
+          await stickerInventory.recordDefinitiveRejection({operationId,ownerId:owner});
+          const safe=new Error('STICKER_TELEGRAM_REGISTRATION_REJECTED');
+          safe.safeToRetryVerified=true;
+          throw safe;
+        }
         if(!packWritePossible){
           // No create/add API call can have occurred. Release the DB claim
           // conditionally; submission_started is NEVER deleted.
