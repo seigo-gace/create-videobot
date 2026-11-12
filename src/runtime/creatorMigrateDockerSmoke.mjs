@@ -1,6 +1,7 @@
 import pg from 'pg';
 import {applyCreatorSchema} from './creatorMigrate.mjs';
 import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs';
+import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
 const {Pool}=pg;
 if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
    !/^postgres:\/\/videobot_ci:ci_only_not_a_secret@127\.0\.0\.1:5432\/videobot_migration_ci$/.test(process.env.CI_VIDEO_DB_DSN||'')){
@@ -87,6 +88,58 @@ try {
  if(!reduced.synced||
     (await inventory.listOwnedItems({ownerId:42,packName:name})).length!==1)
    throw new Error('STICKER_PACK_EDIT_DELETE_SQL_SYNC_FAILED');
+
+ // STK-03: real committed invoice/product/entitlement isolation, not mocks.
+ const sales=createPostgresStickerSales(pool);
+ const sold=await sales.publish({sellerId:42,packName:name,set:snapshot,priceStars:50});
+ const product=await sales.getPublished(sold.productId);
+ if(!product||product.version!==1||product.price_stars!==50||product.items.length!==2)
+   throw new Error('STICKER_STARS_PRODUCT_PUBLISH_FAILED');
+ const order=await sales.reserveOrder({productId:sold.productId,buyerId:99});
+ const second=await sales.reserveOrder({productId:sold.productId,buyerId:99});
+ if(!order.newOrder||second.newOrder||order.order_id!==second.order_id)
+   throw new Error('STICKER_STARS_ORDER_IDEMPOTENCY_FAILED');
+ const premature=await sales.checkPreCheckout({
+   invoice_payload:'stk:'+order.order_id,currency:'XTR',total_amount:50,from:{id:99}});
+ if(premature)throw new Error('STICKER_STARS_PRECHECKOUT_BEFORE_INVOICE_ALLOWED');
+ const begun=await sales.startInvoice(order.order_id,99);
+ if(!begun||await sales.startInvoice(order.order_id,99)!==null)
+   throw new Error('STICKER_STARS_DOUBLE_INVOICE_ALLOWED');
+ const pre=await sales.checkPreCheckout({
+   invoice_payload:'stk:'+order.order_id,currency:'XTR',total_amount:50,from:{id:99}});
+ const wrongPrice=await sales.checkPreCheckout({
+   invoice_payload:'stk:'+order.order_id,currency:'XTR',total_amount:51,from:{id:99}});
+ const wrongBuyer=await sales.checkPreCheckout({
+   invoice_payload:'stk:'+order.order_id,currency:'XTR',total_amount:50,from:{id:98}});
+ if(!pre||wrongPrice||wrongBuyer)
+   throw new Error('STICKER_STARS_PRECHECKOUT_VALIDATION_FAILED');
+ await sales.invoiceSent(order.order_id,99,333);
+ const payment={invoice_payload:'stk:'+order.order_id,
+   currency:'XTR',total_amount:50,telegram_payment_charge_id:'ci_stk_charge_1'};
+ const recorded=await sales.capturePayment({buyerId:99,successfulPayment:payment,updateId:1000});
+ const replay=await sales.capturePayment({buyerId:99,successfulPayment:payment,updateId:1000});
+ if(recorded.duplicate||!replay.duplicate)
+   throw new Error('STICKER_STARS_DUPLICATE_PAYMENT_FAILED');
+ const foreignPaid=await sales.getPaidOrder(order.order_id,98);
+ if(foreignPaid!==null)throw new Error('STICKER_STARS_ENTITLEMENT_OWNER_BROKEN');
+ const first=await sales.claimItem({orderId:order.order_id,buyerId:99,attempt:1,index:0});
+ const double=await sales.claimItem({orderId:order.order_id,buyerId:99,attempt:1,index:0});
+ if(first?.file_unique_id!=='unique_one'||double!==null)
+   throw new Error('STICKER_STARS_DELIVERY_CAS_BROKEN');
+ await sales.itemSent({orderId:order.order_id,attempt:1,index:0,messageId:555});
+ const receiptRows=await sales.getDeliveryRows(order.order_id,1);
+ if(receiptRows[0].status!=='sent'||receiptRows[1].status!=='pending')
+   throw new Error('STICKER_STARS_DELIVERY_RECEIPT_BROKEN');
+ const extra=await sales.createRedelivery(order.order_id,99);
+ if(extra.attempt!==2||(await sales.getDeliveryRows(order.order_id,2)).length!==2)
+   throw new Error('STICKER_STARS_REDELIVERY_BROKEN');
+ const unauthorized=await sales.createRedelivery(order.order_id,100)
+   .then(()=>false,e=>e?.message==='STICKER_SALE_NOT_PURCHASED');
+ if(!unauthorized)throw new Error('STICKER_STARS_UNAUTHORIZED_REDELIVERY');
+ const originalVersion=await sales.getPublished(sold.productId);
+ if(originalVersion.items[0].file_unique_id!=='unique_one')
+   throw new Error('STICKER_STARS_IMMUTABLE_ITEMS_CHANGED');
+ process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_STARS=PASS\n');
 
  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_INVENTORY=PASS\n');
  process.stdout.write('DOCKER_NODE_POSTGRES_MIGRATION=PASS\n');
