@@ -14,6 +14,7 @@ import {createStickerWizard} from './stickerWizard.mjs';
 import {convertStickerMedia} from '../stickers/mediaConverter.mjs';
 import {registerStickerAsset,reconcileStickerRegistration,createStickerSetShortName} from '../stickers/packRegistration.mjs';
 import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs';
+import {editStickerPack,verifyStickerPackEditSnapshot} from '../stickers/stickerPackManagement.mjs';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -170,10 +171,37 @@ export function createVideoBotSourceModule({
     }
     return result;
   };
+  // Owner-scoped STK-02 port. No duplicate pack edit on uncertain results:
+  // the wizard stores its pending edit before invoking this mutation.
+  const stickerPackEditor=async({owner,packName,action,stickerUniqueId,
+    title,position,emoji,verifyOnly=false})=>{
+    const record=await stickerInventory.getOwnedPack(owner,packName);
+    if(!record)throw new Error('STICKER_PACK_OWNER_NOT_VERIFIED');
+    const identity=await telegramApi('getMe',{});
+    if(identity?.is_bot!==true||typeof identity.username!=='string)
+      throw new Error('STICKER_BOT_IDENTITY_INVALID');
+    let set;
+    if(verifyOnly){
+      set=await telegramApi('getStickerSet',{name:packName});
+      if(!verifyStickerPackEditSnapshot({set,name:packName,kind:record.kind,
+        action,stickerUniqueId,title,position,emoji}))
+        return {verified:false,status:'not_observed'};
+    }else{
+      const result=await editStickerPack({telegramApi,owner,
+        botUsername:identity.username,
+        record:{ownerId:owner,name:packName,kind:record.kind},
+        action,stickerUniqueId,title,position,emoji});
+      if(result.verified!==true)throw new Error('STICKER_PACK_EDIT_RESULT_UNKNOWN');
+      set=result.set;
+    }
+    const synced=await stickerInventory.syncOwnedPackSnapshot({
+      ownerId:owner,packName,set});
+    return {verified:true,synced,packName};
+  };
   const stickerWizard=createStickerWizard({
     api:telegramApi,sessionStore,screenTransport:screen,
     publishSticker:stickerPublisher,reconcileSticker:stickerReconcile,
-    packInventory:stickerInventory
+    packInventory:stickerInventory,editPack:stickerPackEditor
   });
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
     api:telegramApi,sessionStore,listingStore,
