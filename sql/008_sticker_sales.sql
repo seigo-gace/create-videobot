@@ -54,3 +54,16 @@ CREATE TABLE IF NOT EXISTS videobot_sticker_delivery_items (
 );
 CREATE INDEX IF NOT EXISTS videobot_sticker_delivery_pending
  ON videobot_sticker_delivery_items(order_id,attempt,status);
+
+-- Official payment disputes remain accepted; there is no automatic refund UI.
+-- An operator must triage cases under the actual VideoBot owner.
+CREATE TABLE IF NOT EXISTS videobot_sticker_payment_support (
+ ticket_id TEXT PRIMARY KEY CHECK(ticket_id ~ '^ss_[a-f0-9]{24}$'),
+ buyer_user_id BIGINT NOT NULL CHECK(buyer_user_id>0),
+ order_id TEXT NULL REFERENCES videobot_sticker_orders(order_id) ON DELETE RESTRICT,
+ details TEXT NOT NULL CHECK(char_length(details) BETWEEN 5 AND 1000),
+ status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved')),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS videobot_sticker_payment_support_open
+ ON videobot_sticker_payment_support(created_at) WHERE status='open';
