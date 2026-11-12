@@ -18,6 +18,29 @@ try {
  if(repeat.applied!==true||repeat.migrations!==7)throw new Error('schema re-application invalid');
  // Exercise the actual Node adapter against PostgreSQL, not an in-memory fake.
  const inventory=createPostgresStickerInventory(pool);
+ // Regression: a failed conversion/upload before the Telegram pack-write
+ // may release its receipt, while a submitted/unknown write never may.
+ const retryId='s42_ci_retry';
+ const retryName='s42_ci_retry_by_CreateVdobot';
+ await inventory.beginRegistration({operationId:retryId,ownerId:42,
+   packName:retryName,kind:'regular',sourceFileId:'source_for_retry'});
+ await inventory.uploaded({operationId:retryId,ownerId:42,format:'static',
+   fileUniqueId:'unique_before_mutation'});
+ const released=await inventory.abandonBeforeMutation({operationId:retryId,ownerId:42});
+ if(released.abandoned!==true||
+    await inventory.getRegistration({operationId:retryId,ownerId:42})!==null)
+   throw new Error('STICKER_PRE_MUTATION_RELEASE_FAILED');
+ await inventory.beginRegistration({operationId:retryId,ownerId:42,
+   packName:retryName,kind:'regular',sourceFileId:'source_for_retry'});
+ await inventory.uploaded({operationId:retryId,ownerId:42,format:'static',
+   fileUniqueId:'unique_before_mutation'});
+ await inventory.submitting({operationId:retryId,ownerId:42});
+ const uncertainDenied=await inventory.abandonBeforeMutation({
+   operationId:retryId,ownerId:42
+ }).then(()=>false,e=>e?.message==='STICKER_PRE_MUTATION_ABORT_NOT_CONFIRMED');
+ if(!uncertainDenied||
+    (await inventory.getRegistration({operationId:retryId,ownerId:42}))?.phase!=='submission_started')
+   throw new Error('STICKER_UNKNOWN_RECEIPT_MUST_REMAIN_LOCKED');
  const id='s42_ciabcdef';
  const name='s42_ciabcdef_by_CreateVdobot';
  await inventory.beginRegistration({operationId:id,ownerId:42,
