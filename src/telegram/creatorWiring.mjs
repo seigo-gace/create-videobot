@@ -80,8 +80,16 @@ export function createVideoBotSourceModule({
       const packName=draft.setName??
         createStickerSetShortName({owner,botUsername:identity.username,nonce:draft.nonce});
       const operationId='s'+String(owner)+'_'+draft.nonce;
-      await stickerInventory.beginRegistration({operationId,ownerId:owner,
-        packName,kind:draft.kind,sourceFileId:draft.fileId});
+      let packWritePossible=false;
+      try{
+        await stickerInventory.beginRegistration({operationId,ownerId:owner,
+          packName,kind:draft.kind,sourceFileId:draft.fileId});
+      }catch(error){
+        // An unclaimed operation must not race an older in-flight receipt.
+        const locked=new Error('STICKER_REGISTRATION_CLAIM_UNVERIFIED');
+        locked.registrationLocked=true;
+        throw locked;
+      }
       try{
         return await registerStickerAsset({telegramApi,owner,
           botUsername:identity.username,title:draft.title,nonce:draft.nonce,
@@ -95,6 +103,9 @@ export function createVideoBotSourceModule({
           onBeforeMutation:async receipt=>{
             await stickerInventory.submitting({operationId,ownerId:owner});
             await onBeforeMutation?.(receipt);
+            // Only after BOTH receipts are durable may the Telegram pack
+            // mutation be attempted. A later timeout is never retryable.
+            packWritePossible=true;
           },
           onVerified:async receipt=>{
             const item=receipt.item;
@@ -106,8 +117,26 @@ export function createVideoBotSourceModule({
             });
           }});
       }catch(error){
+        if(!packWritePossible){
+          // No create/add API call can have occurred. Release the DB claim
+          // conditionally, including a submission_started receipt when its
+          // callback failed before returning to registerStickerAsset.
+          // Only confirmed release allows reuse of this draft/nonce.
+          try{
+            await stickerInventory.abandonBeforeMutation({operationId,ownerId:owner});
+          }catch{
+            const locked=new Error('STICKER_PRE_MUTATION_ABORT_NOT_CONFIRMED');
+            locked.registrationLocked=true;
+            throw locked;
+          }
+          const safe=new Error(error instanceof Error?error.message:'STICKER_PUBLISH_FAILED');
+          safe.preMutationVerified=true;
+          throw safe;
+        }
         await stickerInventory.needsReconcile({operationId,ownerId:owner}).catch(()=>{});
-        throw error;
+        const locked=new Error('STICKER_REGISTRATION_RESULT_UNKNOWN');
+        locked.registrationLocked=true;
+        throw locked;
       }
     }finally{
       await converted?.cleanup();
