@@ -14,8 +14,8 @@ import {createStickerWizard} from './stickerWizard.mjs';
 import {convertStickerMedia} from '../stickers/mediaConverter.mjs';
 import {registerStickerAsset,reconcileStickerRegistration,createStickerSetShortName} from '../stickers/packRegistration.mjs';
 import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs';
-import {editStickerPack,verifyStickerPackEditSnapshot} from '../stickers/stickerPackManagement.mjs';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {editStickerPack,replaceStickerItem,verifyStickerPackEditSnapshot} from '../stickers/stickerPackManagement.mjs';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
@@ -174,7 +174,8 @@ export function createVideoBotSourceModule({
   // Owner-scoped STK-02 port. No duplicate pack edit on uncertain results:
   // the wizard stores its pending edit before invoking this mutation.
   const stickerPackEditor=async({owner,packName,action,stickerUniqueId,
-    title,position,emoji,verifyOnly=false})=>{
+    title,position,emoji,sourceFileId,newUniqueId,
+    onUploaded,onBeforeMutation,verifyOnly=false})=>{
     const record=await stickerInventory.getOwnedPack(owner,packName);
     if(!record)throw new Error('STICKER_PACK_OWNER_NOT_VERIFIED');
     const identity=await telegramApi('getMe',{});
@@ -184,8 +185,46 @@ export function createVideoBotSourceModule({
     if(verifyOnly){
       set=await telegramApi('getStickerSet',{name:packName});
       if(!verifyStickerPackEditSnapshot({set,name:packName,kind:record.kind,
-        action,stickerUniqueId,title,position,emoji}))
+        action,stickerUniqueId,title,position,emoji,newUniqueId}))
         return {verified:false,status:'not_observed'};
+    }else if(action==='replace_item'){
+      if(typeof sourceFileId!=='string'||!sourceFileId||
+         typeof onUploaded!=='function'||typeof onBeforeMutation!=='function')
+        throw new Error('STICKER_REPLACEMENT_INPUT_INVALID');
+      const scratch=await mkdtemp(join(tmpdir(),'cv-sticker-replace-'));
+      let fetched=null,converted=null,packWritePossible=false;
+      try{
+        fetched=await ports.fetchSource(sourceFileId,scratch);
+        converted=await convertStickerMedia({
+          sourcePath:fetched.path,
+          kind:record.kind==='custom_emoji'?'emoji':'sticker',
+          format:record.format
+        });
+        const bytes=await readFile(converted.path);
+        const result=await replaceStickerItem({telegramApi,owner,
+          botUsername:identity.username,
+          record:{ownerId:owner,name:packName,kind:record.kind},
+          stickerUniqueId,bytes:new Uint8Array(bytes),format:converted.format,
+          onUploaded,
+          onBeforeMutation:async receipt=>{
+            await onBeforeMutation(receipt);
+            packWritePossible=true;
+          }});
+        if(result.verified!==true)throw new Error('STICKER_REPLACE_RESULT_UNKNOWN');
+        set=result.set;
+      }catch(error){
+        if(!packWritePossible){
+          const safe=new Error(error instanceof Error?error.message:
+            'STICKER_REPLACEMENT_PRE_MUTATION_FAILED');
+          safe.preMutationVerified=true;
+          throw safe;
+        }
+        throw error;
+      }finally{
+        await converted?.cleanup();
+        await fetched?.cleanup();
+        await rm(scratch,{recursive:true,force:true});
+      }
     }else{
       const result=await editStickerPack({telegramApi,owner,
         botUsername:identity.username,
