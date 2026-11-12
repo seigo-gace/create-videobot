@@ -15,7 +15,7 @@ function setup({role='administrator',wrongBot=false,sendUnknown=false,
   if(method==='getChatMember')return {status:role,can_pin_messages:role==='administrator'};
   if(method==='sendMessage'){
    if(sendUnknown)throw Error('TIMEOUT_AFTER_SEND');
-   return {message_id:4655,chat:{id:topic.chatId},message_thread_id:4291,
+   return {message_id:4655,chat:{id:topic.chatId},message_thread_id:4640,
      is_topic_message:true,from:{id:42}};
   }
   if(method==='pinChatMessage')return true;
