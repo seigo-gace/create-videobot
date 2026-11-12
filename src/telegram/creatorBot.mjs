@@ -9,6 +9,12 @@ import { createCreatorWizard } from './creatorWizard.mjs';
 export function createCreatorBotUpdateHandler(options={}) {
   const wizard=createCreatorWizard(options);
   return async function handleCreatorBotUpdate(update) {
+    // Invoice pre-checkout must be approved/rejected promptly.
+    if(update?.pre_checkout_query){
+      if(typeof options.stickerSalesPayments!=='function')
+        throw Error('STICKER_SALE_PAYMENT_OWNER_MISSING');
+      return options.stickerSalesPayments(update);
+    }
     // Paid-media purchase updates have no DM message envelope. They are not
     // ordinary creator input and must never be counted without transaction proof.
     if (update?.purchased_paid_media) {
@@ -18,6 +24,11 @@ export function createCreatorBotUpdateHandler(options={}) {
       return {handled:true,purchaseRecorded:receipt?.recorded===true,duplicate:receipt?.duplicate===true};
     }
     const message=update?.message;
+    if(message?.successful_payment){
+      if(typeof options.stickerSalesPayments!=='function')
+        throw Error('STICKER_SALE_PAYMENT_OWNER_MISSING');
+      return options.stickerSalesPayments(update);
+    }
     if (message && message.chat?.type !== 'private') return {handled:false};
     if (update?.callback_query && update.callback_query.message?.chat?.type !== 'private') return {handled:false};
     if(message?.chat?.type==='private' &&
@@ -29,6 +40,10 @@ export function createCreatorBotUpdateHandler(options={}) {
         const sticker=await options.stickerHandler(update);
         if(sticker?.handled)return sticker;
       }
+      if(typeof options.stickerSalesHandler==='function') {
+        const sales=await options.stickerSalesHandler(update);
+        if(sales?.handled)return sales;
+      }
       return wizard.openHome(update);
     }
     // Sticker-specific private updates share the durable DM screen/session but
@@ -36,6 +51,10 @@ export function createCreatorBotUpdateHandler(options={}) {
     if(typeof options.stickerHandler==='function') {
       const sticker=await options.stickerHandler(update);
       if(sticker?.handled===true)return sticker;
+    }
+    if(typeof options.stickerSalesHandler==='function'){
+      const sales=await options.stickerSalesHandler(update);
+      if(sales?.handled===true)return sales;
     }
     let creatorResult;
     try {
