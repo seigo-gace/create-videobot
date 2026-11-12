@@ -99,3 +99,31 @@ test('reconcile requires matching Telegram file identity and pack type',async()=
  const unreachable=await reconcileStickerRegistration({...args,telegramApi:async()=>{throw new Error('network');},fileUniqueId:'content-1'});
  assert.equal(unreachable.status,'unknown');
 });
+
+test('definitively rejected set mutation is not misclassified as ambiguous timeout',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'sticker-rejected-'));
+ try{
+  const path=join(dir,'a.png');await writeFile(path,Buffer.from('valid'));
+  let mutations=0;
+  const stages=[];
+  const api=async(method)=>{
+   if(method==='uploadStickerFile')return {file_id:'file-1',file_unique_id:'uniq-1'};
+   if(method==='getStickerSet')throw Error('pack absent');
+   if(method==='createNewStickerSet'){
+    mutations++;
+    const e=new Error('STICKER_TELEGRAM_REGISTRATION_REJECTED');
+    e.definitiveTelegramRejection=true;
+    throw e;
+   }
+   throw Error('unexpected method');
+  };
+  await assert.rejects(()=>registerStickerAsset({
+   telegramApi:api,owner:42,botUsername:'CreateVdobot',title:'Test',
+   nonce:'1234abcd',format:'static',mediaPath:path,
+   onUploaded:async()=>stages.push('uploaded'),
+   onBeforeMutation:async()=>stages.push('submission_started')
+  }),e=>e.definitiveTelegramRejection===true);
+  assert.equal(mutations,1);
+  assert.deepEqual(stages,['uploaded','submission_started']);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
