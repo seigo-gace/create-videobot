@@ -21,7 +21,11 @@ export function createCreatorWebhookAdmission({expectedSecret,handleCreatorUpdat
     const update=validateTelegramUpdateSize(body,maxBytes);
     if(updateStore) {
       const digest=createHash('sha256').update(body).digest('hex');
-      const admission=await updateStore.claim(update.update_id,digest);
+      const recoverStickerPayment=
+        /^stk:so_[a-f0-9]{24}$/.test(String(
+          update?.message?.successful_payment?.invoice_payload??''));
+      const admission=await updateStore.claim(update.update_id,digest,{
+        recoverStickerPayment});
       if(!admission?.claimed) {
         if(admission?.completed!==true||typeof admission.handled!=='boolean')
           throw new Error('WEBHOOK_UPDATE_NEEDS_RECONCILE');
