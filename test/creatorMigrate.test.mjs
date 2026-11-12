@@ -19,7 +19,7 @@ test('all eleven VideoBot migrations run in one locked transaction with no GATE 
   loaded.push(name);return 'CREATE TABLE IF NOT EXISTS test_'+loaded.length+' (id int)';
  }});
  assert.deepEqual(result,{applied:true,migrations:11});
- assert.equal(loaded.length,10);
+ assert.equal(loaded.length,11);
  assert.match(loaded[0],/^001_video_post_receipts/);
  assert.match(loaded.at(-1),/^011_sticker_entry_pin/);
  assert.equal(db.calls[0],'BEGIN');
