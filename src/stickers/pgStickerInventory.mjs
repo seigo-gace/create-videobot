@@ -34,7 +34,8 @@ export function createPostgresStickerInventory(pool){
       if(!['static','video'].includes(f))throw new Error('STICKER_FORMAT_INVALID');
       const q=await pool.query(
         "UPDATE videobot_sticker_registration_receipts"+
-        " SET format=$3,file_unique_id=$4,phase='uploaded',updated_at=NOW()"+
+        " SET format=$3,file_unique_id=$4,uploaded_file_unique_id=$4,"+
+        " phase='uploaded',updated_at=NOW()"+
         " WHERE operation_id=$1 AND owner_user_id=$2 AND phase='preparing'"+
         " RETURNING operation_id",[requiredText(operationId,'OPERATION',128),owner(ownerId),f,
           requiredText(fileUniqueId,'UNIQUE_FILE')]);
@@ -94,7 +95,7 @@ export function createPostgresStickerInventory(pool){
       return q.rows?.[0]??null;
     },
     async confirmRegistration({operationId,ownerId,packName,kind:packKind,
-      title,format,fileId,fileUniqueId,position,emoji='🙂',isDefault=true}){
+      title,format,fileId,fileUniqueId,position,emoji='🙂',isDefault=true,freshPackProof=false}){
       const o=owner(ownerId),op=requiredText(operationId,'OPERATION',128),
         name=requiredText(packName,'PACK_NAME',64),type=kind(packKind),
         t=requiredText(title,'TITLE',64),file=requiredText(fileId,'FILE'),
@@ -106,12 +107,19 @@ export function createPostgresStickerInventory(pool){
       try{
         await client.query('BEGIN');
         const claimed=await client.query(
-          "SELECT phase,pack_name,kind,file_unique_id,format"+
+          "SELECT phase,pack_name,kind,file_unique_id,uploaded_file_unique_id,format"+
           " FROM videobot_sticker_registration_receipts"+
           " WHERE operation_id=$1 AND owner_user_id=$2 FOR UPDATE",[op,o]);
         const row=claimed.rows?.[0];
-        if(!row||row.pack_name!==name||row.kind!==type||
-           row.file_unique_id!==unique||row.format!==format||
+        // A Telegram-produced sticker can have a distinct file_unique_id
+        // from uploadStickerFile. This is valid ONLY for a freshly named,
+        // verified one-item pack; an existing pack requires exact identity.
+        const normalized=row?.file_unique_id!==unique;
+        const allowNormalized=normalized&&freshPackProof===true&&isDefault===true&&
+          row?.uploaded_file_unique_id===row?.file_unique_id&&
+          ['submission_started','needs_reconcile'].includes(row?.phase);
+        if(!row||row.pack_name!==name||row.kind!==type||row.format!==format||
+           (normalized&&!allowNormalized)||
            !['uploaded','submission_started','needs_reconcile','registered'].includes(row.phase))
           throw new Error('STICKER_CONFIRM_RECEIPT_MISMATCH');
         const p=await client.query(
@@ -135,8 +143,8 @@ export function createPostgresStickerInventory(pool){
         if(item.rowCount!==1)throw new Error('STICKER_ITEM_SAVE_FAILED');
         const ok=await client.query(
           "UPDATE videobot_sticker_registration_receipts SET phase='registered',"+
-          " latest_error_code=NULL,updated_at=NOW()"+
-          " WHERE operation_id=$1 AND owner_user_id=$2 RETURNING operation_id",[op,o]);
+          " file_unique_id=$3,latest_error_code=NULL,updated_at=NOW()"+
+          " WHERE operation_id=$1 AND owner_user_id=$2 RETURNING operation_id",[op,o,unique]);
         if(ok.rowCount!==1)throw new Error('STICKER_REGISTRATION_CONFIRM_FAILED');
         await client.query('COMMIT');committed=true;
         return {confirmed:true};
