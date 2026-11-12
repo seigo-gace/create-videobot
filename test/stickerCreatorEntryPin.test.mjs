@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createCreatorStickerTopicEntryPin} from '../src/stickers/creatorTopicEntryPin.mjs';
 
 const topic={board:'video_chat',purpose:'sticker',title:'ステッカーの公開と販売',
- groupTitle:'ビデオChatの掲示板',chatId:-1002373696859,threadId:4291,
+ groupTitle:'ビデオChatの掲示板',chatId:-1002373696859,threadId:4640,
  verified:true,enabled:true};
 function setup({role='administrator',wrongBot=false,sendUnknown=false,
  claimed=true,topicOverride={}}={}){
@@ -44,7 +44,7 @@ test('STK-04 CreatorBot posts and pins its own DM button to verified exact Topic
    ['getMe','getChat','getChatMember','sendMessage','pinChatMessage']);
  const sent=x.writes.find(y=>y.method==='sendMessage').params;
  assert.equal(sent.chat_id,-1002373696859);
- assert.equal(sent.message_thread_id,4291);
+ assert.equal(sent.message_thread_id,4640);
  assert.equal(sent.reply_markup.inline_keyboard[0][0].url,
    'https://t.me/CreateVdobot?start=sticker');
  assert.deepEqual(x.receipts.map(x=>x.phase),['sent','pin_requested','pinned_ack']);
@@ -74,4 +74,10 @@ test('STK-04 uncertain Telegram send is locked for reconciliation',async()=>{
  await assert.rejects(x.ensure(),/TIMEOUT_AFTER_SEND/);
  assert.deepEqual(x.receipts.map(x=>x.phase),['needs_reconcile']);
  assert.equal(x.writes.filter(y=>y.method==='sendMessage').length,1);
+});
+
+test('STK-04 production entry follows Master exact group/topic IDs',async()=>{
+ const {registeredTopic}=await import('../src/runtime/creatorStickerPinMain.mjs');
+ assert.equal(registeredTopic.chatId,-1002373696859);
+ assert.equal(registeredTopic.threadId,4640);
 });
