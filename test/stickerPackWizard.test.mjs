@@ -45,6 +45,11 @@ function fixture({timeoutOnMove=false}={}) {
       items=items.filter(x=>x.file_unique_id!==command.stickerUniqueId);
       pack.item_count=items.length;
     }
+    if(command.action==='replace_item') {
+      const item=items.find(x=>x.file_unique_id===command.stickerUniqueId);
+      item.file_unique_id='new_unique';
+      item.file_id='new_file';
+    }
     items.forEach((x,i)=>{x.position=i;});
   };
   const editor=async command=>{
@@ -55,6 +60,12 @@ function fixture({timeoutOnMove=false}={}) {
     }
     mutations++;
     if(timeoutOnMove&&command.action==='move_item')throw Error('Telegram timeout');
+    if(command.action==='replace_item') {
+      assert.equal(command.sourceFileId,'replace_image');
+      const receipt={fileUniqueId:'new_unique',format:'static'};
+      await command.onUploaded(receipt);
+      await command.onBeforeMutation(receipt);
+    }
     apply(command);return {verified:true};
   };
   const panels=[];
@@ -131,4 +142,23 @@ test('STK-02 stale callbacks cannot edit a pack twice',async()=>{
   const stale=await f.wizard.handle(f.cb(action));
   assert.equal(stale.staleButton,true);
   assert.equal(f.counts().mutations,0);
+});
+
+test('STK-02 item replacement uses durable upload checkpoint before Telegram mutation',async()=>{
+  const f=fixture();
+  await f.enter();
+  await f.click('sticker:items');
+  await f.click('sticker:item:0');
+  await f.click('sticker:replace_item');
+  assert.equal(f.state().screen,'sticker_replace_input');
+  await f.wizard.handle({message:{from:{id:42},chat:{id:42,type:'private'},
+    message_id:305,photo:[{file_id:'replace_image',file_size:1234}]}});
+  assert.equal(f.state().screen,'sticker_replace_ready');
+  assert.equal(f.counts().mutations,0);
+  await f.click('sticker:replace_confirm');
+  assert.equal(f.counts().mutations,1);
+  assert.equal(f.state().stickerEditPending,null);
+  assert.equal(f.state().screen,'sticker_pack_items');
+  assert.equal(f.items()[0].file_unique_id,'new_unique');
+  assert.equal(f.state().draft.paidVideo.fileId,'must-preserve');
 });
