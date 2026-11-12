@@ -11,7 +11,7 @@ const pool=new Pool({connectionString:process.env.CI_VIDEO_DB_DSN,max:1});
 try {
  const result=await applyCreatorSchema({pool});
  if(result.applied!==true||result.migrations!==8)throw new Error('eight migrations not confirmed');
- const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts, to_regclass('videobot_sticker_products') IS NOT NULL AS products, to_regclass('videobot_sticker_orders') IS NOT NULL AS orders, to_regclass('videobot_sticker_delivery_items') IS NOT NULL AS deliveries");
+ const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts, to_regclass('videobot_sticker_products') IS NOT NULL AS products, to_regclass('videobot_sticker_orders') IS NOT NULL AS orders, to_regclass('videobot_sticker_delivery_items') IS NOT NULL AS deliveries, to_regclass('videobot_sticker_payment_support') IS NOT NULL AS support");
  if(q.rows.length!==1||!Object.values(q.rows[0]).every(v=>v===true))
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
@@ -91,7 +91,13 @@ try {
 
  // STK-03: real committed invoice/product/entitlement isolation, not mocks.
  const sales=createPostgresStickerSales(pool);
- const sold=await sales.publish({sellerId:42,packName:name,set:snapshot,priceStars:50});
+ const fixedProductId='sp_'+'a'.repeat(24);
+ const sold=await sales.publish({sellerId:42,packName:name,set:snapshot,
+   priceStars:50,productId:fixedProductId});
+ const repeatedProduct=await sales.publish({sellerId:42,packName:name,set:snapshot,
+   priceStars:50,productId:fixedProductId});
+ if(repeatedProduct.productId!==sold.productId||repeatedProduct.duplicate!==true)
+   throw new Error('STICKER_STARS_PRODUCT_IDEMPOTENCY_FAILED');
  const product=await sales.getPublished(sold.productId);
  if(!product||product.version!==1||product.price_stars!==50||product.items.length!==2)
    throw new Error('STICKER_STARS_PRODUCT_PUBLISH_FAILED');
@@ -139,6 +145,18 @@ try {
  const originalVersion=await sales.getPublished(sold.productId);
  if(originalVersion.items[0].file_unique_id!=='unique_one')
    throw new Error('STICKER_STARS_IMMUTABLE_ITEMS_CHANGED');
+ const supportCase=await sales.createPaymentSupport({
+   buyerId:99,orderId:order.order_id,details:'CI purchase dispute example'});
+ const supportRow=await pool.query(
+   "SELECT buyer_user_id,order_id,status FROM videobot_sticker_payment_support WHERE ticket_id=$1",
+   [supportCase.ticketId]);
+ if(supportRow.rowCount!==1||supportRow.rows[0].buyer_user_id!=='99'&&
+    String(supportRow.rows[0].buyer_user_id)!=='99')
+   throw new Error('STICKER_STARS_SUPPORT_NOT_STORED');
+ const foreignSupport=await sales.createPaymentSupport({
+   buyerId:98,orderId:order.order_id,details:'Foreign support case'})
+   .then(()=>false,e=>e.message==='STICKER_SALE_SUPPORT_OWNER_MISMATCH');
+ if(!foreignSupport)throw new Error('STICKER_STARS_SUPPORT_FOREIGN_OWNER');
  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_STARS=PASS\n');
 
  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_INVENTORY=PASS\n');
