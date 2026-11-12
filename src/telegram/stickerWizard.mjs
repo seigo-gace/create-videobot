@@ -69,6 +69,7 @@ function panel(session,revision){
       reply_markup:{inline_keyboard:[
         [btn('➕ このパックに追加','sticker:add')],
         [btn('✏️ タイトル変更','sticker:rename'),btn('🧩 素材を管理','sticker:items')],
+        [btn('⭐ このパックを販売','sticker:sell')],
         [btn('↩ マイパックへ','sticker:packs')]
       ]}};
   }
@@ -172,12 +173,13 @@ function mediaFileId(message){
  * session and shared screen transport; preserves video draft and sales state.
  * Conversion/Telegram API mutations are passed as a bounded port.
  */
-export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker,packInventory,editPack}={}){
+export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker,packInventory,editPack,beginStickerSale}={}){
   if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
     typeof screenTransport?.show!=='function'||typeof publishSticker!=='function'||
     (reconcileSticker!==undefined&&typeof reconcileSticker!=='function')||
     (editPack!==undefined&&typeof editPack!=='function')||
+    (beginStickerSale!==undefined&&typeof beginStickerSale!=='function')||
     (packInventory!==undefined&&(
       typeof packInventory?.listPacks!=='function'||
       typeof packInventory?.getOwnedPack!=='function'||
@@ -351,6 +353,10 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
         const p=await packInventory.getOwnedPack(id,candidate.pack_name);
         if(!p||p.kind!==candidate.kind)return {handled:true,staleButton:true};
         return persist(id,old,{screen:'sticker_pack',stickerSelectedPack:p});
+      }
+      if(action==='sticker:sell'&&old.screen==='sticker_pack'){
+        if(typeof beginStickerSale!=='function')throw Error('STICKER_SALE_UNAVAILABLE');
+        return beginStickerSale({ownerId:id,packName:old.stickerSelectedPack?.pack_name});
       }
       if(action==='sticker:rename'&&old.screen==='sticker_pack')
         return persist(id,old,{screen:'sticker_pack_title',stickerHelp:null});
