@@ -19,6 +19,11 @@ function db(){
    row.status='completed';row.handled=params[1];
    return {rowCount:1,rows:[{update_id:id}]};
   }
+  if(sql.startsWith("UPDATE videobot_webhook_updates SET status='processing'")){
+   if(!row||row.status!=='needs_reconcile'||row.payload_sha256!==params[1])
+     return {rowCount:0,rows:[]};
+   row.status='processing';return {rowCount:1,rows:[{update_id:id}]};
+  }
   if(sql.startsWith("UPDATE videobot_webhook_updates SET status='needs_reconcile'")){
    if(!row||row.status!=='processing')return {rowCount:0,rows:[]};
    row.status='needs_reconcile';
@@ -55,4 +60,19 @@ test('reject invalid fingerprint, ID and missing pool before persistence',async(
  await assert.rejects(()=>store.claim(3,'aaa'),/fingerprint/);
  await assert.rejects(()=>store.complete(5,'true'),/invalid webhook completion/);
  assert.throws(()=>createPostgresWebhookUpdateStore(),/private webhook SQL pool/);
+});
+
+test('identical sticker successful_payment recovery is CAS guarded; video unknown stays locked',async()=>{
+ const pool=db(),store=createPostgresWebhookUpdateStore(pool);
+ await store.claim(90,fp('a'));
+ await store.markUnknown(90);
+ assert.deepEqual(await store.claim(90,fp('a'),{recoverStickerPayment:true}),
+   {claimed:true,recovered:true});
+ await assert.rejects(()=>store.claim(90,fp('a'),{recoverStickerPayment:true}),
+   /NEEDS_RECONCILE/);
+ await store.complete(90,true);
+ assert.deepEqual(await store.claim(90,fp('a')),{claimed:false,completed:true,handled:true});
+ await store.claim(91,fp('b'));await store.markUnknown(91);
+ await assert.rejects(()=>store.claim(91,fp('b')),/NEEDS_RECONCILE/);
+ await assert.rejects(()=>store.claim(91,fp('c'),{recoverStickerPayment:true}),/FINGERPRINT_CONFLICT/);
 });
