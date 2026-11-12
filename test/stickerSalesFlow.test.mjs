@@ -64,7 +64,10 @@ function fixture(){
     gifts.set(giftId,{giftId,token,recipientId:null});
     return {giftId,created:true};
   },
-  async status({giftId,donorId}){return donorId===81?gifts.get(giftId):null;},
+  async status({giftId,donorId}){
+    const g=gifts.get(giftId);
+    return donorId===81&&g?{gift_id:giftId,recipient_user_id:g.recipientId}:null;
+  },
   async redeem({token,recipientId}){
     const gift=[...gifts.values()].find(g=>g.token===token);
     if(!gift)throw Error('STICKER_GIFT_LINK_NOT_FOUND');
@@ -235,6 +238,10 @@ test('purchased sticker can be gifted to a chosen Telegram recipient with a one-
  assert.equal(f.state(80).screen,'sticker_sale_delivery');
  assert.equal(f.state(80).stickerSale.mode,'gift_recipient');
  assert.equal(f.calls.filter(x=>x.method==='sendSticker').length,before+2);
+ const refresh=await f.flow.handle(f.cb(81,'sale:gift_check'));
+ assert.equal(refresh.handled,true);
+ assert.equal(f.state(81).screen,'sticker_sale_gift_claimed');
+ assert.equal(f.state(81).stickerSale.shareUrl,null);
  assert.equal(f.invoiceCount,1);
  assert.equal((await f.salesStore.getPaidOrder(orderId,81))?.order_id,orderId);
  const second=await f.flow.handle(f.msg(82,'/start gift_'+token));
