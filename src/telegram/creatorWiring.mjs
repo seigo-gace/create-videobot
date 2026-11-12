@@ -15,6 +15,8 @@ import {convertStickerMedia} from '../stickers/mediaConverter.mjs';
 import {registerStickerAsset,reconcileStickerRegistration,createStickerSetShortName} from '../stickers/packRegistration.mjs';
 import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs';
 import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
+import {createPostgresStickerTopicPosts} from '../stickers/pgStickerTopicPosts.mjs';
+import {createStickerTopicPublisher} from '../stickers/topicPublication.mjs';
 import {createStickerSalesFlow} from './stickerSales.mjs';
 import {editStickerPack,replaceStickerItem,verifyStickerPackEditSnapshot} from '../stickers/stickerPackManagement.mjs';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
@@ -57,6 +59,20 @@ export function createVideoBotSourceModule({
   const starsLedger=createPostgresStarsLedger({pool,telegramApi});
   const stickerInventory=createPostgresStickerInventory(pool);
   const stickerSalesStore=createPostgresStickerSales(pool);
+  const stickerTopicPosts=createPostgresStickerTopicPosts(pool);
+  // GateApp-Bot owns live topic verification; never fabricate a Topic ID
+  // from a t.me/c message URL. This port remains unavailable until the
+  // actual GateApp verified sticker-topic + review owners are supplied.
+  const stickerTopicPublisher=
+    typeof gateOwner.getVerifiedStickerTopic==='function'&&
+    typeof gateOwner.verifyStickerReview==='function'
+    ?createStickerTopicPublisher({
+      telegramApi,getVerifiedStickerTopic:gateOwner.getVerifiedStickerTopic,
+      verifyMembership:gateOwner.verifyMembership,
+      verifyReview:gateOwner.verifyStickerReview,
+      verifyRelease:gateOwner.verifyRelease,
+      receiptStore:stickerTopicPosts,salesStore:stickerSalesStore
+    }):null;
   const mediaProcessor=createVideoMediaProcessor({
     ...ports,run:mediaRun,storageApproved
   });
@@ -243,6 +259,7 @@ export function createVideoBotSourceModule({
   const stickerSales=createStickerSalesFlow({
     api:telegramApi,sessionStore,screenTransport:screen,
     salesStore:stickerSalesStore,packInventory:stickerInventory,
+    topicPublisher:stickerTopicPublisher,
     publishSnapshot:async({sellerId,packName,priceStars,productId})=>{
       const own=await stickerInventory.getOwnedPack(sellerId,packName);
       if(!own)throw Error('STICKER_SALE_PACK_OWNER_REQUIRED');
@@ -275,6 +292,6 @@ export function createVideoBotSourceModule({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
     listingStore,sessionStore,receiptStore,starsLedger,updateStore,
-    stickerInventory,stickerSalesStore,publishListing,handleCreatorUpdate
+    stickerInventory,stickerSalesStore,stickerTopicPosts,publishListing,handleCreatorUpdate
   });
 }
