@@ -34,6 +34,15 @@ export function createCreatorBotUpdateHandler(options={}) {
     if(message?.chat?.type==='private' &&
        typeof message.text==='string' &&
        /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text)) {
+      // A paid-sticker offer or one-time gift is an explicit sales deep
+      // link. Route it before a dormant sticker media-input screen so that
+      // recipients need not cancel their unrelated draft to claim the gift.
+      // The sales handler itself preserves unresolved registration locks.
+      if(/^\/start(?:@[A-Za-z0-9_]+)?\s+(?:buy_sp_[a-f0-9]{24}|gift_[A-Za-z0-9_-]{32})$/
+          .test(message.text.trim())&&typeof options.stickerSalesHandler==='function'){
+        const sale=await options.stickerSalesHandler(update);
+        if(sale?.handled)return sale;
+      }
       // The sticker wizard owns unresolved registrations even when a user
       // reopens the generic /start; it must run before the video home page.
       if(typeof options.stickerHandler==='function') {
