@@ -11,7 +11,9 @@ services:
     init: true
     restart: unless-stopped
     read_only: true
-    user: "0:0"
+    # Use the image's non-root "node" UID. Host preflight confirms both
+    # read-only secret files are owned by this same UID; root plus cap_drop ALL
+    # cannot bypass the 0600 mount permissions.
     networks:
       - gserver-db
     environment:
