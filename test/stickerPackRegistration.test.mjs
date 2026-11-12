@@ -127,3 +127,50 @@ test('definitively rejected set mutation is not misclassified as ambiguous timeo
   assert.deepEqual(stages,['uploaded','submission_started']);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('unique newly created pack recovers when Telegram normalizes uploaded identity',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'sticker-normalized-'));
+ try{
+  const path=join(dir,'a.png');await writeFile(path,'valid-normalized');
+  const name='s42_1234abcd_by_CreateVdobot';
+  const set={name,title:'Normalized pack',sticker_type:'regular',
+   stickers:[{file_id:'telegram-file',file_unique_id:'telegram-unique',
+     is_video:false,is_animated:false,emoji:'🙂'}]};
+  let created=false,verifiedReceipt;
+  const api=async(method)=>{
+   if(method==='uploadStickerFile')return {file_id:'upload-file',file_unique_id:'upload-unique'};
+   if(method==='getStickerSet'){
+    if(!created)throw Error('not created yet');
+    return set;
+   }
+   if(method==='createNewStickerSet'){created=true;return true;}
+   throw Error('unrecognized');
+  };
+  const result=await registerStickerAsset({
+   telegramApi:api,owner:42,botUsername:'CreateVdobot',title:'Normalized pack',
+   nonce:'1234abcd',format:'static',mediaPath:path,
+   onVerified:async receipt=>{verifiedReceipt=receipt;}
+  });
+  assert.equal(result.verified,true);
+  assert.equal(result.name,name);
+  assert.equal(verifiedReceipt.proof,'unique_new_pack');
+  assert.equal(verifiedReceipt.item.file_unique_id,'telegram-unique');
+  const recovered=await reconcileStickerRegistration({
+   telegramApi:api,name,kind:'regular',format:'static',
+   fileUniqueId:'upload-unique',expectedTitle:'Normalized pack',isNewPack:true
+  });
+  assert.equal(recovered.verified,true);
+  assert.equal(recovered.proof,'unique_new_pack');
+  assert.equal(recovered.item.file_unique_id,'telegram-unique');
+  const invalidExisting=await reconcileStickerRegistration({
+   telegramApi:api,name,kind:'regular',format:'static',
+   fileUniqueId:'upload-unique',expectedTitle:'Normalized pack',isNewPack:false
+  });
+  assert.equal(invalidExisting.verified,false);
+  const wrongTitle=await reconcileStickerRegistration({
+   telegramApi:api,name,kind:'regular',format:'static',
+   fileUniqueId:'upload-unique',expectedTitle:'Another title',isNewPack:true
+  });
+  assert.equal(wrongTitle.verified,false);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
