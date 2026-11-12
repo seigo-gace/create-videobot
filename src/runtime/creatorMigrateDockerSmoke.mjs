@@ -64,6 +64,30 @@ try {
    packName:name,kind:'regular',sourceFileId:'ci_source_file'}).then(()=>false,
      error=>error?.message==='STICKER_REGISTRATION_ALREADY_CLAIMED');
  if(!duplicate)throw new Error('STICKER_DUPLICATE_OPERATION_NOT_DENIED');
+ // STK-02: real PostgreSQL snapshot synchronization is owner-scoped and
+ // atomically replaces item positions after verified Telegram readback.
+ const snapshot={name,title:'Updated sticker title',sticker_type:'regular',
+   stickers:[{file_id:'file_one',file_unique_id:'unique_one',emoji:'🙂'},
+             {file_id:'file_two',file_unique_id:'unique_two',emoji:'😀'}]};
+ const synced=await inventory.syncOwnedPackSnapshot({
+   ownerId:42,packName:name,set:snapshot});
+ const storedItems=await inventory.listOwnedItems({ownerId:42,packName:name});
+ const storedPack=await inventory.getOwnedPack(42,name);
+ const foreignItems=await inventory.listOwnedItems({ownerId:99,packName:name});
+ if(!synced.synced||synced.itemCount!==2||storedPack.title!=='Updated sticker title'||
+    storedItems.length!==2||storedItems[1].file_unique_id!=='unique_two'||
+    storedItems[1].position!==1||foreignItems.length)
+   throw new Error('STICKER_PACK_EDIT_SQL_SYNC_FAILED');
+ const denied=await inventory.syncOwnedPackSnapshot({
+   ownerId:99,packName:name,set:snapshot
+ }).then(()=>false,e=>e?.message==='STICKER_PACK_OWNER_CONFLICT');
+ if(!denied)throw new Error('STICKER_PACK_EDIT_FOREIGN_OWNER_ALLOWED');
+ const reduced=await inventory.syncOwnedPackSnapshot({
+   ownerId:42,packName:name,set:{...snapshot,stickers:[snapshot.stickers[1]]}});
+ if(!reduced.synced||
+    (await inventory.listOwnedItems({ownerId:42,packName:name})).length!==1)
+   throw new Error('STICKER_PACK_EDIT_DELETE_SQL_SYNC_FAILED');
+
  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_INVENTORY=PASS\n');
  process.stdout.write('DOCKER_NODE_POSTGRES_MIGRATION=PASS\n');
 }finally{await pool.end();}
