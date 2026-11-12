@@ -2,7 +2,7 @@
  * Telegram Bot API HTTPS transport. Only explicit allowed methods are exposed.
  * Do not log request URL: it contains the Bot Token.
  */
-const METHODS = new Set(['getMe', 'sendPaidMedia', 'sendMediaGroup', 'deleteMessage', 'getFile', 'getStarTransactions', 'getMyName', 'getMyDescription', 'getMyShortDescription', 'getMyCommands', 'getWebhookInfo', 'setWebhook', 'setMyName', 'setMyDescription', 'setMyShortDescription', 'setMyCommands', 'sendMessage', 'editMessageText', 'answerCallbackQuery', 'uploadStickerFile', 'getStickerSet', 'createNewStickerSet', 'addStickerToSet', 'replaceStickerInSet', 'deleteStickerFromSet', 'setStickerPositionInSet', 'setStickerEmojiList', 'setStickerSetTitle', 'deleteStickerSet', 'sendInvoice', 'answerPreCheckoutQuery', 'sendSticker']);
+const METHODS = new Set(['getMe', 'sendPaidMedia', 'sendMediaGroup', 'deleteMessage', 'getFile', 'getStarTransactions', 'getMyName', 'getMyDescription', 'getMyShortDescription', 'getMyCommands', 'getWebhookInfo', 'setWebhook', 'setMyName', 'setMyDescription', 'setMyShortDescription', 'setMyCommands', 'sendMessage', 'editMessageText', 'answerCallbackQuery', 'uploadStickerFile', 'getStickerSet', 'createNewStickerSet', 'addStickerToSet', 'replaceStickerInSet', 'deleteStickerFromSet', 'setStickerPositionInSet', 'setStickerEmojiList', 'setStickerSetTitle', 'deleteStickerSet', 'sendInvoice', 'answerPreCheckoutQuery', 'sendSticker', 'getChatMember', 'pinChatMessage']);
 export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeoutMs=8000}) {
  if(typeof token!=='string' || !/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)) throw new Error('invalid Bot Token');
  if(typeof fetchImpl!=='function') throw new Error('fetch implementation required');
