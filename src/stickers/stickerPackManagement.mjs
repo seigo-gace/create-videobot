@@ -25,6 +25,19 @@ function exactSet(set,name,record) {
      !Array.isArray(set.stickers))
     throw new Error('STICKER_PACK_RECEIPT_MISMATCH');
 }
+/** Read-only verification of an uncertain edit. Never issues a second mutation. */
+export function verifyStickerPackEditSnapshot({set,name,kind,action,stickerUniqueId,title,position,emoji}={}) {
+  if(!set||set.name!==name||set.sticker_type!==kind||!Array.isArray(set.stickers))
+    return false;
+  if(action==='title')return set.title===title;
+  if(action==='delete_item')
+    return !set.stickers.some(s=>s.file_unique_id===stickerUniqueId);
+  const found=set.stickers.find(s=>s.file_unique_id===stickerUniqueId);
+  if(!found)return false;
+  if(action==='move_item')return set.stickers[position]?.file_unique_id===stickerUniqueId;
+  if(action==='emoji')return found.emoji===emoji;
+  return false;
+}
 export async function editStickerPack({
   telegramApi,owner,botUsername,record,action,stickerUniqueId,
   title,position,emoji
@@ -69,5 +82,5 @@ export async function editStickerPack({
   try{after=await telegramApi('getStickerSet',{name});exactSet(after,name,record);}
   catch{throw new Error('STICKER_PACK_EDIT_RESULT_UNKNOWN');}
   if(!confirm(after))throw new Error('STICKER_PACK_EDIT_RESULT_UNKNOWN');
-  return {verified:true,action,name,telegramReportedFailure:resultError!==null};
+  return {verified:true,action,name,set:after,telegramReportedFailure:resultError!==null};
 }
