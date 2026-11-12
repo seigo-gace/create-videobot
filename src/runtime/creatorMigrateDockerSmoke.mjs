@@ -69,21 +69,21 @@ try {
  if(!duplicate)throw new Error('STICKER_DUPLICATE_OPERATION_NOT_DENIED');
  // Telegram may normalize file_unique_id when creating a unique new pack.
  // Keep the original upload ID while storing the actual pack-item ID.
- const normalizedId='s42_ci_normalized';
- const normalizedName='s42_ci_normalized_by_CreateVdobot';
- await inventory.beginRegistration({operationId:normalizedId,ownerId:42,
+ const normalizedId='s43_ci_normalized';
+ const normalizedName='s43_ci_normalized_by_CreateVdobot';
+ await inventory.beginRegistration({operationId:normalizedId,ownerId:43,
    packName:normalizedName,kind:'regular',sourceFileId:'ci_source_normalized'});
- await inventory.uploaded({operationId:normalizedId,ownerId:42,format:'static',
+ await inventory.uploaded({operationId:normalizedId,ownerId:43,format:'static',
    fileUniqueId:'ci_uploaded_unique'});
- await inventory.submitting({operationId:normalizedId,ownerId:42});
- await inventory.confirmRegistration({operationId:normalizedId,ownerId:42,
+ await inventory.submitting({operationId:normalizedId,ownerId:43});
+ await inventory.confirmRegistration({operationId:normalizedId,ownerId:43,
    packName:normalizedName,kind:'regular',title:'CI Normalized pack',format:'static',
    fileId:'ci_registered_file',fileUniqueId:'ci_registered_unique',position:0,
    freshPackProof:true,isDefault:true});
  const normalized=await pool.query(
    "SELECT phase,file_unique_id,uploaded_file_unique_id FROM videobot_sticker_registration_receipts WHERE operation_id=$1",
    [normalizedId]);
- const actual=await inventory.listOwnedItems({ownerId:42,packName:normalizedName});
+ const actual=await inventory.listOwnedItems({ownerId:43,packName:normalizedName});
  if(normalized.rows?.[0]?.phase!=='registered'||
     normalized.rows[0].uploaded_file_unique_id!=='ci_uploaded_unique'||
     normalized.rows[0].file_unique_id!=='ci_registered_unique'||
