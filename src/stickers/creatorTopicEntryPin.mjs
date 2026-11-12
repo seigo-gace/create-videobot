@@ -46,7 +46,7 @@ export function createCreatorStickerTopicEntryPin({telegramApi,getVerifiedSticke
   try{
     const sent=await telegramApi('sendMessage',{
       chat_id:topic.chatId,message_thread_id:topic.threadId,
-      text:'🎨 ステッカーの作成・投稿はこちら\\n下のボタンからCreateVdobotのDMを開いてください。',
+      text:'🎨 ステッカーの作成・投稿はこちら\n下のボタンからCreateVdobotのDMを開いてください。',
       reply_markup:{inline_keyboard:[[{
         text:'🎨 投稿はこちら',url:DESTINATION
       }]]},disable_notification:true
