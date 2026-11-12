@@ -29,7 +29,7 @@ test('REAL FFmpeg JPG -> sticker PNG and emoji PNG with aspect preservation',asy
 test('REAL FFmpeg MP4 -> <=3-second VP9 sticker and emoji, with no audio',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'cv-real-sticker-video-'));
  const mp4=join(dir,'original.mp4');
- let s=null,e=null;
+ let s=null,e=null,still=null;
  try{
   await ff('-f','lavfi','-i','color=c=blue:s=320x240:r=15:d=3.6',
     '-c:v','libx264','-pix_fmt','yuv420p',mp4);
@@ -41,6 +41,10 @@ test('REAL FFmpeg MP4 -> <=3-second VP9 sticker and emoji, with no audio',async(
   assert.deepEqual([e.check.width,e.check.height],[100,100]);
   assert.ok(s.check.bytes<=256*1024);
   assert.ok(e.check.bytes<=256*1024);
- }finally{await s?.cleanup();await e?.cleanup();await rm(dir,{recursive:true,force:true});}
+  still=await convertStickerMedia({sourcePath:mp4,kind:'sticker',format:'static'});
+  assert.equal(still.format,'static');
+  assert.equal(still.check.codec,'png');
+  assert.deepEqual([still.check.width,still.check.height],[512,384]);
+ }finally{await s?.cleanup();await e?.cleanup();await still?.cleanup();await rm(dir,{recursive:true,force:true});}
 });
 }
