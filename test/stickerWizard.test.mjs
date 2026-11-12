@@ -228,7 +228,9 @@ test('failure before pack mutation permits retry; after mutation remains locked'
    screenTransport:{show:async()=>({messageId:301})},
    publishSticker:async()=>{
      attempts++;
-     throw new Error('FFmpeg failed before Telegram pack mutation');
+     const error=new Error('FFmpeg failed before Telegram pack mutation');
+     error.preMutationVerified=true; // Simulates publisher DB-receipt release.
+     throw error;
    }
  });
  await wizard.handle(f.cb('sticker:register|r5'));
@@ -278,7 +280,11 @@ test('pre-submission conversion error tells creator what to do without raw excep
    },setScreen:async()=>{}};
  const wizard=createStickerWizard({api:async()=>true,sessionStore:store,
    screenTransport:{show:async()=>({messageId:301})},
-   publishSticker:async()=>{throw new Error('STICKER_OUTPUT_SIZE_EXCEEDED');}});
+   publishSticker:async()=>{
+     const error=new Error('STICKER_OUTPUT_SIZE_EXCEEDED');
+     error.preMutationVerified=true; // DB claim cleanup has succeeded.
+     throw error;
+   }});
  await wizard.handle(f.cb('sticker:register|r5'));
  assert.equal(f.state().screen,'sticker_ready');
  assert.equal(f.state().stickerPending,null);
@@ -354,4 +360,35 @@ test('shared DM contract: failed user-input deletion displays manual removal gui
  await wizard.handle(msg({photo:[{file_id:'image_file'}]}));
  assert.equal(state.screen,'sticker_ready');
  assert.match(state.stickerHelp,/長押しして削除/);
+});
+
+test('unverified DB receipt cleanup never unlocks a prepared sticker for retry',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Keep pending pack'}));
+ await f.wizard.handle(f.msg({photo:[{file_id:'fileabc'}]}));
+ const store={
+   read:async()=>structuredClone(f.state()),
+   write:async(_owner,revision,next)=>{
+     assert.equal(revision,f.state().revision);
+     Object.assign(f.state(),structuredClone(next));
+   },
+   setScreen:async()=>{}
+ };
+ let attempts=0;
+ const wizard=createStickerWizard({api:async()=>true,sessionStore:store,
+   screenTransport:{show:async()=>({messageId:301})},
+   publishSticker:async()=>{
+     attempts++;
+     const error=new Error('STICKER_PRE_MUTATION_ABORT_NOT_CONFIRMED');
+     error.registrationLocked=true;
+     throw error;
+   }});
+ await wizard.handle(f.cb('sticker:register|r5'));
+ assert.equal(f.state().screen,'sticker_reconcile');
+ assert.equal(f.state().stickerPending.status,'needs_reconcile');
+ const attempt=await wizard.handle(f.cb('sticker:register|r'+f.state().revision));
+ assert.equal(attempt.registrationLocked,true);
+ assert.equal(attempts,1);
 });
