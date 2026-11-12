@@ -14,6 +14,8 @@ import {createStickerWizard} from './stickerWizard.mjs';
 import {convertStickerMedia} from '../stickers/mediaConverter.mjs';
 import {registerStickerAsset,reconcileStickerRegistration,createStickerSetShortName} from '../stickers/packRegistration.mjs';
 import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs';
+import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
+import {createStickerSalesFlow} from './stickerSales.mjs';
 import {editStickerPack,replaceStickerItem,verifyStickerPackEditSnapshot} from '../stickers/stickerPackManagement.mjs';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -54,6 +56,7 @@ export function createVideoBotSourceModule({
   const updateStore=createPostgresWebhookUpdateStore(pool);
   const starsLedger=createPostgresStarsLedger({pool,telegramApi});
   const stickerInventory=createPostgresStickerInventory(pool);
+  const stickerSalesStore=createPostgresStickerSales(pool);
   const mediaProcessor=createVideoMediaProcessor({
     ...ports,run:mediaRun,storageApproved
   });
@@ -237,16 +240,33 @@ export function createVideoBotSourceModule({
       ownerId:owner,packName,set});
     return {verified:true,synced,packName};
   };
+  const stickerSales=createStickerSalesFlow({
+    api:telegramApi,sessionStore,screenTransport:screen,
+    salesStore:stickerSalesStore,packInventory:stickerInventory,
+    publishSnapshot:async({sellerId,packName,priceStars})=>{
+      const own=await stickerInventory.getOwnedPack(sellerId,packName);
+      if(!own)throw Error('STICKER_SALE_PACK_OWNER_REQUIRED');
+      const set=await telegramApi('getStickerSet',{name:packName});
+      if(!set||set.name!==packName||set.sticker_type!==own.kind)
+        throw Error('STICKER_SALE_SET_NOT_VERIFIED');
+      // Captures all Telegram item IDs and price in an immutable product
+      // version; later pack CRUD does not mutate these purchased references.
+      return stickerSalesStore.publish({sellerId,packName,set,priceStars});
+    }
+  });
   const stickerWizard=createStickerWizard({
     api:telegramApi,sessionStore,screenTransport:screen,
     publishSticker:stickerPublisher,reconcileSticker:stickerReconcile,
-    packInventory:stickerInventory,editPack:stickerPackEditor
+    packInventory:stickerInventory,editPack:stickerPackEditor,
+    beginStickerSale:stickerSales.beginSell
   });
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
     api:telegramApi,sessionStore,listingStore,
     screenTransport:screen,mediaProcessor,publishListing,
     salesProvider:starsLedger,starsLedger,
-    stickerHandler:stickerWizard.handle
+    stickerHandler:stickerWizard.handle,
+    stickerSalesHandler:stickerSales.handle,
+    stickerSalesPayments:stickerSales.payments
   });
   const handleTelegramWebhook=createCreatorWebhookAdmission({
     expectedSecret:webhookSecret,handleCreatorUpdate,updateStore
@@ -255,6 +275,6 @@ export function createVideoBotSourceModule({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
     listingStore,sessionStore,receiptStore,starsLedger,updateStore,
-    stickerInventory,publishListing,handleCreatorUpdate
+    stickerInventory,stickerSalesStore,publishListing,handleCreatorUpdate
   });
 }
