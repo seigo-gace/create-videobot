@@ -1,3 +1,4 @@
+import {readFileSync,statSync} from 'node:fs';
 import {setDefaultResultOrder} from 'node:dns';
 import {randomBytes} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
@@ -18,10 +19,12 @@ function mode(env){
  if(env.NODE_ENV!=='production'||env.VIDEOBOT_RUN_MODE!=='telegram_poll'||
     env.VIDEOBOT_PRIVATE_INGRESS_ONLY!=='true')
    throw Error('CREATOR_POLL_PRIVATE_MODE_REQUIRED');
- for(const name of ['VIDEOBOT_TELEGRAM_TOKEN_FILE','VIDEOBOT_DATABASE_URL_FILE']){
-  if(typeof env[name]!=='string'||!env[name].startsWith('/run/secrets/'))
-    throw Error('CREATOR_POLL_PRIVATE_SECRET_MOUNT_REQUIRED');
- }
+ if(typeof env.VIDEOBOT_TELEGRAM_TOKEN_FILE!=='string'||
+    !env.VIDEOBOT_TELEGRAM_TOKEN_FILE.startsWith('/run/secrets/'))
+   throw Error('CREATOR_POLL_PRIVATE_SECRET_MOUNT_REQUIRED');
+ if(!env.VIDEOBOT_DATABASE_URL_FILE&&
+    env.VIDEOBOT_DB_PASSWORD_FILE!=='/run/secrets/videobot_db_password')
+   throw Error('CREATOR_POLL_PRIVATE_DB_SECRET_REQUIRED');
  return env;
 }
 function explicitUnavailable(){
@@ -42,7 +45,22 @@ export async function createCreatorPollingRuntime({
 }={}){
  mode(env);
  const token=readSecret(env.VIDEOBOT_TELEGRAM_TOKEN_FILE);
- const dburl=readSecret(env.VIDEOBOT_DATABASE_URL_FILE);
+ const dburl=env.VIDEOBOT_DATABASE_URL_FILE
+   ?readSecret(env.VIDEOBOT_DATABASE_URL_FILE)
+   :(()=>{
+      const path=env.VIDEOBOT_DB_PASSWORD_FILE;
+      const st=statSync(path);
+      if(!st.isFile()||(st.mode&0o077)!==0||st.size<12||st.size>4096)
+        throw Error('CREATOR_POLL_DB_PASSWORD_FILE_INVALID');
+      const pass=readFileSync(path,'utf8').trim();
+      const host=env.VIDEOBOT_DB_HOST,username=env.VIDEOBOT_DB_USER;
+      if(!['deploy-postgres-1','postgres'].includes(host)||
+         typeof username!=='string'||!/^[a-z][a-z0-9_]{0,62}$/.test(username)||
+         env.VIDEOBOT_DB_NAME!=='videobot'||pass.length<12)
+        throw Error('CREATOR_POLL_INTERNAL_DB_CONFIG_INVALID');
+      const auth=encodeURIComponent(username)+':'+encodeURIComponent(pass);
+      return 'postgresql://'+auth+'@'+host+':5432/videobot';
+   })();
  const pool=new poolCtor({connectionString:dburl,max:3,
   connectionTimeoutMillis:5000,idleTimeoutMillis:30000});
  let api,source,poller;
