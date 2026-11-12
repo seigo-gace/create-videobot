@@ -21,7 +21,7 @@ test('all twelve VideoBot migrations run in one locked transaction with no GATE 
  assert.deepEqual(result,{applied:true,migrations:12});
  assert.equal(loaded.length,12);
  assert.match(loaded[0],/^001_video_post_receipts/);
- assert.match(loaded.at(-1),/^011_sticker_entry_pin/);
+ assert.match(loaded.at(-1),/^012_creator_poll_cursor/);
  assert.equal(db.calls[0],'BEGIN');
  assert.match(db.calls[1],/pg_advisory_xact_lock/);
  assert.equal(db.calls.at(-1),'COMMIT');
