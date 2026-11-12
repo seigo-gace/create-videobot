@@ -65,6 +65,15 @@ export function createPostgresStickerSales(pool){
      [key(productId,'sp')]);
    return q.rows[0]??null;
   },
+  async pauseProduct(productId,sellerId){
+   const q=await pool.query(
+     "UPDATE videobot_sticker_products SET status='paused'"+
+     " WHERE product_id=$1 AND seller_user_id=$2 AND status IN ('published','paused')"+
+     " RETURNING product_id",
+     [key(productId,'sp'),positive(sellerId,'SELLER')]);
+   if(q.rowCount!==1)throw Error('STICKER_SALE_PRODUCT_OWNER_MISMATCH');
+   return {paused:true};
+  },
   async reserveOrder({productId,buyerId}={}){
    const product=key(productId,'sp'),buyer=positive(buyerId,'BUYER');
    const q=await pool.query(
