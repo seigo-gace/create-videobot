@@ -178,7 +178,7 @@ export function createVideoBotSourceModule({
     const record=await stickerInventory.getOwnedPack(owner,packName);
     if(!record)throw new Error('STICKER_PACK_OWNER_NOT_VERIFIED');
     const identity=await telegramApi('getMe',{});
-    if(identity?.is_bot!==true||typeof identity.username!=='string)
+    if(identity?.is_bot!==true||typeof identity.username!=='string')
       throw new Error('STICKER_BOT_IDENTITY_INVALID');
     let set;
     if(verifyOnly){
