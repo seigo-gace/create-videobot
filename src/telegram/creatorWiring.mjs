@@ -18,6 +18,8 @@ import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
 import {createPostgresStickerGifts} from '../stickers/pgStickerGifts.mjs';
 import {createPostgresStickerTopicPosts} from '../stickers/pgStickerTopicPosts.mjs';
 import {createStickerTopicPublisher} from '../stickers/topicPublication.mjs';
+import {createCreatorStickerTopicEntryPin} from '../stickers/creatorTopicEntryPin.mjs';
+import {createPostgresStickerEntryPin} from '../stickers/pgStickerEntryPin.mjs';
 import {createStickerSalesFlow} from './stickerSales.mjs';
 import {editStickerPack,replaceStickerItem,verifyStickerPackEditSnapshot} from '../stickers/stickerPackManagement.mjs';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
@@ -75,15 +77,20 @@ export function createVideoBotSourceModule({
       verifyRelease:gateOwner.verifyRelease,
       receiptStore:stickerTopicPosts,salesStore:stickerSalesStore
     }):null;
-  // GateApp-Bot owns Topic binding/pin receipt. The resident Gserver
-  // adapter must expose the verified owner port; an absent port is not PASS.
+  // STK-04: CreateVdobot owns its own public Topic entry message and pin.
+  // GateApp supplies only the verified read-only Topic address and does not
+  // send, edit, or pin CreateVdobot-owned Telegram messages.
+  const ownEntryPin=
+    typeof gateOwner.getVerifiedStickerEntryTopic==='function'
+    ?createCreatorStickerTopicEntryPin({
+      telegramApi,
+      getVerifiedStickerEntryTopic:gateOwner.getVerifiedStickerEntryTopic,
+      receiptStore:createPostgresStickerEntryPin(pool)
+    }):null;
   const ensureStickerEntryPin=async()=>{
-    if(typeof gateOwner.ensureStickerEntryPin!=='function')
-      return {acknowledged:false,readbackVerified:false,reason:'OWNER_PORT_NOT_CONNECTED'};
-    const result=await gateOwner.ensureStickerEntryPin({telegramApi});
-    if(result?.acknowledged!==true)
-      return {acknowledged:false,readbackVerified:false,reason:'PIN_UNVERIFIED'};
-    return {acknowledged:true,readbackVerified:result.readbackVerified===true};
+    if(!ownEntryPin)
+      return {acknowledged:false,readbackVerified:false,reason:'VERIFIED_TOPIC_OWNER_PORT_NOT_CONNECTED'};
+    return ownEntryPin();
   };
   const mediaProcessor=createVideoMediaProcessor({
     ...ports,run:mediaRun,storageApproved
