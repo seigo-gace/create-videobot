@@ -153,7 +153,8 @@ export function createVideoBotSourceModule({
               operationId,ownerId:owner,packName:receipt.name,kind:draft.kind,
               title:draft.title,format:receipt.format,fileId:item.file_id,
               fileUniqueId:item.file_unique_id,position:item.position,
-              emoji:item.emoji??'🙂',isDefault:draft.setName==null
+              emoji:item.emoji??'🙂',isDefault:draft.setName==null,
+              freshPackProof:receipt.proof==='unique_new_pack'
             });
           }});
       }catch(error){
@@ -201,7 +202,8 @@ export function createVideoBotSourceModule({
       return {status:'unknown',verified:false};
     const result=await reconcileStickerRegistration({telegramApi,name,
       kind:pending.kind,format:pending.format,
-      fileUniqueId:pending.fileUniqueId});
+      fileUniqueId:pending.fileUniqueId,
+      expectedTitle:pending.title,isNewPack:pending.setName==null});
     if(result.verified===true){
       const operationId='s'+String(owner)+'_'+pending.nonce;
       const stored=await stickerInventory.getRegistration({operationId,ownerId:owner});
@@ -212,7 +214,8 @@ export function createVideoBotSourceModule({
         title:pending.title,format:pending.format,
         fileId:result.item.file_id,fileUniqueId:result.item.file_unique_id,
         position:result.item.position,emoji:result.item.emoji??'🙂',
-        isDefault:pending.setName==null
+        isDefault:pending.setName==null,
+        freshPackProof:result.proof==='unique_new_pack'
       });
     }
     return result;
