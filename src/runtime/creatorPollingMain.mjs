@@ -11,6 +11,7 @@ import {createTelegramVideoFetcher} from '../telegram/telegramFileFetch.mjs';
 import {createVideoBotSourceModule} from '../telegram/creatorWiring.mjs';
 import {createCreatorPollingConsumer} from './creatorPollingConsumer.mjs';
 import {applyCreatorSchema} from './creatorMigrate.mjs';
+import {createCreatorTelegramFetch} from './creatorEgress.mjs';
 
 const {Pool}=pg;
 // Gserver host network has verified IPv4 Telegram egress, while default
@@ -67,6 +68,7 @@ export async function createCreatorPollingRuntime({
    })();
  const pool=new poolCtor({connectionString:dburl,max:3,
   connectionTimeoutMillis:5000,idleTimeoutMillis:30000});
+ const outbound=createCreatorTelegramFetch(fetchImpl);
  let api,source,poller;
  try{
   // An explicitly mounted GateApp owner bridge enables the approved public
@@ -82,7 +84,7 @@ export async function createCreatorPollingRuntime({
    gateOwner=await owner.createGateOwner();
    gateConnected=true;
   }
-  api=createTelegramBotApi({token,fetchImpl,timeoutMs:25000});
+  api=createTelegramBotApi({token,fetchImpl:outbound.fetch,timeoutMs:25000});
   await verifyCreateVdoBot({api,checkProfile:false});
   const info=await api('getWebhookInfo',{});
   if(typeof info?.url!=='string'||info.url!=='')
@@ -92,7 +94,7 @@ export async function createCreatorPollingRuntime({
   const schema=await applySchema({pool});
   if(schema.migrations!==12)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
   const pollAdmissionSecret=randomBytes(32).toString('hex');
-  const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl});
+  const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch});
   source=createSource({
    pool,telegramApi:api,gateOwner,botToken:token,
    webhookSecret:pollAdmissionSecret,
@@ -109,8 +111,8 @@ export async function createCreatorPollingRuntime({
    pool
   });
   return {pool,source,api,poller,gateConnected,
-   async close(){await pool.end();}};
- }catch(err){await pool.end();throw err;}
+   async close(){await outbound.close();await pool.end();}};
+ }catch(err){await outbound.close();await pool.end();throw err;}
 }
 export async function runCreatorPollingMain({
  createRuntime=createCreatorPollingRuntime,signal=undefined,onStatus=()=>{}
