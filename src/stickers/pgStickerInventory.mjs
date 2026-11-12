@@ -142,6 +142,67 @@ export function createPostgresStickerInventory(pool){
         [owner(ownerId),requiredText(packName,'PACK_NAME',64)]);
       return q.rows?.[0]??null;
     },
+    async listOwnedItems({ownerId,packName,limit=10,offset=0}={}){
+      const o=owner(ownerId),name=requiredText(packName,'PACK_NAME',64);
+      if(!Number.isSafeInteger(limit)||limit<1||limit>10||
+         !Number.isSafeInteger(offset)||offset<0)
+        throw new Error('STICKER_ITEM_PAGE_INVALID');
+      const q=await pool.query(
+        "SELECT i.file_unique_id,i.file_id,i.emoji,i.position,i.format"+
+        " FROM videobot_sticker_items i JOIN videobot_sticker_packs p"+
+        " ON p.pack_name=i.pack_name WHERE p.owner_user_id=$1"+
+        " AND p.pack_name=$2 AND p.status='active'"+
+        " ORDER BY i.position ASC,i.file_unique_id LIMIT $3 OFFSET $4",
+        [o,name,limit,offset]);
+      return q.rows??[];
+    },
+    // Apply only an authenticated owner's real Telegram getStickerSet snapshot.
+    // The transaction is atomic: a partial edit never leaves mixed inventory.
+    async syncOwnedPackSnapshot({ownerId,packName,set}={}){
+      const o=owner(ownerId),name=requiredText(packName,'PACK_NAME',64);
+      if(!set||set.name!==name||
+         !['regular','custom_emoji'].includes(set.sticker_type)||
+         typeof set.title!=='string'||!set.title.trim()||set.title.length>64||
+         !Array.isArray(set.stickers)||set.stickers.length>200)
+        throw new Error('STICKER_SNAPSHOT_INVALID');
+      const items=set.stickers.map((s,index)=>{
+        if(typeof s.file_id!=='string'||!s.file_id||
+           typeof s.file_unique_id!=='string'||!s.file_unique_id||
+           s.is_animated===true||typeof s.emoji!=='string'||!s.emoji)
+          throw new Error('STICKER_SNAPSHOT_ITEM_INVALID');
+        return {fileId:s.file_id,fileUniqueId:s.file_unique_id,
+          emoji:s.emoji,format:s.is_video===true?'video':'static',position:index};
+      });
+      if(new Set(items.map(i=>i.fileUniqueId)).size!==items.length)
+        throw new Error('STICKER_SNAPSHOT_DUPLICATE_ITEM');
+      const client=await pool.connect();
+      let committed=false;
+      try{
+        await client.query('BEGIN');
+        const pack=await client.query(
+          "SELECT kind FROM videobot_sticker_packs"+
+          " WHERE owner_user_id=$1 AND pack_name=$2 AND status='active' FOR UPDATE",
+          [o,name]);
+        if(pack.rowCount!==1||pack.rows[0].kind!==set.sticker_type)
+          throw new Error('STICKER_PACK_OWNER_CONFLICT');
+        await client.query(
+          "UPDATE videobot_sticker_packs SET title=$3,telegram_verified_at=NOW(),"+
+          " updated_at=NOW() WHERE owner_user_id=$1 AND pack_name=$2",
+          [o,name,set.title]);
+        await client.query("DELETE FROM videobot_sticker_items WHERE pack_name=$1",[name]);
+        for(const item of items)
+          await client.query(
+            "INSERT INTO videobot_sticker_items"+
+            " (pack_name,file_unique_id,file_id,format,emoji,position,telegram_verified_at)"+
+            " VALUES ($1,$2,$3,$4,$5,$6,NOW())",
+            [name,item.fileUniqueId,item.fileId,item.format,item.emoji,item.position]);
+        await client.query('COMMIT');committed=true;
+        return {synced:true,title:set.title,itemCount:items.length};
+      }catch(error){
+        if(!committed)await client.query('ROLLBACK').catch(()=>{});
+        throw error;
+      }finally{client.release();}
+    },
     async listPacks(ownerId,{limit=10,offset=0}={}){
       if(!Number.isSafeInteger(limit)||limit<1||limit>10||
          !Number.isSafeInteger(offset)||offset<0)
