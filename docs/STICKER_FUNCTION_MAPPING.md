@@ -31,6 +31,7 @@
 | S13 | 公開後DMエディター・投稿先ジャンプ・本人編集削除 | stickerSales.mjs、topicPublication.mjs、pgStickerTopicPosts.mjs、sql/009_sticker_topic_posts.sql | Verified GateApp Topic+Seller owner、実送信message_id保存、価格/商品版不変、購入済み権利保持 | Source/Node231件・実PG Topic smoke PASS。Host・Telegram送信/編集/削除/投稿先遷移の実機未検証 |
 | S14 | 動画販売回帰維持（動画のみ手数料30%） | creatorWiring.mjs、pgStarsLedger.mjs | 既存動画販売のCurrent | 既存CIあり、Telegram実機回帰なし |
 | S15 | 本番Git/Compose/DB/Webhook | deploy/Dockerfile、Gserver既存アプリOwner、GateApp-Bot live owner adapter | 共通ServerTerminal host.command。稼働Userbotは既存常駐IPCのみ、二重起動・logout厳禁 | Source CIのみPASS。Host f102 result not returned、最新HEADデプロイ/9 migrations本番/Telegram E2E/owner port接続はNOT_VERIFIED |
+| S16 | 購入後に任意の相手へプレゼント | src/telegram/stickerSales.mjs、src/telegram/creatorBot.mjs、src/stickers/pgStickerGifts.mjs、sql/010_sticker_gifts.sql | 購入済み本人だけが一回限りの受取URL発行、Telegram共有先選択、最初の受取人へ固定、購入者権利維持、無償再取得。既存VideoBot画面/Session・sendStickerのみ再利用 | Source実装済、Node/実PostgreSQL gift receipt・二重受領・他人所有・再取得・Stars課金非増加テストPASS。Telegram実機/Gserver本番未検証。転送されたURLの受領者固定は最初の受取人方式で、宛先IDを事前取得する仕様ではない |
 
 ## 担当・状態DBの分離
 | 保存対象 | 既存Owner | 禁止事項 |
@@ -38,6 +39,7 @@
 | DM状態・画面ID・revision | videobot_creator_sessions | 動画下書き消失、共通画面を増殖 |
 | パック/ステッカー/登録受付 | videobot_sticker_packs、videobot_sticker_items、videobot_sticker_registration_receipts（sql/007_sticker_packs.sql） | UNKNOWNから無条件再送、Owner不一致の更新 |
 | Stars注文/商品/納品 | VideoBot（動画と商品別責務） | 動画sendPaidMediaレシートをinvoice扱いに流用 |
+| 購入後ギフトと受取者配送 | videobot_sticker_gifts、videobot_sticker_gift_delivery_items（sql/010_sticker_gifts.sql） | 購入済み注文・支払レシート改変なし、贈答リンクの平文DB保存なし、購入済み権利保持、一つの贈答リンクを複数人に付与しない |
 | Topic/GATE/公開権限 | GateApp-Bot正規台帳・既存Owner | URL末尾4640をthread_idと断定 |
 | 原素材 | getFile/private一時処理 | Public Repoに実データ・Tokenを記録 |
 
@@ -50,6 +52,8 @@
 6. マイパック→本人pack一覧→タイトル変更/素材一覧/順序/絵文字/削除確認/置換→編集前CAS保護→Telegram書込み→getStickerSet照合→DB台帳同期→元DM画面。結果不明なら再送せず確認のみ。Source/CI検証済み、Gserver・Telegram実機/パック全体削除は未達。
 7. Stars販売→不変商品ID/価格/素材IDをDB保存→購入者へ公開パックの非独占・共有可能性/再取得制約を明示→本人同意→XTR invoice 1回→pre_checkout_query検証→successful_paymentから専用charge台帳へ冪等確定→最大3件ごとのBot DM配送・無償再取得。失敗したWebhookは同一fingerprintの決済通知に限りCAS安全再処理。/paysupport台帳Sourceあり。CI/PG PASS、実Stars決済・商用条件・実保管E2E未検証。
 8. GateApp-Bot実TopicからVerified adapter取得（ボードvideo_chat・正確なTopic名・Chat/thread照合）→CreateVdobot本人の登録商品を1回送信→DBに実message_idと結果を永続化→本人DMのグループ・Topicタイトルとジャンプを表示→編集・削除→販売停止と購入済み版保持。GateApp側Topic固定入口はadmin確認後にCreateVdobot本人のBot APIで送信・pin、DB pin receiptで重複禁止。Source/CIはPASS、本番Adapter・Topic binding・pin・編集/削除のTelegram E2Eは未検証。
+
+9. 購入済み商品→［🎁プレゼントする］→本人の有効な有料注文照合→192bit一回限りの贈答リンク作成（DBはSHA-256のみ保存）→Telegram共有先選択→受取人が`/start gift_<token>`→受取人本人のDB権利を原子的に固定→本人宛DMへ素材バッチ配送→［受け取ったプレゼント］一覧から無償再取得。元の購入者・商品版・課金と台帳は変更しない。期限・贈答回数の追加制限は未決定のため勝手に設定しない。受取リンクは最初の受領者が確定し、第三者へ転送された場合の横取り防止までは保証しない。Source/実DB CIを検証済み、Telegram共有・受取・再取得は実機未検証。
 
 ## 実装・検証の記録契約
 各機能Issueに (1)採用仕様と決定者 (2)Source path・commitとOwner (3)CI run (4)Host request/稼働 HEAD (5)Telegram本番 readback/受入 を分けて残す。UNKNOWNやNOT_VERIFIEDを成功へ書き換えない。
