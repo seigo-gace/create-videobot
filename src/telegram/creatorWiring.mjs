@@ -15,6 +15,7 @@ import {convertStickerMedia} from '../stickers/mediaConverter.mjs';
 import {registerStickerAsset,reconcileStickerRegistration,createStickerSetShortName} from '../stickers/packRegistration.mjs';
 import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs';
 import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
+import {createPostgresStickerGifts} from '../stickers/pgStickerGifts.mjs';
 import {createPostgresStickerTopicPosts} from '../stickers/pgStickerTopicPosts.mjs';
 import {createStickerTopicPublisher} from '../stickers/topicPublication.mjs';
 import {createStickerSalesFlow} from './stickerSales.mjs';
@@ -59,6 +60,7 @@ export function createVideoBotSourceModule({
   const starsLedger=createPostgresStarsLedger({pool,telegramApi});
   const stickerInventory=createPostgresStickerInventory(pool);
   const stickerSalesStore=createPostgresStickerSales(pool);
+  const stickerGifts=createPostgresStickerGifts(pool);
   const stickerTopicPosts=createPostgresStickerTopicPosts(pool);
   // GateApp-Bot owns live topic verification; never fabricate a Topic ID
   // from a t.me/c message URL. This port remains unavailable until the
@@ -268,7 +270,7 @@ export function createVideoBotSourceModule({
   };
   const stickerSales=createStickerSalesFlow({
     api:telegramApi,sessionStore,screenTransport:screen,
-    salesStore:stickerSalesStore,packInventory:stickerInventory,
+    salesStore:stickerSalesStore,giftStore:stickerGifts,packInventory:stickerInventory,
     topicPublisher:stickerTopicPublisher,
     publishSnapshot:async({sellerId,packName,priceStars,productId})=>{
       const own=await stickerInventory.getOwnedPack(sellerId,packName);
@@ -302,6 +304,6 @@ export function createVideoBotSourceModule({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
     listingStore,sessionStore,receiptStore,starsLedger,updateStore,
-    stickerInventory,stickerSalesStore,stickerTopicPosts,ensureStickerEntryPin,publishListing,handleCreatorUpdate
+    stickerInventory,stickerSalesStore,stickerGifts,stickerTopicPosts,ensureStickerEntryPin,publishListing,handleCreatorUpdate
   });
 }
