@@ -40,7 +40,6 @@ export function verifyStickerPackEditSnapshot({set,name,kind,action,stickerUniqu
   if(!found)return false;
   if(action==='move_item')return set.stickers[position]?.file_unique_id===stickerUniqueId;
   if(action==='emoji')return found.emoji===emoji;
-  if(action==='replace_item')return false; // handled by newUniqueId below after old item absence
   return false;
 }
 export async function editStickerPack({
