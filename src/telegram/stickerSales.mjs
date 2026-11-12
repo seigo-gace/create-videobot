@@ -94,7 +94,12 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
         '受取リンクは1回限り有効です。最初に開いて受領した人に確定するため、転送されないようご注意ください。\n'+
         '購入済み商品はあなたの手元にも残ります。追加Starsは発生しません。';
       keyboard=[[{text:'🎁 相手を選んで送る',url:d.shareUrl}],
+        [b('✅ 受取状況を確認','sale:gift_check')],
         [b('↩ 購入済み商品に戻る','sale:gift_back')]];break;
+    case 'sticker_sale_gift_claimed':
+      text='✅ プレゼントは相手に受け取られました。\n'+
+        'このリンクは他の人には使えません。元の購入済み商品はあなたにも残っています。';
+      keyboard=[[b('↩ 購入済み商品へ','sale:gift_back')]];break;
     case 'sticker_sale_gift_unknown':
       text='⚠️ プレゼントの作成結果を確認できません。二重作成防止のため、同じプレゼント番号で再確認します。';
       keyboard=[[b('🔄 同じプレゼントを確認','sale:gift_retry')],
@@ -233,6 +238,13 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    if(!paid)throw Error('STICKER_GIFT_PURCHASE_UNVERIFIED');
    await giftStore.prepare({giftId:d.giftId,token:d.giftToken,
      donorOrderId:d.orderId,donorId:userId});
+   const status=await giftStore.status({giftId:d.giftId,donorId:userId});
+   if(!status)throw Error('STICKER_GIFT_STATUS_NOT_VERIFIED');
+   if(status.recipient_user_id!==null)
+     return show(userId,await sessionStore.read(userId),{
+       screen:'sticker_sale_gift_claimed',
+       stickerSale:{...d,giftToken:null,shareUrl:null}
+     });
    const me=await api('getMe',{});
    if(me?.is_bot!==true||typeof me.username!=='string'||
       !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(me.username))
@@ -465,8 +477,11 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      catch{return show(userId,await sessionStore.read(userId),{
        screen:'sticker_sale_gift_unknown'});}
    }
+   if(action==='sale:gift_check'&&old.screen==='sticker_sale_gift_ready'&&
+      d.giftId&&d.giftToken&&giftStore)
+     return giftReady(userId,d);
    if(action==='sale:gift_back'&&
-      ['sticker_sale_gift_ready','sticker_sale_gift_unknown'].includes(old.screen)&&
+      ['sticker_sale_gift_ready','sticker_sale_gift_unknown','sticker_sale_gift_claimed'].includes(old.screen)&&
       d.orderId)
      return receiveOrder(userId,d.orderId,d.attempt??1);
    if(action==='sale:gift_inbox'&&giftStore){
