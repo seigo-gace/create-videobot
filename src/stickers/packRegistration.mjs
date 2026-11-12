@@ -36,6 +36,21 @@ function matchingItem(set,uploaded,kind,format) {
   const index=set.stickers.findIndex(s=>s.file_unique_id===uploaded.file_unique_id);
   return index<0?null:{...set.stickers[index],position:index};
 }
+// A fresh pack name includes the exact owner and cryptographic nonce. Only
+// a matching one-item set with the expected title/type/format is sufficient
+// when Telegram normalizes file_unique_id after sticker registration.
+// Never apply this shortcut to an existing pack with multiple items.
+function uniqueNewPackItem(set,{name,title,kind,format,isNewPack}){
+ if(isNewPack!==true||!set||set.name!==name||set.title!==title||
+    set.sticker_type!==kind||!Array.isArray(set.stickers)||set.stickers.length!==1)
+   return null;
+ const item=set.stickers[0];
+ if(typeof item?.file_id!=='string'||!item.file_id||
+    typeof item?.file_unique_id!=='string'||!item.file_unique_id||
+    (format==='video'?item.is_video!==true:item.is_video===true||item.is_animated===true))
+   return null;
+ return {...item,position:0};
+}
 export function stickerIdentity(set,uploaded,kind,format) {
   if(!set||!Array.isArray(set.stickers)||
      set.sticker_type!==kind)return false;
@@ -48,7 +63,7 @@ export function stickerIdentity(set,uploaded,kind,format) {
  * A missing or unreadable set is UNKNOWN, not permission to resubmit a write.
  */
 export async function reconcileStickerRegistration({
-  telegramApi,name,kind,format,fileUniqueId
+  telegramApi,name,kind,format,fileUniqueId,expectedTitle=null,isNewPack=false
 }={}) {
   if(typeof telegramApi!=='function'||typeof name!=='string'||
      !/^[A-Za-z][A-Za-z0-9_]{1,63}$/.test(name)||
@@ -61,7 +76,9 @@ export async function reconcileStickerRegistration({
   if(!set||set.sticker_type!==type||!Array.isArray(set.stickers))
     return {status:'unknown',verified:false};
   const item=matchingItem(set,{file_unique_id:fileUniqueId},type,fmt);
-  if(item)return {status:'registered',verified:true,name,item};
+  if(item)return {status:'registered',verified:true,name,item,proof:'file_unique_id'};
+  const fresh=uniqueNewPackItem(set,{name,title:expectedTitle,kind:type,format:fmt,isNewPack});
+  if(fresh)return {status:'registered',verified:true,name,item:fresh,proof:'unique_new_pack'};
   // No match in the current snapshot does not prove the write did not occur:
   // Telegram API visibility, delayed response, and manual removal are distinct.
   return {status:'not_observed',verified:false,name};
@@ -122,11 +139,15 @@ export async function registerStickerAsset({
   const before=await safelyReadSet(telegramApi,name);
   if(before){
     if(before.sticker_type!==sticker_type)throw new Error('STICKER_SET_TYPE_CONFLICT');
-    const existing=matchingItem(before,uploaded,sticker_type,stickerFormat);
+    const exact=matchingItem(before,uploaded,sticker_type,stickerFormat);
+    const fresh=exact?null:uniqueNewPackItem(before,{
+      name,title,kind:sticker_type,format:stickerFormat,isNewPack:existingSetName===null});
+    const existing=exact??fresh;
     if(existing){
       if(onVerified!==undefined){
         if(typeof onVerified!=='function')throw new Error('STICKER_VERIFIED_CALLBACK_INVALID');
-        await onVerified({name,kind:sticker_type,format:stickerFormat,item:existing});
+        await onVerified({name,kind:sticker_type,format:stickerFormat,item:existing,
+          proof:fresh?'unique_new_pack':'file_unique_id'});
       }
       return {name,alreadyRegistered:true,verified:true,
         item:existing,link:'https://t.me/'+(sticker_type==='custom_emoji'?'addemoji/':'addstickers/')+name};
@@ -149,7 +170,10 @@ export async function registerStickerAsset({
   }catch(error){requestError=error;}
 
   const after=await safelyReadSet(telegramApi,name);
-  const item=matchingItem(after,uploaded,sticker_type,stickerFormat);
+  const exact=matchingItem(after,uploaded,sticker_type,stickerFormat);
+  const fresh=exact?null:uniqueNewPackItem(after,{
+    name,title,kind:sticker_type,format:stickerFormat,isNewPack:existingSetName===null});
+  const item=exact??fresh;
   if(!item){
     // A final HTTP 400 proves that this particular mutation was rejected.
     // Only after checking the remote set may we release its durable claim.
@@ -160,7 +184,8 @@ export async function registerStickerAsset({
   }
   if(onVerified!==undefined){
     if(typeof onVerified!=='function')throw new Error('STICKER_VERIFIED_CALLBACK_INVALID');
-    await onVerified({name,kind:sticker_type,format:stickerFormat,item});
+    await onVerified({name,kind:sticker_type,format:stickerFormat,item,
+      proof:fresh?'unique_new_pack':'file_unique_id'});
   }
   return {name,alreadyRegistered:false,verified:true,item,
     link:'https://t.me/'+(sticker_type==='custom_emoji'?'addemoji/':'addstickers/')+name};
