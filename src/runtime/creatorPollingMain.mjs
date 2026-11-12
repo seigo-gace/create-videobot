@@ -1,5 +1,6 @@
 import {readFileSync,statSync} from 'node:fs';
 import {setDefaultResultOrder} from 'node:dns';
+import {setDefaultAutoSelectFamily} from 'node:net';
 import {randomBytes} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import pg from 'pg';
@@ -15,6 +16,9 @@ const {Pool}=pg;
 // Gserver host network has verified IPv4 Telegram egress, while default
 // IPv6-first connections timed out. Apply only to this new Bot process.
 setDefaultResultOrder('ipv4first');
+// Gserver runtime verification: Node's automatic dual-family connect timed out
+// even when IPv4 HTTPS succeeded. Keep this change local to this Bot process.
+setDefaultAutoSelectFamily(false);
 function mode(env){
  if(env.NODE_ENV!=='production'||env.VIDEOBOT_RUN_MODE!=='telegram_poll'||
     env.VIDEOBOT_PRIVATE_INGRESS_ONLY!=='true')
