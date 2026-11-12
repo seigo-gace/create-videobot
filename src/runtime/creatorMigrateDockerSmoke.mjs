@@ -2,6 +2,7 @@ import pg from 'pg';
 import {applyCreatorSchema} from './creatorMigrate.mjs';
 import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs';
 import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
+import {createPostgresStickerGifts} from '../stickers/pgStickerGifts.mjs';
 import {createPostgresStickerTopicPosts} from '../stickers/pgStickerTopicPosts.mjs';
 const {Pool}=pg;
 if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
@@ -11,13 +12,13 @@ if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
 const pool=new Pool({connectionString:process.env.CI_VIDEO_DB_DSN,max:1});
 try {
  const result=await applyCreatorSchema({pool});
- if(result.applied!==true||result.migrations!==9)throw new Error('nine migrations not confirmed');
- const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts, to_regclass('videobot_sticker_products') IS NOT NULL AS products, to_regclass('videobot_sticker_orders') IS NOT NULL AS orders, to_regclass('videobot_sticker_delivery_items') IS NOT NULL AS deliveries, to_regclass('videobot_sticker_payment_support') IS NOT NULL AS support, to_regclass('videobot_sticker_topic_posts') IS NOT NULL AS topic_posts");
+ if(result.applied!==true||result.migrations!==10)throw new Error('ten migrations not confirmed');
+ const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts, to_regclass('videobot_sticker_products') IS NOT NULL AS products, to_regclass('videobot_sticker_orders') IS NOT NULL AS orders, to_regclass('videobot_sticker_delivery_items') IS NOT NULL AS deliveries, to_regclass('videobot_sticker_payment_support') IS NOT NULL AS support, to_regclass('videobot_sticker_topic_posts') IS NOT NULL AS topic_posts, to_regclass('videobot_sticker_gifts') IS NOT NULL AS gifts, to_regclass('videobot_sticker_gift_delivery_items') IS NOT NULL AS gift_deliveries");
  if(q.rows.length!==1||!Object.values(q.rows[0]).every(v=>v===true))
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==9)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==10)throw new Error('schema re-application invalid');
  // Exercise the actual Node adapter against PostgreSQL, not an in-memory fake.
  const inventory=createPostgresStickerInventory(pool);
  // Regression: a failed conversion/upload before the Telegram pack-write
@@ -158,6 +159,58 @@ try {
    buyerId:98,orderId:order.order_id,details:'Foreign support case'})
    .then(()=>false,e=>e.message==='STICKER_SALE_SUPPORT_OWNER_MISMATCH');
  if(!foreignSupport)throw new Error('STICKER_STARS_SUPPORT_FOREIGN_OWNER');
+ // STK-03 gift: only a paid buyer can issue, each 192-bit secret is
+ // single-recipient, the donor keeps the original paid entitlement.
+ const gifts=createPostgresStickerGifts(pool);
+ const giftId='sg_'+'d'.repeat(24),secret='R'.repeat(32);
+ const prepared=await gifts.prepare({giftId,donorOrderId:order.order_id,
+   donorId:99,token:secret});
+ const retryGift=await gifts.prepare({giftId,donorOrderId:order.order_id,
+   donorId:99,token:secret});
+ if(!prepared.created||retryGift.created)
+   throw Error('STICKER_GIFT_PREPARE_IDEMPOTENCY');
+ const foreignGift=await gifts.prepare({giftId:'sg_'+'e'.repeat(24),
+   donorOrderId:order.order_id,donorId:98,token:'S'.repeat(32)})
+   .then(()=>false,e=>e?.message==='STICKER_GIFT_OPERATION_CONFLICT_OR_NOT_PAID');
+ if(!foreignGift)throw Error('STICKER_GIFT_FOREIGN_DONOR_ISSUED');
+ const donorRejection=await gifts.redeem({token:secret,recipientId:99})
+   .then(()=>false,e=>e?.message==='STICKER_GIFT_SELF_RECEIPT_DENIED');
+ if(!donorRejection)throw Error('STICKER_GIFT_SELF_RECEIPT_GRANTED');
+ const received=await gifts.redeem({token:secret,recipientId:98});
+ const duplicateReceive=await gifts.redeem({token:secret,recipientId:98});
+ if(!received.newReceipt||duplicateReceive.newReceipt||
+    received.giftId!==giftId)
+   throw Error('STICKER_GIFT_REDEEM_NOT_IDEMPOTENT');
+ const thief=await gifts.redeem({token:secret,recipientId:100})
+   .then(()=>false,e=>e?.message==='STICKER_GIFT_ALREADY_RECEIVED');
+ if(!thief)throw Error('STICKER_GIFT_SECOND_RECIPIENT_ALLOWED');
+ const foreignView=await gifts.getReceived(giftId,100);
+ const giftOrder=await gifts.getReceived(giftId,98);
+ const donorOrder=await sales.getPaidOrder(order.order_id,99);
+ const inbox=await gifts.listReceived(98);
+ if(foreignView!==null||giftOrder?.items?.length!==2||
+    donorOrder?.invoice_state!=='paid'||inbox.length!==1)
+   throw Error('STICKER_GIFT_ENTITLEMENT_ISOLATION');
+ const receivedItem=await gifts.claimItem({giftId,recipientId:98,attempt:1,index:0});
+ const repeatedItem=await gifts.claimItem({giftId,recipientId:98,attempt:1,index:0});
+ if(receivedItem?.file_unique_id!=='unique_one'||repeatedItem!==null)
+   throw Error('STICKER_GIFT_DELIVERY_CAS_FAILED');
+ await gifts.itemSent({giftId,attempt:1,index:0,messageId:556});
+ const giftRows=await gifts.deliveryRows(giftId,1);
+ if(giftRows[0].status!=='sent'||giftRows[1].status!=='pending')
+   throw Error('STICKER_GIFT_RECEIPT_INVALID');
+ const redelivery=await gifts.redeliver(giftId,98);
+ if(redelivery.attempt!==2||(await gifts.deliveryRows(giftId,2)).length!==2)
+   throw Error('STICKER_GIFT_REDELIVERY_INVALID');
+ const unauthGiftRedelivery=await gifts.redeliver(giftId,100)
+   .then(()=>false,e=>e?.message==='STICKER_GIFT_NOT_RECEIVED');
+ if(!unauthGiftRedelivery)
+   throw Error('STICKER_GIFT_REDELIVERY_OWNER_BROKEN');
+ const allGifts=await pool.query('SELECT COUNT(*)::integer AS total FROM videobot_sticker_gifts');
+ const allOrders=await pool.query('SELECT COUNT(*)::integer AS total FROM videobot_sticker_orders');
+ if(allGifts.rows[0].total!==1||allOrders.rows[0].total!==1)
+   throw Error('STICKER_GIFT_CREATED_EXTRA_CHARGE_OR_ORDER');
+ process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_GIFTS=PASS\\n');
  const topicStore=createPostgresStickerTopicPosts(pool);
  const topic={chatId:-1002373696859,threadId:102,groupTitle:'ビデオChatの掲示板',
    title:'ステッカーの公開と販売'};
