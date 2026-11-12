@@ -27,7 +27,7 @@
 | S09 | 販売商品版・購入前承諾 | stickerSales.mjs、pgStickerSales.mjs、sql/008_sticker_sales.sql | 既存マイパックDM→素材版固定→条件・価格→同意 | Source/CI済、商用条件とGserver/実機未検証 |
 | S10 | XTR invoice/precheckout/payment/納品再取得 | stickerSales.mjs、pgStickerSales.mjs、creatorBot.mjs、creatorWebhookAdmission.mjs、pgWebhookUpdates.mjs、botApi.mjs | 動画のpaidMediaから注文/charge台帳を分離、送信CASとバッチ納品 | Node227件、実DB購入・決済・再取得/重複抑止PASS（Actions 43171467208）。実Stars決済/ファイル保持は未検証 |
 | S11 | 販売済み商品の編集・権利維持 | pgStickerSales.mjs、sql/008_sticker_sales.sql | 商品ID・素材file_id/unique_id固定、注文を商品版へ参照、通常パック編集は商品版不変 | Source/実PostgreSQL検証済。Bot媒体ID失効時の長期再取得保証・版改定UI/実機未検証 |
-| S12 | 指定ステッカーTopic固定「🎨投稿はこちら」→CreateVdobot DM | 実行Owner：既存GayBBS Bot API（IPv4経路）、リンク先 `https://t.me/CreateVdobot?start=sticker`。Source：GateApp-Bot stickerTopicEntryPin.ts / stickerTopicOwnerPort.ts / gaybbsBot.ts | 本番chat `-1002373696859`、message_thread_id `4291`、メッセージ `4652`。既存BotがsendMessage→editMessageTextの返却を照合→pinChatMessage、Hostに重複防止receipt `PINNED`。CreatorBotトークン生成・複製は不要 | **本番Telegram Bot API pinChatMessage ACK PASS**：Host [43281388142](https://github.com/G-ACE-inc/server-core/actions/runs/43281388142)、`is_topic_message=true`、button URL一致。独立Telegramクライアント画面のpin readback・DM起動後実動作はNOT_VERIFIED。DB `posting_topics` の旧目的/仮タイトルと本番pin receipt表未配備は整合作業対象 |
+| S12 | Master指定Topic `-1002373696859` / **4640** に CreateVdobot本人が「🎨 投稿はこちら」を投稿・固定→本人DM | **CreateVdobot Owner**：`creatorTopicEntryPin.mjs`、`fileStickerEntryPin.mjs`、`creatorStickerPinMain.mjs`、`compose.videobot.topic-pin.yaml`。GateAppはTopic情報の提供のみ、GayBBSは投稿・pinしない | Sourceで固定送信先 `message_thread_id=4640`、DM `https://t.me/CreateVdobot?start=sticker`、送信結果不明の二重投稿防止、実Bot本人・管理者pin権限検証。従来のGayBBS `4291` は別Topicへの誤実装として採用しない | **Source修正済み／Node CI PASS**。CreateVdobotによる本番送信・pinはHost結果で要判定（未検証をPASS扱いしない）。 |
 | S13 | 公開後DMエディター・投稿先ジャンプ・本人編集削除 | stickerSales.mjs、topicPublication.mjs、pgStickerTopicPosts.mjs、sql/009_sticker_topic_posts.sql | Verified GateApp Topic+Seller owner、実送信message_id保存、価格/商品版不変、購入済み権利保持 | Source/Node231件・実PG Topic smoke PASS。Host・Telegram送信/編集/削除/投稿先遷移の実機未検証 |
 | S14 | 動画販売回帰維持（動画のみ手数料30%） | creatorWiring.mjs、pgStarsLedger.mjs | 既存動画販売のCurrent | 既存CIあり、Telegram実機回帰なし |
 | S15 | 本番Git/Compose/DB/Webhook | deploy/Dockerfile、Gserver既存アプリOwner、GateApp-Bot live owner adapter | 共通ServerTerminal host.command。稼働Userbotは既存常駐IPCのみ、二重起動・logout厳禁 | Source CIのみPASS。Host f102 result not returned、最新HEADデプロイ/9 migrations本番/Telegram E2E/owner port接続はNOT_VERIFIED |
@@ -54,6 +54,11 @@
 8. GateApp-Bot実TopicからVerified adapter取得（ボードvideo_chat・正確なTopic名・Chat/thread照合）→CreateVdobot本人の登録商品を1回送信→DBに実message_idと結果を永続化→本人DMのグループ・Topicタイトルとジャンプを表示→編集・削除→販売停止と購入済み版保持。GateApp側Topic固定入口はadmin確認後にCreateVdobot本人のBot APIで送信・pin、DB pin receiptで重複禁止。Source/CIはPASS、本番Adapter・Topic binding・pin・編集/削除のTelegram E2Eは未検証。
 
 9. 購入済み商品→［🎁プレゼントする］→本人の有効な有料注文照合→192bit一回限りの贈答リンク作成（贈答台帳はSHA-256のみ保存、発行者の既存プライベートDMセッションに復旧用トークンを保持）→Telegram共有先選択→受取人が`/start gift_<token>`→受取人本人のDB権利を原子的に固定→本人宛DMへ素材バッチ配送→［受け取ったプレゼント］一覧から無償再取得。元の購入者・商品版・課金と台帳は変更しない。期限・贈答回数の追加制限は未決定のため勝手に設定しない。受取リンクは最初の受領者が確定し、第三者へ転送された場合の横取り防止までは保証しない。贈った側は［受取状況を確認］で受取済み表示へ切替え、受取済リンクは再共有ボタンから外す。Source/実DB CIを検証済み、Telegram共有・受取・再取得は実機未検証。
+
+## 2026-11-12 Master最終指定：Bot所有／Topic ID訂正
+- Master指定：グループID `-1002373696859`、**Topic ID `4640`**。`4291` への投稿・固定は誤った別Topicの操作であり、実際の指示Topicへの完成証明ではない。
+- 投稿・ピン留め・DM入口の所有者は **CreateVdobot本人**。GayBBSは実行に関与させず、Gserverで必要なTopic情報を共有するだけ。既存CreateVdobot管理者権限とpin権限は本人Bot APIで実測確認済み。
+- Source変更：自己Bot専用の一回限りの送信／pin、private token mount、durable receipt、Topic ID 4640。実Telegramでの送信/ピン留めは独立Host証拠まで未検証。
 
 ## 2026-11-12 STK-04 本番API設置の後続検証
 
