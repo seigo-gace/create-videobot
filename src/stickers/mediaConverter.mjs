@@ -70,7 +70,8 @@ export async function convertStickerMedia({sourcePath,kind='sticker',format='aut
   const stream=imageStream(metadata);
   const isMoving=['gif','webm','matroska','mov','mp4'].some(x=>String(metadata.format?.format_name??'').includes(x));
   const video=format==='video'||(format==='auto'&&isMoving);
-  if(format==='static'&&isMoving)throw new Error('STICKER_VIDEO_TO_STATIC_NOT_IMPLICIT');
+  // A static sticker pack can accept a video/GIF source: use the first frame
+  // rather than rejecting a safely convertible input.
   const geometry=stickerGeometry(stream.width,stream.height,kind);
   const dir=await mkdtemp(join(tmpdir(),'cv-sticker-'));
   const output=join(dir,video?'sticker.webm':'sticker.png');
