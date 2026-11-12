@@ -69,10 +69,11 @@ export async function createCreatorPollingRuntime({
    throw Error('CREATOR_POLL_SCHEMA_OWNER_CONSENT_MISSING');
   const schema=await applySchema({pool});
   if(schema.migrations!==12)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
+  const pollAdmissionSecret=randomBytes(32).toString('hex');
   const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl});
   source=createSource({
    pool,telegramApi:api,gateOwner,botToken:token,
-   webhookSecret:randomBytes(32).toString('hex'),
+   webhookSecret:pollAdmissionSecret,
    storageApproved:false,
    mediaPorts:{
     fetchSource,
@@ -82,7 +83,7 @@ export async function createCreatorPollingRuntime({
   poller=createCreatorPollingConsumer({
    telegramApi:api,
    handleTelegramWebhook:source.handleTelegramWebhook,
-   webhookSecret:source.webhookSecretForPolling??null,
+   webhookSecret:pollAdmissionSecret,
    pool
   });
   return {pool,source,api,poller,gateConnected,
@@ -105,12 +106,12 @@ export async function runCreatorPollingMain({
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const stop=new AbortController();
  for(const event of ['SIGINT','SIGTERM'])process.once(event,()=>stop.abort());
- try{await runCreatorPollingMain({signal:stop.signal,onStatus:t=>process.stdout.write(t+'\\n')});}
+ try{await runCreatorPollingMain({signal:stop.signal,onStatus:t=>process.stdout.write(t+'\n')});}
  catch(e){
   const code=String(e?.message??'CREATOR_POLL_RUNTIME_FAILED');
   const name=/^CREATOR_[A-Z_]+$|^GATE_OWNER_PUBLIC_POSTING_NOT_CONNECTED$/.test(code)?
     code:'CREATOR_POLL_RUNTIME_FAILED';
-  process.stderr.write(name+'\\n');
+  process.stderr.write(name+'\n');
   process.exitCode=1;
  }
 }
