@@ -281,7 +281,9 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           // a pack, so allow the user to correct/retry the same media safely.
           // Once submission_started is recorded, never retry without readback.
           const phase=current?.stickerPending?.phase;
-          if(phase==='preparing'||phase==='uploaded'){
+          // The publisher must confirm DB claim release before allowing
+          // retry. Session phase alone is not proof that the DB released it.
+          if(error?.preMutationVerified===true){
             return persist(id,current,{screen:'sticker_ready',stickerPending:null,
               stickerHelp:stickerHelp(error)});
           }
