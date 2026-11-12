@@ -1,4 +1,5 @@
 import {randomBytes} from 'node:crypto';
+import {menuPage} from './menuPanel.mjs';
 
 const button=(text,action,rev)=>({text,callback_data:action+'|r'+rev});
 const MONEY_TERMS='Telegramの公開パックは購入者だけに限定できず、第三者への再共有も防止できません。購入対象は現時点の素材版です。素材はBotのDMへ送ります。購入済みの再取得に追加Starsは請求しませんが、Telegramのファイル保持が失効した素材の再送は保証できません。通常の自己都合返金メニューはありません。公式の決済異議は /paysupport で受け付けます。';
@@ -24,7 +25,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    switch(session.screen){
     case 'sticker_sale_price':
       text='💰 パック販売価格を1〜25000 Starsの整数で送信してください。動画の30%管理費はこの商品へ適用しません。';
-      keyboard=[[b('↩ パックへ','sale:cancel')]];break;
+      keyboard=[[b('↩ メニューへ','sale:cancel')]];break;
     case 'sticker_sale_confirm':
       text='💰 '+d.title+'\n価格：'+d.price+' Stars\n'+MONEY_TERMS+
         '\n\n公開する商品版は後から上書きしません。';
@@ -33,6 +34,11 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
       text='✅ 商品版を登録しました。購入者向けリンク：\n'+d.link+
         '\n\n商品版は固定され、パックの編集で購入者の版が変わることはありません。';
       keyboard=[[b('↩ メニューへ','sale:cancel')]];break;
+    case 'sticker_sale_publish_unknown':
+      text='⚠️ 商品版の登録結果を確認できません。二重作成を防ぐため、同じ商品番号で状態を確認します。';
+      keyboard=[[b('🔄 登録状態を確認','sale:check_publish')],
+        [b('📦 同じ商品番号で続ける','sale:retry_publish')],
+        [b('↩ メニューへ','sale:cancel')]];break;
     case 'sticker_sale_offer':
       text='📦 '+d.title+'（版'+d.version+'）\n価格：'+d.price+' Stars\n\n'+MONEY_TERMS;
       keyboard=[[b('同意して購入へ','sale:accept')],[b('↩ 戻る','sale:cancel')]];break;
@@ -63,6 +69,35 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    if(result?.messageId!==session.screenMessageId)
      await sessionStore.setScreen(userId,revision,result.messageId);
    return {handled:true,revision,messageId:result?.messageId};
+ }
+ async function exitSale(userId,old){
+   const revision=old.revision+1;
+   const next={...old,revision,screen:'home',stickerSale:null};
+   await sessionStore.write(userId,old.revision,next);
+   const result=await screenTransport.show(userId,next.screenMessageId??null,menuPage('home'));
+   if(result?.messageId!==next.screenMessageId)
+     await sessionStore.setScreen(userId,revision,result.messageId);
+   return {handled:true};
+ }
+ async function finishPublish(userId,d){
+   const product=await salesStore.getPublished(d.productId);
+   if(!product||String(product.seller_user_id)!==String(userId)||
+      product.pack_name!==d.packName||Number(product.price_stars)!==d.price)
+     throw Error('STICKER_SALE_PUBLISH_RECEIPT_MISMATCH');
+   const me=await api('getMe',{});
+   if(me?.is_bot!==true||typeof me.username!=='string)
+     throw Error('STICKER_SALE_BOT_IDENTITY_UNAVAILABLE');
+   return show(userId,await sessionStore.read(userId),{
+     screen:'sticker_sale_published',stickerSale:{...d,version:product.version,
+       link:'https://t.me/'+me.username+'?start=buy_'+d.productId}
+   });
+ }
+ async function attemptPublish(userId,d){
+   const existing=await salesStore.getPublished(d.productId);
+   if(!existing)
+     await publishSnapshot({sellerId:userId,packName:d.packName,
+       priceStars:d.price,productId:d.productId});
+   return finishPublish(userId,d);
  }
  async function beginSell({ownerId,packName}){
    const pack=await packInventory.getOwnedPack(ownerId,packName);
@@ -177,6 +212,12 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      const {userId}=actor(update);
      return openOffer(userId,m.text.trim().split('buy_')[1]);
    }
+   if(m?.text&&/^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(m.text.trim())){
+     const {userId}=actor(update);
+     const old=await sessionStore.read(userId);
+     if(old?.screen==='sticker_sale_publishing'||old?.screen==='sticker_sale_publish_unknown')
+       return show(userId,old,{screen:'sticker_sale_publish_unknown'});
+   }
    if(!cb?.data?.startsWith('sale:')) {
      if(m?.chat?.type==='private'){
        const old=await sessionStore.read(m.chat.id);
@@ -202,25 +243,29 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      return {handled:true,staleButton:true};
    if(old.stickerPending||old.stickerEditPending)return {handled:true,locked:true};
    const action=match[1],d=old.stickerSale??{};
-   if(action==='sale:cancel')
-     return show(userId,old,{screen:'sticker_sale_purchases',
-       stickerSale:{mode:'buyer',purchases:await salesStore.listPurchases(userId)}});
+   if(action==='sale:cancel')return exitSale(userId,old);
    if(action==='sale:price'&&d.mode==='seller')
      return show(userId,old,{screen:'sticker_sale_price'});
    if(action==='sale:publish'&&old.screen==='sticker_sale_confirm'&&d.mode==='seller'){
-     // Revision is claimed BEFORE any irreversible publish. A timed-out
-     // request cannot be repeated by a stale button.
+     const pending={...d,productId:'sp_'+randomBytes(12).toString('hex')};
      await sessionStore.write(userId,old.revision,{
-       ...old,revision:old.revision+1,screen:'sticker_sale_publishing'});
-     const product=await publishSnapshot({
-       sellerId:userId,packName:d.packName,priceStars:d.price});
-     const me=await api('getMe',{});
-     if(me?.is_bot!==true||typeof me.username!=='string')
-       throw Error('STICKER_SALE_BOT_IDENTITY_UNAVAILABLE');
-     const fresh=await sessionStore.read(userId);
-     return show(userId,fresh,{screen:'sticker_sale_published',
-       stickerSale:{...d,productId:product.productId,
-         link:'https://t.me/'+me.username+'?start=buy_'+product.productId}});
+       ...old,revision:old.revision+1,screen:'sticker_sale_publishing',
+       stickerSale:pending});
+     try{return await attemptPublish(userId,pending);}
+     catch{
+       return show(userId,await sessionStore.read(userId),{
+         screen:'sticker_sale_publish_unknown',stickerSale:pending});
+     }
+   }
+   if((action==='sale:check_publish'||action==='sale:retry_publish')&&
+      old.screen==='sticker_sale_publish_unknown'&&d.mode==='seller'&&validId(d.productId)){
+     if(action==='sale:check_publish'){
+       try{return await finishPublish(userId,d);}
+       catch{return show(userId,old,{screen:'sticker_sale_publish_unknown'});}
+     }
+     try{return await attemptPublish(userId,d);}
+     catch{return show(userId,await sessionStore.read(userId),{
+       screen:'sticker_sale_publish_unknown'});}
    }
    if(action==='sale:offer'&&d.mode==='buyer')
      return openOffer(userId,d.productId);
