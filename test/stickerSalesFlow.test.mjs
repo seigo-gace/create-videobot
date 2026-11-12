@@ -122,7 +122,10 @@ function fixture(){
  const msg=(user,text)=>({message:{from:{id:user},chat:{id:user,type:'private'},message_id:302,text}});
  const cb=(user,action)=>({callback_query:{id:'query',data:action+'|r'+init(user).revision,
    from:{id:user},message:{chat:{id:user,type:'private'},message_id:301}}});
- return {flow,calls,msg,cb,state:init,salesStore,supportCases,gifts,get giftPrepares(){return giftPrepares;},get phase(){return phase;},get invoiceCount(){return invoiceCount;}};
+ return {flow,calls,msg,cb,state:init,salesStore,supportCases,gifts,
+   seed:(user,patch)=>states.set(user,{...structuredClone(init(user)),...patch}),
+   get giftPrepares(){return giftPrepares;},get phase(){return phase;},
+   get invoiceCount(){return invoiceCount;}};
 }
 
 test('seller publishes a fixed snapshot through the same DM session; no fee is added',async()=>{
@@ -257,4 +260,21 @@ test('unpaid or unowned stickers cannot issue gift links and no invoice is sent'
  assert.equal(bad.staleButton,true);
  assert.equal(f.giftPrepares,0);
  assert.equal(f.invoiceCount,0);
+});
+
+test('recipient with an unresolved sticker pack mutation cannot redeem until reconciled',async()=>{
+ const f=fixture();
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ await f.flow.handle(f.cb(81,'sale:accept'));
+ await f.flow.handle(f.cb(81,'sale:pay'));
+ await f.flow.payments({update_id:311,message:{chat:{id:81,type:'private'},
+   from:{id:81},successful_payment:{invoice_payload:'stk:'+orderId,
+     currency:'XTR',total_amount:50,telegram_payment_charge_id:'charge-lock'}}});
+ await f.flow.handle(f.cb(81,'sale:gift'));
+ const gift=[...f.gifts.values()][0];
+ f.seed(80,{screen:'sticker_reconcile',stickerPending:{status:'needs_reconcile'}});
+ const denied=await f.flow.handle(f.msg(80,'/start gift_'+gift.token));
+ assert.equal(denied.registrationLocked,true);
+ assert.equal(gift.recipientId,null);
+ assert.equal(f.state(80).screen,'sticker_reconcile');
 });
