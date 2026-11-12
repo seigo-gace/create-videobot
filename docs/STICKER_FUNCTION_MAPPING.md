@@ -27,7 +27,7 @@
 | S09 | 販売商品版・購入前承諾 | stickerSales.mjs、pgStickerSales.mjs、sql/008_sticker_sales.sql | 既存マイパックDM→素材版固定→条件・価格→同意 | Source/CI済、商用条件とGserver/実機未検証 |
 | S10 | XTR invoice/precheckout/payment/納品再取得 | stickerSales.mjs、pgStickerSales.mjs、creatorBot.mjs、creatorWebhookAdmission.mjs、pgWebhookUpdates.mjs、botApi.mjs | 動画のpaidMediaから注文/charge台帳を分離、送信CASとバッチ納品 | Node227件、実DB購入・決済・再取得/重複抑止PASS（Actions 43171467208）。実Stars決済/ファイル保持は未検証 |
 | S11 | 販売済み商品の編集・権利維持 | pgStickerSales.mjs、sql/008_sticker_sales.sql | 商品ID・素材file_id/unique_id固定、注文を商品版へ参照、通常パック編集は商品版不変 | Source/実PostgreSQL検証済。Bot媒体ID失効時の長期再取得保証・版改定UI/実機未検証 |
-| S12 | 指定Topicピン留め→Bot DM | create-videobot: creatorWiring.mjs、creatorLiveService.mjs、stickerWizard.mjs、botApi.mjs。GateApp-Bot: postingDelivery.ts、topicRouting.ts、topicBindingHandlers.ts、stickerTopicEntryPin.ts、stickerTopicOwnerPort.ts、migrate.ts | GateApp-Bot正規Topic DBから一意に厳密照合、実Bot本人・管理者権限・保存済pin receipt、deep link start=sticker、UNKNOWN再送防止 | GateApp-Bot新Source/Typecheck/Pin contract/Docker CI PASS。実Topic登録・Host owner adapter提供・pin readbackは未検証 |
+| S12 | 指定ステッカーTopicの固定「🎨投稿はこちら」→CreateVdobot DM | GateApp-Bot: postingDelivery.ts、topicRouting.ts、topicBindingHandlers.ts、stickerTopicEntryPin.ts、stickerTopicOwnerPort.ts、scripts/ensureStickerTopicPin.ts、build-sticker-pin.ts、Dockerfile.gaybbs。CreateVdobot: stickerWizard.mjs、creatorBot.mjs | GateApp-Bot既存管理Botが投稿・pinChatMessage、対象CreateVdobotは専用TokenからgetMeで実本人確認。verified posting_topicsと1件だけのpin台帳、start=stickerで既存DMへ遷移 | Sourceの接続漏れ修正、分離したPin Bot権限と一回限り実行CLIを既存Dockerへ追加。GateApp Docker/型検査/契約CI SUCCESS 43208420264。Gserver Host req_20261112193200000000a104 はGateway QUEUED後241秒でREQUEST_RESULT_NOT_FOUND。実Topic送信/pin readback/DM実機はNOT_VERIFIED |
 | S13 | 公開後DMエディター・投稿先ジャンプ・本人編集削除 | stickerSales.mjs、topicPublication.mjs、pgStickerTopicPosts.mjs、sql/009_sticker_topic_posts.sql | Verified GateApp Topic+Seller owner、実送信message_id保存、価格/商品版不変、購入済み権利保持 | Source/Node231件・実PG Topic smoke PASS。Host・Telegram送信/編集/削除/投稿先遷移の実機未検証 |
 | S14 | 動画販売回帰維持（動画のみ手数料30%） | creatorWiring.mjs、pgStarsLedger.mjs | 既存動画販売のCurrent | 既存CIあり、Telegram実機回帰なし |
 | S15 | 本番Git/Compose/DB/Webhook | deploy/Dockerfile、Gserver既存アプリOwner、GateApp-Bot live owner adapter | 共通ServerTerminal host.command。稼働Userbotは既存常駐IPCのみ、二重起動・logout厳禁 | Source CIのみPASS。Host f102 result not returned、最新HEADデプロイ/9 migrations本番/Telegram E2E/owner port接続はNOT_VERIFIED |
@@ -54,6 +54,13 @@
 8. GateApp-Bot実TopicからVerified adapter取得（ボードvideo_chat・正確なTopic名・Chat/thread照合）→CreateVdobot本人の登録商品を1回送信→DBに実message_idと結果を永続化→本人DMのグループ・Topicタイトルとジャンプを表示→編集・削除→販売停止と購入済み版保持。GateApp側Topic固定入口はadmin確認後にCreateVdobot本人のBot APIで送信・pin、DB pin receiptで重複禁止。Source/CIはPASS、本番Adapter・Topic binding・pin・編集/削除のTelegram E2Eは未検証。
 
 9. 購入済み商品→［🎁プレゼントする］→本人の有効な有料注文照合→192bit一回限りの贈答リンク作成（贈答台帳はSHA-256のみ保存、発行者の既存プライベートDMセッションに復旧用トークンを保持）→Telegram共有先選択→受取人が`/start gift_<token>`→受取人本人のDB権利を原子的に固定→本人宛DMへ素材バッチ配送→［受け取ったプレゼント］一覧から無償再取得。元の購入者・商品版・課金と台帳は変更しない。期限・贈答回数の追加制限は未決定のため勝手に設定しない。受取リンクは最初の受領者が確定し、第三者へ転送された場合の横取り防止までは保証しない。贈った側は［受取状況を確認］で受取済み表示へ切替え、受取済リンクは再共有ボタンから外す。Source/実DB CIを検証済み、Telegram共有・受取・再取得は実機未検証。
+
+## 2026-11-12 STK-04 本番ボタン未設置の是正
+
+- Master実機指摘：指定ステッカーTopicにBot DM移動ボタンがない。以前のCI成功は本番固定ボタン設置を意味しなかった。原因：GateApp-Botの固定処理はSourceに存在するが、稼働用に明示呼出し/所有者Providerがつながっていない（スタートアップ自動登録されていない）。CreateVdobotのグループ管理権限を要求していた点も責務不一致。
+- 修正：GateApp-Botの管理者Botが実Topicへ送信・pinし、移動先CreateVdobotだけを独立getMeで本人確認。既存単一PostgreSQLのposting_sticker_entry_pinsに一件だけ記録し、結果不明時は再送しない。既存のGayBBS Dockerイメージへ一回限りのscripts/ensureStickerTopicPin.tsを同梱。グループBot/Userbotの二重起動・再ログインはしない。
+- Host送信 req_20261112193200000000a104 / Actions 43207016741：START/Gateway ACCEPTED、Host結果返却 REQUEST_RESULT_NOT_FOUND（241秒）。実際の稼働checkout/登録Topic/権限/既存pin receiptは未読戻し。新規同等Host要求を盲目的に再送していない。
+- 受入残：既存Gserverプロジェクト所有者が認可した正規経路で、実Bot両者の本人getMe、既存DBのverified Topic chat/thread、GroupBotのpin権限、Topicの実送信→pinTelegram応答→独立実機pin readback→ボタンからDMのステッカーメニュー到達を確認してはじめてPASSとする。運用Secret/Composeの無断追加・権限拡大は行わない。
 
 ## 実装・検証の記録契約
 各機能Issueに (1)採用仕様と決定者 (2)Source path・commitとOwner (3)CI run (4)Host request/稼働 HEAD (5)Telegram本番 readback/受入 を分けて残す。UNKNOWNやNOT_VERIFIEDを成功へ書き換えない。
