@@ -27,6 +27,7 @@ export function createCreatorLiveService({
     screenTransport
   });
   let verifiedIdentity=false;
+  let stickerEntryStatus='NOT_VERIFIED';
   const listener=createCreatorHttpService({
     host,port,handleTelegramWebhook:creator.handleTelegramWebhook,
     readiness:async()=>{
@@ -50,10 +51,18 @@ export function createCreatorLiveService({
           return !!(r?.updates&&r?.sessions&&r?.listings&&r?.stars);
         }catch{return false;}
       })()!==true)throw new Error('VideoBot migrations missing');
+      // This is a safe, idempotent owner-managed effect when the real GateApp
+      // adapter is present. Missing/failed pin must not take down video sales.
+      try{
+        const pin=await creator.ensureStickerEntryPin();
+        stickerEntryStatus=pin.readbackVerified===true?'VERIFIED_READBACK':
+          pin.acknowledged===true?'TELEGRAM_ACK_ONLY':'NOT_VERIFIED';
+      }catch{stickerEntryStatus='NOT_VERIFIED';}
       return listener.listen();
     },
     async close(){await listener.close();},
     creator,
-    telegramApi
+    telegramApi,
+    getStickerEntryStatus:()=>stickerEntryStatus
   });
 }
