@@ -539,7 +539,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           message.video?.file_size??(Array.isArray(message.photo)?message.photo.at(-1)?.file_size:null);
         const mime=message.document?.mime_type;
         if(!fileId||size>20_000_000||
-           (typeof mime==='string'&&/^(application\\/pdf|audio\\/|text\\/)/i.test(mime)))
+           (typeof mime==='string'&&/^(application\/pdf|audio\/|text\/)/i.test(mime)))
           return persist(id,old,{screen:'sticker_replace_input',
             stickerHelp:'20MB以下のJPG・PNG・GIF・MP4・WebMを送ってください。'});
         return persist(id,old,{screen:'sticker_replace_ready',
