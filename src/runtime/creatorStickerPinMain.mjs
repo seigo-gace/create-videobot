@@ -53,9 +53,9 @@ export async function runCreatorStickerPinOnce(env=process.env){
   });
   const r=await ensure();
   if(r.acknowledged!==true)throw Error('CREATOR_STICKER_PIN_UNACKNOWLEDGED');
-  process.stdout.write('CREATOR_STICKER_PIN_API_ACK=PASS\\n');
-  process.stdout.write('CREATOR_STICKER_PIN_MESSAGE_ID='+r.messageId+'\\n');
-  process.stdout.write('CREATOR_STICKER_PIN_PREEXISTING='+(r.alreadyPinned?'YES':'NO')+'\\n');
+  process.stdout.write('CREATOR_STICKER_PIN_API_ACK=PASS\n');
+  process.stdout.write('CREATOR_STICKER_PIN_MESSAGE_ID='+r.messageId+'\n');
+  process.stdout.write('CREATOR_STICKER_PIN_PREEXISTING='+(r.alreadyPinned?'YES':'NO')+'\n');
   return r;
  }finally{await store.close();}
 }
@@ -64,7 +64,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  catch(e){
   const name=typeof e?.message==='string'?e.message:'UNCLASSIFIED';
   const safe=name.startsWith('CREATOR_')?name:'CREATOR_STICKER_PIN_OPERATION_FAILED';
-  process.stderr.write(safe+'\\n');
+  process.stderr.write(safe+'\n');
   process.exitCode=1;
  }
 }
