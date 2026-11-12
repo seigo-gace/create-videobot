@@ -18,6 +18,8 @@ function fixture(){
   setScreen:async(user,rev,id)=>{assert.equal(rev,init(user).revision);states.get(user).screenMessageId=id;}
  };
  let phase='none',paid=false,invoiceCount=0,sellerPublished=null,supportCases=[];
+ const gifts=new Map(),giftDeliveries=new Map();
+ let giftPrepares=0;
  const salesStore={
   getPublished:async id=>id===productId?{product_id:productId,title:'Demo pack',
     price_stars:50,version:1,status:'published'}:
@@ -49,6 +51,62 @@ function fixture(){
   listPurchases:async()=>paid?[{order_id:orderId,title:'Demo pack',version:1}]:[],
   createPaymentSupport:async data=>{supportCases.push(data);return {ticketId:'ss_'+ 'f'.repeat(24)};}
  };
+ const giftStore={
+  async prepare({giftId,donorId,donorOrderId,token}){
+    assert.equal(donorId,81);assert.equal(donorOrderId,orderId);
+    assert.equal(paid,true);
+    const current=gifts.get(giftId);
+    if(current){
+      assert.equal(current.token,token);
+      return {giftId,created:false};
+    }
+    giftPrepares++;
+    gifts.set(giftId,{giftId,token,recipientId:null});
+    return {giftId,created:true};
+  },
+  async status({giftId,donorId}){return donorId===81?gifts.get(giftId):null;},
+  async redeem({token,recipientId}){
+    const gift=[...gifts.values()].find(g=>g.token===token);
+    if(!gift)throw Error('STICKER_GIFT_LINK_NOT_FOUND');
+    if(recipientId===81)throw Error('STICKER_GIFT_SELF_RECEIPT_DENIED');
+    if(gift.recipientId&&gift.recipientId!==recipientId)
+      throw Error('STICKER_GIFT_ALREADY_RECEIVED');
+    const newReceipt=gift.recipientId===null;
+    gift.recipientId=recipientId;
+    if(newReceipt)giftDeliveries.set(gift.giftId+':1',
+      [{item_index:0,status:'pending'},{item_index:1,status:'pending'}]);
+    return {giftId:gift.giftId,newReceipt};
+  },
+  async getReceived(gid,recipientId){
+    const g=gifts.get(gid);
+    return g?.recipientId===recipientId?{
+      gift_id:gid,items:[{file_id:'file1'},{file_id:'file2'}],title:'Demo pack',version:1}:null;
+  },
+  async listReceived(recipientId){
+    return [...gifts.values()].filter(g=>g.recipientId===recipientId)
+      .map(g=>({gift_id:g.giftId,title:'Demo pack',version:1}));
+  },
+  async deliveryRows(gid,attempt){return structuredClone(giftDeliveries.get(gid+':'+attempt)??[]);},
+  async claimItem({giftId,recipientId,attempt,index}){
+    if(gifts.get(giftId)?.recipientId!==recipientId)return null;
+    const rows=giftDeliveries.get(giftId+':'+attempt);
+    if(rows[index].status!=='pending')return null;
+    rows[index].status='sending';
+    return {file_id:'file'+(index+1)};
+  },
+  async itemSent({giftId,attempt,index,messageId}){
+    assert.ok(messageId>0);
+    giftDeliveries.get(giftId+':'+attempt)[index].status='sent';
+  },
+  async itemUnknown({giftId,attempt,index}){
+    giftDeliveries.get(giftId+':'+attempt)[index].status='unknown';
+  },
+  async redeliver(gid,recipientId){
+    if(gifts.get(gid)?.recipientId!==recipientId)throw Error('STICKER_GIFT_NOT_RECEIVED');
+    giftDeliveries.set(gid+':2',[{item_index:0,status:'pending'},{item_index:1,status:'pending'}]);
+    return {attempt:2};
+  }
+ };
  const api=async(method,args)=>{
    calls.push({method,args});
    if(method==='sendInvoice'){invoiceCount++;return {message_id:500};}
@@ -58,13 +116,13 @@ function fixture(){
  };
  const flow=createStickerSalesFlow({
    api,sessionStore:store,screenTransport:{show:async()=>({messageId:301})},
-   salesStore,packInventory:{getOwnedPack:async()=>({pack_name:'pack',title:'Demo pack',kind:'regular'})},
+   salesStore,giftStore,packInventory:{getOwnedPack:async()=>({pack_name:'pack',title:'Demo pack',kind:'regular'})},
    publishSnapshot:async args=>{sellerPublished={productId:args.productId};return {productId:args.productId,version:1};}
  });
  const msg=(user,text)=>({message:{from:{id:user},chat:{id:user,type:'private'},message_id:302,text}});
  const cb=(user,action)=>({callback_query:{id:'query',data:action+'|r'+init(user).revision,
    from:{id:user},message:{chat:{id:user,type:'private'},message_id:301}}});
- return {flow,calls,msg,cb,state:init,salesStore,supportCases,get phase(){return phase;},get invoiceCount(){return invoiceCount;}};
+ return {flow,calls,msg,cb,state:init,salesStore,supportCases,gifts,get giftPrepares(){return giftPrepares;},get phase(){return phase;},get invoiceCount(){return invoiceCount;}};
 }
 
 test('seller publishes a fixed snapshot through the same DM session; no fee is added',async()=>{
@@ -142,4 +200,61 @@ test('paysupport stores a buyer case and never invokes a refund API',async()=>{
  assert.equal(f.supportCases[0].buyerId,81);
  assert.equal(f.state(81).screen,'sticker_sale_support_done');
  assert.equal(f.calls.filter(x=>/refund/i.test(x.method)).length,0);
+});
+
+test('purchased sticker can be gifted to a chosen Telegram recipient with a one-time link',async()=>{
+ const f=fixture();
+ // Use the existing paid order flow; no separate charge or video ledger.
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ await f.flow.handle(f.cb(81,'sale:accept'));
+ await f.flow.handle(f.cb(81,'sale:pay'));
+ const payment={invoice_payload:'stk:'+orderId,currency:'XTR',
+  total_amount:50,telegram_payment_charge_id:'paid_once'};
+ await f.flow.payments({update_id:300,message:{chat:{id:81,type:'private'},
+  from:{id:81},message_id:400,successful_payment:payment}});
+ assert.equal(f.state(81).screen,'sticker_sale_delivery');
+ const click=f.cb(81,'sale:gift');
+ await f.flow.handle(click);
+ assert.equal(f.state(81).screen,'sticker_sale_gift_ready');
+ assert.equal(f.giftPrepares,1);
+ const link=f.state(81).stickerSale.shareUrl;
+ const parsed=new URL(link);
+ assert.equal(parsed.hostname,'t.me');
+ assert.equal(parsed.pathname,'/share/url');
+ const redeemLink=new URL(parsed.searchParams.get('url'));
+ assert.match(redeemLink.searchParams.get('start'),/^gift_[A-Za-z0-9_-]{32}$/);
+ const stale=await f.flow.handle(click);
+ assert.equal(stale.staleButton,true);
+ assert.equal(f.giftPrepares,1);
+ const token=redeemLink.searchParams.get('start').slice(5);
+ const before=f.calls.filter(x=>x.method==='sendSticker').length;
+ await f.flow.handle(f.msg(80,'/start gift_'+token));
+ assert.equal(f.state(80).screen,'sticker_sale_delivery');
+ assert.equal(f.state(80).stickerSale.mode,'gift_recipient');
+ assert.equal(f.calls.filter(x=>x.method==='sendSticker').length,before+2);
+ assert.equal(f.invoiceCount,1);
+ assert.equal((await f.salesStore.getPaidOrder(orderId,81))?.order_id,orderId);
+ const second=await f.flow.handle(f.msg(82,'/start gift_'+token));
+ assert.equal(f.state(82).screen,'sticker_sale_gift_unavailable');
+ assert.equal(f.calls.filter(x=>x.method==='sendInvoice').length,1);
+ const self=await f.flow.handle(f.msg(81,'/start gift_'+token));
+ assert.equal(f.state(81).screen,'sticker_sale_gift_unavailable');
+ assert.ok(self.handled);
+ await f.flow.handle(f.cb(80,'sale:purchases'));
+ await f.flow.handle(f.cb(80,'sale:gift_inbox'));
+ assert.equal(f.state(80).screen,'sticker_sale_gift_inbox');
+ await f.flow.handle(f.cb(80,'sale:received:0'));
+ assert.equal(f.state(80).screen,'sticker_sale_delivery');
+ await f.flow.handle(f.cb(80,'sale:redeliver'));
+ assert.equal(f.state(80).stickerSale.attempt,2);
+ assert.equal(f.calls.filter(x=>x.method==='sendSticker').length,before+4);
+ assert.equal(f.invoiceCount,1);
+});
+test('unpaid or unowned stickers cannot issue gift links and no invoice is sent',async()=>{
+ const f=fixture();
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ const bad=await f.flow.handle(f.cb(81,'sale:gift'));
+ assert.equal(bad.staleButton,true);
+ assert.equal(f.giftPrepares,0);
+ assert.equal(f.invoiceCount,0);
 });
