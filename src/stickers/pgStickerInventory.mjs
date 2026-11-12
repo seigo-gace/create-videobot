@@ -63,6 +63,19 @@ export function createPostgresStickerInventory(pool){
         throw new Error('STICKER_PRE_MUTATION_ABORT_NOT_CONFIRMED');
       return {abandoned:true};
     },
+    // Keep the rejected operation for audit. A verified HTTP 400 means the
+    // specific Telegram mutation did not commit, so a NEW nonce may be used.
+    // Do not apply this transition to timeouts or uncertain acknowledgments.
+    async recordDefinitiveRejection({operationId,ownerId}){
+      const q=await pool.query(
+        "UPDATE videobot_sticker_registration_receipts"+
+        " SET phase='needs_reconcile',latest_error_code='TELEGRAM_DEFINITIVE_REJECTION',updated_at=NOW()"+
+        " WHERE operation_id=$1 AND owner_user_id=$2 AND phase='submission_started'"+
+        " AND latest_error_code IS NULL RETURNING operation_id",
+        [requiredText(operationId,'OPERATION',128),owner(ownerId)]);
+      if(q.rowCount!==1)throw new Error('STICKER_REJECTION_RECEIPT_CONFLICT');
+      return {rejected:true};
+    },
     async needsReconcile({operationId,ownerId}){
       const q=await pool.query(
         "UPDATE videobot_sticker_registration_receipts"+
