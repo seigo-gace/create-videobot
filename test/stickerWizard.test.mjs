@@ -392,3 +392,74 @@ test('unverified DB receipt cleanup never unlocks a prepared sticker for retry',
  assert.equal(attempt.registrationLocked,true);
  assert.equal(attempts,1);
 });
+
+test('confirmed Telegram rejection safely restores the existing DM draft with fresh nonce',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Recoverable pack'}));
+ await f.wizard.handle(f.msg({photo:[{file_id:'fileabc'}]}));
+ const originalNonce=f.state().stickerDraft.nonce;
+ let attempts=0;
+ const wizard=createStickerWizard({
+  api:async()=>true,
+  sessionStore:{
+   read:async()=>structuredClone(f.state()),
+   write:async(_id,revision,next)=>{assert.equal(revision,f.state().revision);Object.assign(f.state(),structuredClone(next));},
+   setScreen:async()=>{}
+  },
+  screenTransport:{show:async()=>({messageId:301})},
+  publishSticker:async()=>{
+   attempts++;
+   const error=new Error('STICKER_TELEGRAM_REGISTRATION_REJECTED');
+   error.safeToRetryVerified=true;
+   throw error;
+  }
+ });
+ await wizard.handle(f.cb('sticker:register|r5'));
+ assert.equal(f.state().screen,'sticker_ready');
+ assert.equal(f.state().stickerPending,null);
+ assert.equal(f.state().stickerDraft.fileId,'fileabc');
+ assert.notEqual(f.state().stickerDraft.nonce,originalNonce);
+ assert.match(f.state().stickerHelp,/登録を拒否/);
+ await wizard.handle(f.cb('sticker:register|r'+f.state().revision));
+ assert.equal(attempts,2);
+});
+test('unknown registration can leave the DM screen without dropping receipt or resubmitting',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Still unknown'}));
+ await f.wizard.handle(f.msg({photo:[{file_id:'fileabc'}]}));
+ let writes=0;
+ const wizard=createStickerWizard({
+  api:async()=>true,
+  sessionStore:{
+   read:async()=>structuredClone(f.state()),
+   write:async(_id,revision,next)=>{assert.equal(revision,f.state().revision);Object.assign(f.state(),structuredClone(next));},
+   setScreen:async()=>{}
+  },
+  screenTransport:{show:async()=>({messageId:301})},
+  publishSticker:async({onUploaded,onBeforeMutation})=>{
+   writes++;
+   await onUploaded({name:'s42_112233aabbccddff_by_CreateVdobot',fileUniqueId:'unique-42',format:'static'});
+   await onBeforeMutation({name:'s42_112233aabbccddff_by_CreateVdobot',fileUniqueId:'unique-42',format:'static'});
+   throw Error('UNKNOWN_AFTER_SUBMISSION');
+  },
+  reconcileSticker:async()=>({status:'not_observed',verified:false})
+ });
+ await wizard.handle(f.cb('sticker:register|r5'));
+ const pending=structuredClone(f.state().stickerPending);
+ await wizard.handle(f.cb('sticker:check|r'+f.state().revision));
+ assert.equal(f.state().screen,'sticker_reconcile');
+ assert.match(f.state().stickerHelp,/見つかりません/);
+ await wizard.handle(f.cb('sticker:defer|r'+f.state().revision));
+ assert.equal(f.state().screen,'home');
+ assert.equal(f.state().stickerDeferred,true);
+ assert.deepEqual(f.state().stickerPending,pending);
+ assert.equal((await wizard.handle(f.msg({text:'video editor text'}))).handled,false);
+ await wizard.handle(f.cb('menu:stickers'));
+ assert.equal(f.state().screen,'sticker_reconcile');
+ assert.equal(f.state().stickerDeferred,false);
+ assert.equal(writes,1);
+});
