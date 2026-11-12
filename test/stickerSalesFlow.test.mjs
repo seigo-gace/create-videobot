@@ -17,10 +17,12 @@ function fixture(){
   },
   setScreen:async(user,rev,id)=>{assert.equal(rev,init(user).revision);states.get(user).screenMessageId=id;}
  };
- let phase='none',paid=false,invoiceCount=0;
+ let phase='none',paid=false,invoiceCount=0,sellerPublished=null;
  const salesStore={
   getPublished:async id=>id===productId?{product_id:productId,title:'Demo pack',
-    price_stars:50,version:1,status:'published'}:null,
+    price_stars:50,version:1,status:'published'}:
+    sellerPublished?.productId===id?{product_id:id,pack_name:'pack',
+      seller_user_id:42,price_stars:50,version:1,title:'Demo pack',status:'published'}:null,
   reserveOrder:async({buyerId})=>{
     assert.equal(buyerId,81);
     if(phase==='none'){phase='prepared';return {order_id:orderId,price_stars:50,invoice_state:'prepared'};}
@@ -56,7 +58,7 @@ function fixture(){
  const flow=createStickerSalesFlow({
    api,sessionStore:store,screenTransport:{show:async()=>({messageId:301})},
    salesStore,packInventory:{getOwnedPack:async()=>({pack_name:'pack',title:'Demo pack',kind:'regular'})},
-   publishSnapshot:async()=>({productId,version:1})
+   publishSnapshot:async args=>{sellerPublished={productId:args.productId};return {productId:args.productId,version:1};}
  });
  const msg=(user,text)=>({message:{from:{id:user},chat:{id:user,type:'private'},message_id:302,text}});
  const cb=(user,action)=>({callback_query:{id:'query',data:action+'|r'+init(user).revision,
