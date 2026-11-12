@@ -12,13 +12,13 @@ if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
 const pool=new Pool({connectionString:process.env.CI_VIDEO_DB_DSN,max:1});
 try {
  const result=await applyCreatorSchema({pool});
- if(result.applied!==true||result.migrations!==12)throw new Error('twelve migrations not confirmed');
+ if(result.applied!==true||result.migrations!==13)throw new Error('thirteen migrations not confirmed');
  const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts, to_regclass('videobot_sticker_products') IS NOT NULL AS products, to_regclass('videobot_sticker_orders') IS NOT NULL AS orders, to_regclass('videobot_sticker_delivery_items') IS NOT NULL AS deliveries, to_regclass('videobot_sticker_payment_support') IS NOT NULL AS support, to_regclass('videobot_sticker_topic_posts') IS NOT NULL AS topic_posts, to_regclass('videobot_sticker_gifts') IS NOT NULL AS gifts, to_regclass('videobot_sticker_gift_delivery_items') IS NOT NULL AS gift_deliveries");
  if(q.rows.length!==1||!Object.values(q.rows[0]).every(v=>v===true))
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==12)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==13)throw new Error('schema re-application invalid');
  // Exercise the actual Node adapter against PostgreSQL, not an in-memory fake.
  const inventory=createPostgresStickerInventory(pool);
  // Regression: a failed conversion/upload before the Telegram pack-write
@@ -67,6 +67,28 @@ try {
    packName:name,kind:'regular',sourceFileId:'ci_source_file'}).then(()=>false,
      error=>error?.message==='STICKER_REGISTRATION_ALREADY_CLAIMED');
  if(!duplicate)throw new Error('STICKER_DUPLICATE_OPERATION_NOT_DENIED');
+ // Telegram may normalize file_unique_id when creating a unique new pack.
+ // Keep the original upload ID while storing the actual pack-item ID.
+ const normalizedId='s42_ci_normalized';
+ const normalizedName='s42_ci_normalized_by_CreateVdobot';
+ await inventory.beginRegistration({operationId:normalizedId,ownerId:42,
+   packName:normalizedName,kind:'regular',sourceFileId:'ci_source_normalized'});
+ await inventory.uploaded({operationId:normalizedId,ownerId:42,format:'static',
+   fileUniqueId:'ci_uploaded_unique'});
+ await inventory.submitting({operationId:normalizedId,ownerId:42});
+ await inventory.confirmRegistration({operationId:normalizedId,ownerId:42,
+   packName:normalizedName,kind:'regular',title:'CI Normalized pack',format:'static',
+   fileId:'ci_registered_file',fileUniqueId:'ci_registered_unique',position:0,
+   freshPackProof:true,isDefault:true});
+ const normalized=await pool.query(
+   "SELECT phase,file_unique_id,uploaded_file_unique_id FROM videobot_sticker_registration_receipts WHERE operation_id=$1",
+   [normalizedId]);
+ const actual=await inventory.listOwnedItems({ownerId:42,packName:normalizedName});
+ if(normalized.rows?.[0]?.phase!=='registered'||
+    normalized.rows[0].uploaded_file_unique_id!=='ci_uploaded_unique'||
+    normalized.rows[0].file_unique_id!=='ci_registered_unique'||
+    actual.length!==1||actual[0].file_unique_id!=='ci_registered_unique')
+   throw Error('STICKER_NORMALIZED_FILE_ID_NOT_PRESERVED');
  // STK-02: real PostgreSQL snapshot synchronization is owner-scoped and
  // atomically replaces item positions after verified Telegram readback.
  const snapshot={name,title:'Updated sticker title',sticker_type:'regular',
