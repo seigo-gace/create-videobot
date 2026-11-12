@@ -48,10 +48,17 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
       keyboard=[[b('⭐ Starsで購入','sale:pay')],[b('↩ 戻る','sale:offer')]];break;
     case 'sticker_sale_invoice':
       text='⭐ Telegramの請求書を送信しました。お支払い完了後に素材を受け取れます。';
-      keyboard=[[b('📦 購入済み商品','sale:purchases')]];break;
+      keyboard=[[b('📦 購入済み商品','sale:purchases'),b('決済サポート','sale:support')]];break;
     case 'sticker_sale_invoice_unknown':
       text='⚠️ 請求書送信結果を確認できません。二重請求防止のため再発行しません。届いた請求書で決済するか、決済状況を確認してください。';
       keyboard=[[b('📦 購入済み商品','sale:purchases')]];break;
+    case 'sticker_sale_support':
+      text='🆘 Stars購入・納品に関する問題を1〜1000文字で送信してください（5文字以上）。\n決済番号などの個人情報は必要最小限にしてください。'+
+        (d.supportError?'\n⚠️ 入力は5〜1000文字にしてください。':'');
+      keyboard=[[b('↩ メニューへ','sale:cancel')]];break;
+    case 'sticker_sale_support_done':
+      text='✅ 決済に関するお問い合わせを受付台帳へ保存しました。運営側で確認が必要です。自動返金・自動解決を約束するものではありません。';
+      keyboard=[[b('↩ メニューへ','sale:cancel')]];break;
     case 'sticker_sale_purchases':
       text='📦 購入済み商品（最大10件）\n再取得は追加Stars不要です。';
       keyboard=[...(d.purchases??[]).map((p,i)=>[b(p.title+'（版'+p.version+'）','sale:owned:'+i)]),
@@ -61,7 +68,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
         '途中で止まった場合は［続ける］、受け取り直す場合は［再取得］を選んでください。'+
         (d.deliveryWarning?'\n⚠️ 未確認の送信があります。二重送信を防ぐため自動再送は行いません。':'');
       keyboard=[[b('📥 続けて受け取る','sale:next'),b('🔄 無料で再取得','sale:redeliver')],
-        [b('📦 購入済み商品','sale:purchases')]];break;
+        [b('📦 購入済み商品','sale:purchases'),b('決済サポート','sale:support')]];break;
     default:throw Error('STICKER_SALE_SCREEN_INVALID');
    }
    const result=await screenTransport.show(userId,session.screenMessageId??null,{
@@ -208,6 +215,12 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
  }
  async function handle(update){
    const m=update?.message,cb=update?.callback_query;
+   if(m?.text&&/^\/paysupport(?:@[A-Za-z0-9_]+)?$/.test(m.text.trim())){
+     const {userId}=actor(update);
+     const old=await sessionStore.read(userId);
+     return show(userId,old,{screen:'sticker_sale_support',
+       stickerSale:{...old?.stickerSale,mode:'buyer',supportError:false}});
+   }
    if(m?.text&&/^\/start(?:@[A-Za-z0-9_]+)?\s+buy_sp_[a-f0-9]{24}$/.test(m.text.trim())){
      const {userId}=actor(update);
      return openOffer(userId,m.text.trim().split('buy_')[1]);
@@ -221,6 +234,19 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    if(!cb?.data?.startsWith('sale:')) {
      if(m?.chat?.type==='private'){
        const old=await sessionStore.read(m.chat.id);
+       if(old?.screen==='sticker_sale_support'){
+         const {userId}=actor(update);
+         try{
+           const details=String(m.text??'').trim();
+           if(details.length<5||details.length>1000)
+             return show(userId,old,{screen:'sticker_sale_support',
+               stickerSale:{...old.stickerSale,supportError:true}});
+           await salesStore.createPaymentSupport({buyerId:userId,
+             orderId:old.stickerSale?.orderId??null,details});
+           return show(userId,old,{screen:'sticker_sale_support_done',
+             stickerSale:{...old.stickerSale,supportError:false}});
+         }finally{await api('deleteMessage',{chat_id:userId,message_id:m.message_id}).catch(()=>{});}
+       }
        if(old?.screen==='sticker_sale_price'&&old?.stickerSale?.mode==='seller'){
          const {userId}=actor(update);
          try{
@@ -244,6 +270,9 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    if(old.stickerPending||old.stickerEditPending)return {handled:true,locked:true};
    const action=match[1],d=old.stickerSale??{};
    if(action==='sale:cancel')return exitSale(userId,old);
+   if(action==='sale:support')
+     return show(userId,old,{screen:'sticker_sale_support',
+       stickerSale:{...d,mode:'buyer',supportError:false}});
    if(action==='sale:price'&&d.mode==='seller')
      return show(userId,old,{screen:'sticker_sale_price'});
    if(action==='sale:publish'&&old.screen==='sticker_sale_confirm'&&d.mode==='seller'){
