@@ -101,10 +101,11 @@ export function createVideoBotSourceModule({
             await onUploaded?.(receipt);
           },
           onBeforeMutation:async receipt=>{
-            await stickerInventory.submitting({operationId,ownerId:owner});
+            // Record the DM/session phase first. If this fails, the DB
+            // receipt is still pre-mutation and can be safely abandoned.
             await onBeforeMutation?.(receipt);
-            // Only after BOTH receipts are durable may the Telegram pack
-            // mutation be attempted. A later timeout is never retryable.
+            await stickerInventory.submitting({operationId,ownerId:owner});
+            // Both durable receipts now precede the Telegram write.
             packWritePossible=true;
           },
           onVerified:async receipt=>{
@@ -119,8 +120,7 @@ export function createVideoBotSourceModule({
       }catch(error){
         if(!packWritePossible){
           // No create/add API call can have occurred. Release the DB claim
-          // conditionally, including a submission_started receipt when its
-          // callback failed before returning to registerStickerAsset.
+          // conditionally; submission_started is NEVER deleted.
           // Only confirmed release allows reuse of this draft/nonce.
           try{
             await stickerInventory.abandonBeforeMutation({operationId,ownerId:owner});
