@@ -26,6 +26,8 @@ function stickerHelp(error){
     return 'このパックを変更する権限がありません。ご自身のパックを選んでください。';
   if(/STICKER_SET_TYPE_CONFLICT|STICKER_EXISTING_PACK_NOT_FOUND|STICKER_NEW_PACK_NAME_CONFLICT/.test(code))
     return '登録先パックの種類または状態が一致しません。マイパックを確認してください。';
+  if(code==='STICKER_TELEGRAM_REGISTRATION_REJECTED')
+    return 'Telegramがこの素材の登録を拒否しました。素材の形式・容量・パック名を確認し、修正してもう一度登録してください。';
   if(/STICKER_UPLOAD_RECEIPT_INVALID|Telegram API request failed|Telegram API rejected request|Telegram file download failed/.test(code))
     return 'Telegramへの素材送信を確認できませんでした。通信状態を確認してからもう一度お試しください。';
   if(/STICKER_REPLACEMENT_FORMAT_MISMATCH|STICKER_REPLACEMENT_DUPLICATE_MEDIA/.test(code))
@@ -149,9 +151,10 @@ function panel(session,revision){
   };
   if(session.screen==='sticker_registering'||session.screen==='sticker_reconcile')return {
     text:session.screen==='sticker_registering'?'⏳ 素材を変換・登録中です。':
-      '⚠️ Telegramの登録結果を確認できません。再登録は行わず、確認だけ実行できます。',
+      '⚠️ この素材の登録結果はまだ確定していません。登録済みパックを確認できます。未確定の作業は保管したまま、ほかのメニューにも戻れます。'+stickerHint(session),
     reply_markup:{inline_keyboard:session.screen==='sticker_reconcile'
-      ?[[btn('🔄 登録結果を確認','sticker:check')]]
+      ?[[btn('🔄 登録状態を確認','sticker:check')],
+        [btn('↩ メニューへ戻る','sticker:defer')]]
       :[]}
   };
   if(session.screen==='sticker_done')return {
@@ -302,6 +305,15 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
         const current=await sessionStore.read(id);
         return editFinished(id,current,pending);
       }
+      // A deferred unknown operation stays durable, but never blocks unrelated
+      // video menus. Returning to stickers restores its reconciliation view.
+      if(old?.stickerPending?.status==='needs_reconcile'&&
+         data==='sticker:defer|r'+old.revision&&messageId===old.screenMessageId)
+        return persist(id,old,{screen:'home',stickerDeferred:true,stickerHelp:null});
+      if(old?.stickerPending?.status==='needs_reconcile'&&
+         data==='menu:stickers'&&old.stickerDeferred)
+        return persist(id,old,{screen:'sticker_reconcile',stickerDeferred:false,
+          screenMessageId:messageId});
       // Design v0.6 X10: allow read-only reconciliation, never a fresh write.
       if(old?.stickerPending?.status==='in_progress'||
          old?.stickerPending?.status==='needs_reconcile'){
@@ -315,7 +327,10 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           .catch(()=>({status:'unknown',verified:false}));
         const current=await sessionStore.read(id);
         if(outcome?.verified!==true||outcome.status!=='registered'||!outcome.name)
-          return {handled:true,registrationLocked:true};
+          return persist(id,current,{screen:'sticker_reconcile',stickerDeferred:false,
+            stickerHelp:outcome?.status==='not_observed'
+              ?'対象素材は現在のパックに見つかりません。未確認の登録を重複させないため、この操作は保留しています。'
+              :'Telegramと照合できません。登録をやり直さず、あとで確認してください。'});
         const draft=current.stickerDraft??{};
         const set={name:outcome.name,title:current.stickerPending.title};
         const saved={...current.stickerSets,[current.stickerPending.kind]:set};
@@ -492,8 +507,11 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           const phase=current?.stickerPending?.phase;
           // The publisher must confirm DB claim release before allowing
           // retry. Session phase alone is not proof that the DB released it.
-          if(error?.preMutationVerified===true){
+          if(error?.preMutationVerified===true||error?.safeToRetryVerified===true){
             return persist(id,current,{screen:'sticker_ready',stickerPending:null,
+              stickerDeferred:false,
+              stickerDraft:error?.safeToRetryVerified===true
+                ?{...draft,nonce:randomBytes(8).toString('hex')}:draft,
               stickerHelp:stickerHelp(error)});
           }
           return persist(id,current,{screen:'sticker_reconcile',
@@ -517,6 +535,14 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     // routed to the video editor or wipe the pending Telegram receipt.
     if(old?.stickerPending?.status==='in_progress'||
        old?.stickerPending?.status==='needs_reconcile'){
+      // A paused unknown operation is still protected; non-sticker updates
+      // remain owned by the existing creator/video wizard.
+      if(old.stickerDeferred){
+        if(typeof message.text==='string'&&
+           /^\/start(?:@[A-Za-z0-9_]+)?\s+sticker$/.test(message.text.trim()))
+          return persist(id,old,{screen:'sticker_reconcile',stickerDeferred:false});
+        return {handled:false};
+      }
       // A crash may leave an in_progress receipt but the original screen
       // could still show [Register]. Recover the panel without re-registering.
       // This only changes UI state: the Telegram mutation is NEVER reissued.
