@@ -11,12 +11,14 @@ function actor(update){
    throw Error('STICKER_SALE_OWNER_REQUIRED');
  return {userId:from.id,messageId:m.message_id};
 }
-export function createStickerSalesFlow({api,sessionStore,screenTransport,salesStore,packInventory,publishSnapshot,topicPublisher}={}){
+export function createStickerSalesFlow({api,sessionStore,screenTransport,salesStore,packInventory,publishSnapshot,topicPublisher,giftStore}={}){
  if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
     typeof screenTransport?.show!=='function'||typeof salesStore?.reserveOrder!=='function'||
     typeof salesStore?.capturePayment!=='function'||typeof packInventory?.getOwnedPack!=='function'||
-    typeof publishSnapshot!=='function'||(topicPublisher!==undefined&&topicPublisher!==null&&
+    typeof publishSnapshot!=='function'||(giftStore!==undefined&&giftStore!==null&&
+    ['prepare','redeem','getReceived','listReceived','deliveryRows','claimItem','itemSent','itemUnknown','redeliver','status'].some(k=>typeof giftStore[k]!=='function'))||
+    (topicPublisher!==undefined&&topicPublisher!==null&&
     (typeof topicPublisher.publish!=='function'||typeof topicPublisher.edit!=='function'||
      typeof topicPublisher.remove!=='function')))throw Error('STICKER_SALE_DEPENDENCIES_MISSING');
  async function show(userId,old,patch){
@@ -84,13 +86,35 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
     case 'sticker_sale_purchases':
       text='📦 購入済み商品（最大10件）\n再取得は追加Stars不要です。';
       keyboard=[...(d.purchases??[]).map((p,i)=>[b(p.title+'（版'+p.version+'）','sale:owned:'+i)]),
+        ...(giftStore?[[b('🎁 受け取ったプレゼント','sale:gift_inbox')]]:[]),
         [b('↩ 戻る','sale:cancel')]];break;
+    case 'sticker_sale_gift_ready':
+      text='🎁 プレゼントの準備ができました。\n'+
+        '［相手を選んで送る］からTelegramで送り先を指定してください。\n'+
+        '受取リンクは1回限り有効です。最初に開いて受領した人に確定するため、転送されないようご注意ください。\n'+
+        '購入済み商品はあなたの手元にも残ります。追加Starsは発生しません。';
+      keyboard=[[{text:'🎁 相手を選んで送る',url:d.shareUrl}],
+        [b('↩ 購入済み商品に戻る','sale:gift_back')]];break;
+    case 'sticker_sale_gift_unknown':
+      text='⚠️ プレゼントの作成結果を確認できません。二重作成防止のため、同じプレゼント番号で再確認します。';
+      keyboard=[[b('🔄 同じプレゼントを確認','sale:gift_retry')],
+        [b('↩ 購入済み商品に戻る','sale:gift_back')]];break;
+    case 'sticker_sale_gift_unavailable':
+      text='🎁 このプレゼントは受け取れません。すでに別の人が受領したか、リンクが正しくありません。送り主に確認してください。';
+      keyboard=[[b('📦 購入済み・受取済み','sale:purchases')],[b('↩ メニュー','sale:cancel')]];break;
+    case 'sticker_sale_gift_inbox':
+      text='🎁 受け取ったプレゼント（最大10件）\n再取得にもStarsはかかりません。';
+      keyboard=[...(d.receivedGifts??[]).map((g,i)=>[
+        b(g.title+'（版'+g.version+'）','sale:received:'+i)]),
+        [b('📦 購入済みに戻る','sale:purchases')]];break;
     case 'sticker_sale_delivery':
-      text='✅ 購入を確認しました。素材はこのDMへ順番に送信します。\n'+
+      text=(d.giftId?'🎁 プレゼントを受け取りました。':'✅ 購入を確認しました。')+
+        '素材はこのDMへ順番に送信します。\n'+
         '途中で止まった場合は［続ける］、受け取り直す場合は［再取得］を選んでください。'+
         (d.deliveryWarning?'\n⚠️ 未確認の送信があります。二重送信を防ぐため自動再送は行いません。':'');
       keyboard=[[b('📥 続けて受け取る','sale:next'),b('🔄 無料で再取得','sale:redeliver')],
-        [b('📦 購入済み商品','sale:purchases'),b('決済サポート','sale:support')]];break;
+        ...(d.orderId&&d.mode==='buyer'&&giftStore?[[b('🎁 プレゼントする','sale:gift')]]:[]),
+        [b('📦 購入済み・受取済み','sale:purchases'),b('決済サポート','sale:support')]];break;
     default:throw Error('STICKER_SALE_SCREEN_INVALID');
    }
    const result=await screenTransport.show(userId,session.screenMessageId??null,{
@@ -198,36 +222,80 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      });
    }
  }
- async function deliverSome(userId,orderId,attempt){
-   const order=await salesStore.getPaidOrder(orderId,userId);
-   if(!order)throw Error('STICKER_SALE_NOT_PURCHASED');
+ async function giftReady(userId,d){
+   if(!giftStore||!d.giftId||!d.giftToken||!d.orderId)
+     throw Error('STICKER_GIFT_SESSION_INVALID');
+   const paid=await salesStore.getPaidOrder(d.orderId,userId);
+   if(!paid)throw Error('STICKER_GIFT_PURCHASE_UNVERIFIED');
+   await giftStore.prepare({giftId:d.giftId,token:d.giftToken,
+     donorOrderId:d.orderId,donorId:userId});
+   const me=await api('getMe',{});
+   if(me?.is_bot!==true||typeof me.username!=='string'||
+      !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(me.username))
+     throw Error('STICKER_GIFT_BOT_NOT_VERIFIED');
+   const deepLink='https://t.me/'+me.username+'?start=gift_'+d.giftToken;
+   const shareUrl='https://t.me/share/url?url='+encodeURIComponent(deepLink)+
+     '&text='+encodeURIComponent('🎁 ステッカーをプレゼントします。Botを開いて受け取ってください。');
+   return show(userId,await sessionStore.read(userId),{
+     screen:'sticker_sale_gift_ready',
+     stickerSale:{...d,shareUrl}
+   });
+ }
+ async function redeemGift(userId,secret){
+   if(!giftStore)return {handled:true,unavailable:true};
+   try{
+     const receipt=await giftStore.redeem({token:secret,recipientId:userId});
+     return receiveOrder(userId,receipt.giftId,1,{gift:true});
+   }catch{
+     const current=await sessionStore.read(userId);
+     return show(userId,current,{screen:'sticker_sale_gift_unavailable',
+       stickerSale:{mode:'gift_recipient'}});
+   }
+ }
+  async function deliverSome(userId,orderId,attempt,{gift=false}={}){
+   const provider=gift?giftStore:salesStore;
+   const order=gift?
+     await provider?.getReceived(orderId,userId):
+     await provider.getPaidOrder(orderId,userId);
+   if(!order)throw Error('STICKER_SALE_ENTITLEMENT_REQUIRED');
    const items=typeof order.items==='string'?JSON.parse(order.items):order.items;
-   const statuses=await salesStore.getDeliveryRows(orderId,attempt);
+   const statuses=gift?
+     await provider.deliveryRows(orderId,attempt):
+     await provider.getDeliveryRows(orderId,attempt);
    let count=0,warning=false;
    for(const row of statuses){
      if(row.status==='unknown'||row.status==='sending')warning=true;
      if(row.status!=='pending'||count>=3)continue;
-     const item=await salesStore.claimItem({orderId,buyerId:userId,attempt,index:row.item_index});
+     const item=gift?
+       await giftStore.claimItem({giftId:orderId,recipientId:userId,attempt,index:row.item_index}):
+       await salesStore.claimItem({orderId,buyerId:userId,attempt,index:row.item_index});
      if(!item)continue;
      try{
        const sent=await api('sendSticker',{chat_id:userId,sticker:item.file_id});
        if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0)
          throw Error('STICKER_SALE_DELIVERY_UNKNOWN');
-       await salesStore.itemSent({orderId,attempt,index:row.item_index,messageId:sent.message_id});
+       if(gift)
+         await giftStore.itemSent({giftId:orderId,attempt,index:row.item_index,messageId:sent.message_id});
+       else
+         await salesStore.itemSent({orderId,attempt,index:row.item_index,messageId:sent.message_id});
      }catch{
-       await salesStore.itemUnknown({orderId,attempt,index:row.item_index}).catch(()=>{});
+       if(gift)
+         await giftStore.itemUnknown({giftId:orderId,attempt,index:row.item_index}).catch(()=>{});
+       else
+         await salesStore.itemUnknown({orderId,attempt,index:row.item_index}).catch(()=>{});
        warning=true;
      }
      count++;
    }
    return {warning,remaining:Math.max(0,items.length-statuses.filter(r=>r.status==='sent').length-count)};
  }
- async function receiveOrder(userId,orderId,attempt){
+ async function receiveOrder(userId,orderId,attempt,{gift=false}={}){
    const current=await sessionStore.read(userId);
-   const result=await deliverSome(userId,orderId,attempt);
+   const result=await deliverSome(userId,orderId,attempt,{gift});
    return show(userId,current,{screen:'sticker_sale_delivery',
-     stickerSale:{...current?.stickerSale,mode:'buyer',orderId,attempt,
-       deliveryWarning:result.warning}});
+     stickerSale:{...current?.stickerSale,mode:gift?'gift_recipient':'buyer',
+       orderId:gift?null:orderId,giftId:gift?orderId:null,
+       attempt,deliveryWarning:result.warning}});
  }
  async function payments(update){
    if(update?.pre_checkout_query){
@@ -250,6 +318,10 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
  }
  async function handle(update){
    const m=update?.message,cb=update?.callback_query;
+   if(m?.text&&/^\/start(?:@[A-Za-z0-9_]+)?\s+gift_[A-Za-z0-9_-]{32}$/.test(m.text.trim())){
+     const {userId}=actor(update);
+     return redeemGift(userId,m.text.trim().split('gift_')[1]);
+   }
    if(m?.text&&/^\/paysupport(?:@[A-Za-z0-9_]+)?$/.test(m.text.trim())){
      const {userId}=actor(update);
      const old=await sessionStore.read(userId);
@@ -349,6 +421,40 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
          screen:'sticker_sale_post_unknown',stickerSale:{...d,topicStatus:'unverified'}});
      }
    }
+   if(action==='sale:gift'&&old.screen==='sticker_sale_delivery'&&
+      d.mode==='buyer'&&d.orderId&&giftStore){
+     // The one-time link is prepared after CAS saves the operation ID and
+     // 192-bit bearer secret; the same operation can be retried after a crash.
+     const pending={...d,giftId:'sg_'+randomBytes(12).toString('hex'),
+       giftToken:randomBytes(24).toString('base64url')};
+     await sessionStore.write(userId,old.revision,{
+       ...old,revision:old.revision+1,
+       screen:'sticker_sale_gift_preparing',stickerSale:pending});
+     try{return await giftReady(userId,pending);}
+     catch{return show(userId,await sessionStore.read(userId),{
+       screen:'sticker_sale_gift_unknown',stickerSale:pending});}
+   }
+   if(action==='sale:gift_retry'&&old.screen==='sticker_sale_gift_unknown'&&
+      d.orderId&&d.giftToken&&giftStore){
+     try{return await giftReady(userId,d);}
+     catch{return show(userId,await sessionStore.read(userId),{
+       screen:'sticker_sale_gift_unknown'});}
+   }
+   if(action==='sale:gift_back'&&
+      ['sticker_sale_gift_ready','sticker_sale_gift_unknown'].includes(old.screen)&&
+      d.orderId)
+     return receiveOrder(userId,d.orderId,d.attempt??1);
+   if(action==='sale:gift_inbox'&&giftStore){
+     const receivedGifts=await giftStore.listReceived(userId);
+     return show(userId,old,{screen:'sticker_sale_gift_inbox',
+       stickerSale:{...d,receivedGifts,mode:'gift_recipient'}});
+   }
+   if(action.startsWith('sale:received:')&&old.screen==='sticker_sale_gift_inbox'&&giftStore){
+     const i=Number(action.slice('sale:received:'.length));
+     const entry=d.receivedGifts?.[i];
+     if(!entry)return {handled:true,staleButton:true};
+     return receiveOrder(userId,entry.gift_id,1,{gift:true});
+   }
    if(action==='sale:price'&&d.mode==='seller')
      return show(userId,old,{screen:'sticker_sale_price'});
    if(action==='sale:publish'&&old.screen==='sticker_sale_confirm'&&d.mode==='seller'){
@@ -391,10 +497,14 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      return receiveOrder(userId,selected.order_id,1);
    }
    if(action==='sale:next'&&old.screen==='sticker_sale_delivery')
-     return receiveOrder(userId,d.orderId,d.attempt??1);
+     return receiveOrder(userId,d.giftId??d.orderId,d.attempt??1,
+       {gift:Boolean(d.giftId)});
    if(action==='sale:redeliver'&&old.screen==='sticker_sale_delivery'){
-     const created=await salesStore.createRedelivery(d.orderId,userId);
-     return receiveOrder(userId,d.orderId,created.attempt);
+     const gift=Boolean(d.giftId);
+     const created=gift?
+       await giftStore.redeliver(d.giftId,userId):
+       await salesStore.createRedelivery(d.orderId,userId);
+     return receiveOrder(userId,d.giftId??d.orderId,created.attempt,{gift});
    }
    return {handled:true,staleButton:true};
  }
