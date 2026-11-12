@@ -28,6 +28,8 @@ function stickerHelp(error){
     return '登録先パックの種類または状態が一致しません。マイパックを確認してください。';
   if(/STICKER_UPLOAD_RECEIPT_INVALID|Telegram API request failed|Telegram API rejected request|Telegram file download failed/.test(code))
     return 'Telegramへの素材送信を確認できませんでした。通信状態を確認してからもう一度お試しください。';
+  if(/STICKER_REPLACEMENT_FORMAT_MISMATCH|STICKER_REPLACEMENT_DUPLICATE_MEDIA/.test(code))
+    return '現在のパックに合う別の素材を送ってください。既存の素材と同一のファイルには置換できません。';
   if(/STICKER_PENDING_SESSION_MISMATCH|STICKER_REGISTRATION_UNVERIFIED|STICKER_PACK_INVENTORY_UNAVAILABLE/.test(code))
     return '保存した作業状態を確認できませんでした。二重登録を防ぐため、管理者に登録状況を確認してください。';
   return '内部処理を完了できませんでした。時間をおいてもう一度お試しください。解決しない場合は管理者にお知らせください。';
@@ -106,11 +108,21 @@ function panel(session,revision){
     return {text:'🧩 '+item.emoji+'｜'+(item.position+1)+'番目'+stickerHint(session),
       reply_markup:{inline_keyboard:[
         [btn('⬆ 上へ','sticker:move_up'),btn('⬇ 下へ','sticker:move_down')],
+        [btn('🔄 素材を置換','sticker:replace_item')],
         [btn('😀 絵文字変更','sticker:emoji'),btn('🗑 削除','sticker:delete')],
         [btn('↩ 一覧へ','sticker:items')]
       ]}
     };
   }
+  if(session.screen==='sticker_replace_input'||session.screen==='sticker_replace_ready')return {
+    text:session.screen==='sticker_replace_input'
+      ?'🔄 この素材を置換します。新しい写真・GIF・動画を送ってください。縦横比を維持し、自動でパック形式に変換します（20MB以下）。'+stickerHint(session)
+      :'✅ 置換する素材を受信しました。［置換する］で現在の素材を差し替えます。'+stickerHint(session),
+    reply_markup:{inline_keyboard:session.screen==='sticker_replace_input'
+      ?[[btn('↩ 戻る','sticker:items_back')]]
+      :[[btn('🔄 置換する','sticker:replace_confirm'),btn('📎 素材を変更','sticker:replace_change')],
+        [btn('↩ 戻る','sticker:items_back')]]}
+  };
   if(session.screen==='sticker_edit_pending'||session.screen==='sticker_edit_reconcile')return {
     text:session.screen==='sticker_edit_pending'?'⏳ パックを更新しています。':
       '⚠️ 編集結果をまだ確定できません。二重変更を防ぐため再実行せず、Telegramの状態を確認します。',
@@ -188,7 +200,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       // TGtumbler common DM contract: do not claim that an undeleted input
       // has disappeared. Preserve previous guidance and the selected draft.
       const current=await sessionStore.read(id);
-      if(!current||!['sticker_title','sticker_input','sticker_ready','sticker_pack','sticker_pack_items','sticker_pack_title','sticker_item_emoji'].includes(current.screen))return;
+      if(!current||!['sticker_title','sticker_input','sticker_ready','sticker_pack','sticker_pack_items','sticker_pack_title','sticker_item_emoji','sticker_replace_input','sticker_replace_ready'].includes(current.screen))return;
       const guidance='入力メッセージを自動で削除できませんでした。ご自身で送信したメッセージを長押しして削除してください。';
       if(current.stickerHelp?.includes(guidance))return;
       return persist(id,current,{stickerHelp:[current.stickerHelp,guidance].filter(Boolean).join(' ')});
@@ -219,7 +231,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     }
     return persist(id,current,{screen:'sticker_pack_items',stickerSelectedPack:pack,
       stickerItemRows:rows,stickerItemPage:page,stickerSelectedItem:null,
-      stickerEditPending:null,stickerHelp:null});
+      stickerEditPending:null,stickerReplaceFileId:null,stickerHelp:null});
   }
   async function commitEdit(id,old,command){
     if(!editPack||!packInventory||!old?.stickerSelectedPack?.pack_name)
@@ -232,15 +244,40 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       screen:'sticker_edit_pending',stickerEditPending:pending};
     await sessionStore.write(id,old.revision,claimed);
     try{
-      const result=await editPack({owner:id,...pending});
+      const result=await editPack({owner:id,...pending,
+        onUploaded:async receipt=>{
+          const current=await sessionStore.read(id);
+          if(current?.stickerEditPending?.status!=='in_progress'||
+             current.stickerEditPending.packName!==pending.packName||
+             current.stickerEditPending.sourceFileId!==pending.sourceFileId)
+            throw new Error('STICKER_EDIT_RECEIPT_SESSION_MISMATCH');
+          await sessionStore.write(id,current.revision,{
+            ...current,revision:current.revision+1,
+            stickerEditPending:{...current.stickerEditPending,
+              newUniqueId:receipt.fileUniqueId,phase:'uploaded'}
+          });
+        },
+        onBeforeMutation:async receipt=>{
+          const current=await sessionStore.read(id);
+          if(current?.stickerEditPending?.newUniqueId!==receipt.fileUniqueId)
+            throw new Error('STICKER_EDIT_RECEIPT_SESSION_MISMATCH');
+          await sessionStore.write(id,current.revision,{
+            ...current,revision:current.revision+1,
+            stickerEditPending:{...current.stickerEditPending,
+              phase:'submission_started'}
+          });
+        }});
       if(result?.verified!==true)throw new Error('STICKER_PACK_EDIT_RESULT_UNKNOWN');
       const current=await sessionStore.read(id);
       return await editFinished(id,current,pending);
-    }catch{
+    }catch(error){
       const current=await sessionStore.read(id);
+      if(error?.preMutationVerified===true&&pending.action==='replace_item')
+        return persist(id,current,{screen:'sticker_replace_ready',
+          stickerEditPending:null,stickerHelp:stickerHelp(error)});
       // Never resubmit the write on timeout, DB failure, or lost UI result.
       return persist(id,current,{screen:'sticker_edit_reconcile',
-        stickerEditPending:{...pending,status:'needs_reconcile'}});
+        stickerEditPending:{...current.stickerEditPending,status:'needs_reconcile'}});
     }
   }
   async function handle(update){
@@ -337,8 +374,21 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           stickerHelp:null});
       }
       if(action==='sticker:items_back'&&
-         ['sticker_item_emoji','sticker_item_delete_confirm'].includes(old.screen))
+         ['sticker_item_emoji','sticker_item_delete_confirm','sticker_replace_input','sticker_replace_ready'].includes(old.screen))
         return persist(id,old,{screen:'sticker_item',stickerHelp:null});
+      if(action==='sticker:replace_item'&&old.screen==='sticker_item')
+        return persist(id,old,{screen:'sticker_replace_input',
+          stickerReplaceFileId:null,stickerHelp:null});
+      if(action==='sticker:replace_change'&&old.screen==='sticker_replace_ready')
+        return persist(id,old,{screen:'sticker_replace_input',
+          stickerReplaceFileId:null,stickerHelp:null});
+      if(action==='sticker:replace_confirm'&&old.screen==='sticker_replace_ready'){
+        if(!old.stickerReplaceFileId||!old.stickerSelectedItem?.file_unique_id)
+          return {handled:true,staleButton:true};
+        return commitEdit(id,old,{action:'replace_item',
+          stickerUniqueId:old.stickerSelectedItem.file_unique_id,
+          sourceFileId:old.stickerReplaceFileId});
+      }
       if(action==='sticker:emoji'&&old.screen==='sticker_item')
         return persist(id,old,{screen:'sticker_item_emoji',stickerHelp:null});
       if(action==='sticker:delete'&&old.screen==='sticker_item')
@@ -481,6 +531,20 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     if(typeof message.text==='string'&&
        /^\/start(?:@[A-Za-z0-9_]+)?\s+sticker$/.test(message.text.trim())) {
       return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null});
+    }
+    if(old?.screen==='sticker_replace_input'){
+      try{
+        const fileId=mediaFileId(message);
+        const size=message.document?.file_size??message.animation?.file_size??
+          message.video?.file_size??(Array.isArray(message.photo)?message.photo.at(-1)?.file_size:null);
+        const mime=message.document?.mime_type;
+        if(!fileId||size>20_000_000||
+           (typeof mime==='string'&&/^(application\\/pdf|audio\\/|text\\/)/i.test(mime)))
+          return persist(id,old,{screen:'sticker_replace_input',
+            stickerHelp:'20MB以下のJPG・PNG・GIF・MP4・WebMを送ってください。'});
+        return persist(id,old,{screen:'sticker_replace_ready',
+          stickerReplaceFileId:fileId,stickerHelp:null});
+      }finally{await deleteInputOrWarn(id,message.message_id);}
     }
     if(old?.screen==='sticker_pack_title'||old?.screen==='sticker_item_emoji'){
       try {
