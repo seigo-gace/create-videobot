@@ -176,6 +176,20 @@ export function createPostgresStickerSales(pool){
      await client.query('COMMIT');return {attempt};
    }catch(e){await client.query('ROLLBACK').catch(()=>{});throw e;}finally{client.release();}
   },
+  async createPaymentSupport({buyerId,orderId=null,details}={}){
+   const buyer=positive(buyerId,'BUYER');
+   if(typeof details!=='string'||details.trim().length<5||details.length>1000)
+     throw Error('STICKER_SALE_SUPPORT_DETAILS_INVALID');
+   if(orderId!==null)key(orderId,'so');
+   const result=await pool.query(
+     "INSERT INTO videobot_sticker_payment_support (ticket_id,buyer_user_id,order_id,details)"+
+     " SELECT $1,$2,o.order_id,$4 FROM (SELECT $3::text AS requested) v"+
+     " LEFT JOIN videobot_sticker_orders o ON o.order_id=v.requested AND o.buyer_user_id=$2"+
+     " WHERE v.requested IS NULL OR o.order_id IS NOT NULL RETURNING ticket_id",
+     [id('ss'),buyer,orderId,details.trim()]);
+   if(result.rowCount!==1)throw Error('STICKER_SALE_SUPPORT_OWNER_MISMATCH');
+   return {ticketId:result.rows[0].ticket_id};
+  },
   async getDeliveryRows(orderId,attempt){
    const q=await pool.query(
      "SELECT item_index,status,telegram_message_id FROM videobot_sticker_delivery_items WHERE order_id=$1 AND attempt=$2 ORDER BY item_index ASC",
