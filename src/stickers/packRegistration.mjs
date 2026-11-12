@@ -151,7 +151,11 @@ export async function registerStickerAsset({
   const after=await safelyReadSet(telegramApi,name);
   const item=matchingItem(after,uploaded,sticker_type,stickerFormat);
   if(!item){
-    // Never resubmit a timeout: Telegram may have accepted the write.
+    // A final HTTP 400 proves that this particular mutation was rejected.
+    // Only after checking the remote set may we release its durable claim.
+    // Timeouts, 5xx and ambiguous responses must stay locked for readback.
+    if(requestError?.definitiveTelegramRejection===true)
+      throw requestError;
     throw new Error(requestError?'STICKER_REGISTRATION_RESULT_UNKNOWN':'STICKER_REGISTRATION_READBACK_FAILED');
   }
   if(onVerified!==undefined){
