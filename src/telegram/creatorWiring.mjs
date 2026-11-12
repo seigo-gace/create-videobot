@@ -243,7 +243,7 @@ export function createVideoBotSourceModule({
   const stickerSales=createStickerSalesFlow({
     api:telegramApi,sessionStore,screenTransport:screen,
     salesStore:stickerSalesStore,packInventory:stickerInventory,
-    publishSnapshot:async({sellerId,packName,priceStars})=>{
+    publishSnapshot:async({sellerId,packName,priceStars,productId})=>{
       const own=await stickerInventory.getOwnedPack(sellerId,packName);
       if(!own)throw Error('STICKER_SALE_PACK_OWNER_REQUIRED');
       const set=await telegramApi('getStickerSet',{name:packName});
@@ -251,7 +251,7 @@ export function createVideoBotSourceModule({
         throw Error('STICKER_SALE_SET_NOT_VERIFIED');
       // Captures all Telegram item IDs and price in an immutable product
       // version; later pack CRUD does not mutate these purchased references.
-      return stickerSalesStore.publish({sellerId,packName,set,priceStars});
+      return stickerSalesStore.publish({sellerId,packName,set,priceStars,productId});
     }
   });
   const stickerWizard=createStickerWizard({
