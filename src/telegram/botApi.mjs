@@ -50,6 +50,15 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
       throw new Error('message cannot be edited');
     throw new Error('Telegram API request failed');
   }
+  // An explicit HTTP 400 for a set mutation is a confirmed rejection,
+  // unlike a network timeout or an unreadable success response. Keep Telegram
+  // descriptions (which can contain private user data) out of logs and UI.
+  if(response.status===400&&
+     (method==='createNewStickerSet'||method==='addStickerToSet')){
+    const error=new Error('STICKER_TELEGRAM_REGISTRATION_REJECTED');
+    error.definitiveTelegramRejection=true;
+    throw error;
+  }
   if(response.status!==200)throw new Error('Telegram API request failed');
   const reply=await response.json();
   if(reply?.ok!==true || !reply.result) throw new Error('Telegram API rejected request');
