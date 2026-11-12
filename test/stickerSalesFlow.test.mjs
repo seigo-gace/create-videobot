@@ -17,7 +17,7 @@ function fixture(){
   },
   setScreen:async(user,rev,id)=>{assert.equal(rev,init(user).revision);states.get(user).screenMessageId=id;}
  };
- let phase='none',paid=false,invoiceCount=0,sellerPublished=null;
+ let phase='none',paid=false,invoiceCount=0,sellerPublished=null,supportCases=[];
  const salesStore={
   getPublished:async id=>id===productId?{product_id:productId,title:'Demo pack',
     price_stars:50,version:1,status:'published'}:
@@ -46,7 +46,8 @@ function fixture(){
   itemSent:async({index,messageId})=>{assert.ok(messageId>0);rows[index].status='sent';},
   itemUnknown:async({index})=>{rows[index].status='unknown';},
   createRedelivery:async()=>({attempt:2}),
-  listPurchases:async()=>paid?[{order_id:orderId,title:'Demo pack',version:1}]:[]
+  listPurchases:async()=>paid?[{order_id:orderId,title:'Demo pack',version:1}]:[],
+  createPaymentSupport:async data=>{supportCases.push(data);return {ticketId:'ss_'+ 'f'.repeat(24)};}
  };
  const api=async(method,args)=>{
    calls.push({method,args});
@@ -63,7 +64,7 @@ function fixture(){
  const msg=(user,text)=>({message:{from:{id:user},chat:{id:user,type:'private'},message_id:302,text}});
  const cb=(user,action)=>({callback_query:{id:'query',data:action+'|r'+init(user).revision,
    from:{id:user},message:{chat:{id:user,type:'private'},message_id:301}}});
- return {flow,calls,msg,cb,state:init,salesStore,get phase(){return phase;},get invoiceCount(){return invoiceCount;}};
+ return {flow,calls,msg,cb,state:init,salesStore,supportCases,get phase(){return phase;},get invoiceCount(){return invoiceCount;}};
 }
 
 test('seller publishes a fixed snapshot through the same DM session; no fee is added',async()=>{
@@ -130,4 +131,15 @@ test('stale pay button cannot issue another Stars invoice',async()=>{
  const stale=await f.flow.handle(original);
  assert.equal(stale.staleButton,true);
  assert.equal(f.invoiceCount,1);
+});
+
+test('paysupport stores a buyer case and never invokes a refund API',async()=>{
+ const f=fixture();
+ await f.flow.handle(f.msg(81,'/paysupport'));
+ assert.equal(f.state(81).screen,'sticker_sale_support');
+ await f.flow.handle(f.msg(81,'My Stars were charged but no items arrived'));
+ assert.equal(f.supportCases.length,1);
+ assert.equal(f.supportCases[0].buyerId,81);
+ assert.equal(f.state(81).screen,'sticker_sale_support_done');
+ assert.equal(f.calls.filter(x=>/refund/i.test(x.method)).length,0);
 });
