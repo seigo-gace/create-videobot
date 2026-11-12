@@ -10,7 +10,7 @@ import {openFileStickerEntryPin} from '../stickers/fileStickerEntryPin.mjs';
 // an unrelated or moved Topic must fail closed during its send readback.
 export const registeredTopic=Object.freeze({
  board:'video_chat',purpose:'sticker',enabled:true,verified:true,
- chatId:-1002373696859,threadId:4291,
+ chatId:-1002373696859,threadId:4640,
  groupTitle:'ビデオChatの掲示板',title:'ステッカーの公開と販売'
 });
 function ipv4Fetch(url,options={}){
