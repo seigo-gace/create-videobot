@@ -468,8 +468,9 @@ test('unknown registration can leave the DM screen without dropping receipt or r
  assert.deepEqual(f.state().stickerPending,pending);
  assert.equal((await wizard.handle(f.msg({text:'video editor text'}))).handled,false);
  await wizard.handle(f.cb('menu:stickers'));
- assert.equal(f.state().screen,'sticker_reconcile');
- assert.equal(f.state().stickerDeferred,false);
+ assert.equal(f.state().screen,'sticker_choose');
+ assert.equal(f.state().stickerDeferred,true);
+ assert.deepEqual(f.state().stickerPending,pending);
  assert.equal(writes,1);
 });
 
