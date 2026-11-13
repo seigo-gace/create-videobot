@@ -71,11 +71,11 @@ export function createVideoBotSourceModule({
   // GateApp-Bot owns live topic verification; never fabricate a Topic ID
   // from a t.me/c message URL. This port remains unavailable until the
   // actual GateApp verified sticker-topic + review owners are supplied.
-  // The Master-approved public offer is the pack catalog, never the old
-  // native paid-image paywall. Without a verified Shop origin the existing
-  // Topic post stays untouched; do not silently fall back to sendPaidMedia.
+  // The adopted product is always a pack catalog, never a paid-image
+  // paywall. The Bot DM provides a native Telegram pack preview and Stars
+  // invoice if a public Mini App origin has not been configured.
   const stickerTopicPublisher=
-    Boolean(stickerShopBaseUrl)&&
+   
     typeof gateOwner.getVerifiedStickerTopic==='function'&&
     typeof gateOwner.verifyStickerReview==='function'
     ?createStickerTopicPublisher({
