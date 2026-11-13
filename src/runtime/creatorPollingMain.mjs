@@ -91,7 +91,7 @@ export async function createCreatorPollingRuntime({
   if(env.VIDEOBOT_SCHEMA_MIGRATE!=='YES')
    throw Error('CREATOR_POLL_SCHEMA_OWNER_CONSENT_MISSING');
   const schema=await applySchema({pool});
-  if(schema.migrations!==15)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
+  if(schema.migrations!==16)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
   const pollAdmissionSecret=randomBytes(32).toString('hex');
   const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch});
   source=createSource({

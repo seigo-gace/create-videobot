@@ -13,15 +13,15 @@ function pool({failAt}={}){
   release(){released.push(true);}
  };}};
 }
-test('all fifteen VideoBot migrations run in one locked transaction with no GATE mutations',async()=>{
+test('all sixteen VideoBot migrations run in one locked transaction with no GATE mutations',async()=>{
  const db=pool(),loaded=[];
  const result=await applyCreatorSchema({pool:db,loadSql:async name=>{
   loaded.push(name);return 'CREATE TABLE IF NOT EXISTS test_'+loaded.length+' (id int)';
  }});
- assert.deepEqual(result,{applied:true,migrations:15});
- assert.equal(loaded.length,15);
+ assert.deepEqual(result,{applied:true,migrations:16});
+ assert.equal(loaded.length,16);
  assert.match(loaded[0],/^001_video_post_receipts/);
- assert.match(loaded.at(-1),/^015_sticker_paid_photo_sales/);
+ assert.match(loaded.at(-1),/^016_sticker_shop_invoice_links/);
  assert.equal(db.calls[0],'BEGIN');
  assert.match(db.calls[1],/pg_advisory_xact_lock/);
  assert.equal(db.calls.at(-1),'COMMIT');

@@ -80,11 +80,11 @@ export function createPostgresStickerSales(pool){
   async reserveOrder({productId,buyerId}={}){
    const product=key(productId,'sp'),buyer=positive(buyerId,'BUYER');
    const q=await pool.query(
-     "INSERT INTO videobot_sticker_orders (order_id,product_id,buyer_user_id,price_stars,terms_accepted_at,management_fee_bps,fee_policy_id,management_fee_tenths,creator_share_tenths) SELECT $1,p.product_id,$3,p.price_stars,NOW(),p.management_fee_bps,p.fee_policy_id,p.price_stars*3,p.price_stars*7 FROM videobot_sticker_products p WHERE p.product_id=$2 AND p.status='published' AND p.management_fee_bps=3000 AND p.fee_policy_id='sticker-admin-30-20261113' AND p.fee_terms_accepted_at IS NOT NULL ON CONFLICT(product_id,buyer_user_id) DO NOTHING RETURNING order_id,invoice_state,price_stars",
+     "INSERT INTO videobot_sticker_orders (order_id,product_id,buyer_user_id,price_stars,terms_accepted_at,management_fee_bps,fee_policy_id,management_fee_tenths,creator_share_tenths) SELECT $1,p.product_id,$3,p.price_stars,NOW(),p.management_fee_bps,p.fee_policy_id,p.price_stars*3,p.price_stars*7 FROM videobot_sticker_products p WHERE p.product_id=$2 AND p.status='published' AND p.management_fee_bps=3000 AND p.fee_policy_id='sticker-admin-30-20261113' AND p.fee_terms_accepted_at IS NOT NULL ON CONFLICT(product_id,buyer_user_id) DO NOTHING RETURNING order_id,invoice_state,price_stars,invoice_url",
      [id('so'),product,buyer]);
    if(q.rowCount===1)return {...q.rows[0],newOrder:true};
    const existing=await pool.query(
-     "SELECT o.order_id,o.invoice_state,o.price_stars FROM videobot_sticker_orders o WHERE o.product_id=$1 AND o.buyer_user_id=$2",
+     "SELECT o.order_id,o.invoice_state,o.price_stars,o.invoice_url FROM videobot_sticker_orders o WHERE o.product_id=$1 AND o.buyer_user_id=$2",
      [product,buyer]);
    if(existing.rowCount!==1)throw Error('STICKER_SALE_NOT_AVAILABLE');
    return {...existing.rows[0],newOrder:false};
@@ -94,6 +94,15 @@ export function createPostgresStickerSales(pool){
      "UPDATE videobot_sticker_orders SET invoice_state='sending' WHERE order_id=$1 AND buyer_user_id=$2 AND invoice_state='prepared' RETURNING order_id,product_id,price_stars",
      [key(orderId,'so'),positive(buyerId,'BUYER')]);
    return q.rows[0]??null;
+  },
+  async invoiceLinkReady(orderId,buyerId,url){
+   if(typeof url!=='string'||url.length>2048||
+      !/^https:\/\/t\.me\/\$[A-Za-z0-9_-]+$/.test(url))
+     throw Error('STICKER_SHOP_OFFICIAL_INVOICE_URL_REQUIRED');
+   const q=await pool.query(
+     "UPDATE videobot_sticker_orders SET invoice_state='link_ready',invoice_url=$3 WHERE order_id=$1 AND buyer_user_id=$2 AND invoice_state='sending' RETURNING order_id",
+     [key(orderId,'so'),positive(buyerId,'BUYER'),url]);
+   if(q.rowCount!==1)throw Error('STICKER_SHOP_LINK_RECEIPT_CONFLICT');
   },
   async invoiceSent(orderId,buyerId,messageId){
    const q=await pool.query(
@@ -117,7 +126,7 @@ export function createPostgresStickerSales(pool){
    const row=q.rows[0];
    return String(row.buyer_user_id)===String(query.from?.id)&&
      query.currency==='XTR'&&Number(row.price_stars)===query.total_amount&&
-     row.status==='published'&&Number(row.management_fee_bps)===3000&&row.fee_policy_id===STICKER_MANAGEMENT_FEE_POLICY_ID&&Number(row.management_fee_tenths)===Number(row.price_stars)*3&&Number(row.creator_share_tenths)===Number(row.price_stars)*7&&['sending','sent','unknown','paid'].includes(row.invoice_state);
+     row.status==='published'&&Number(row.management_fee_bps)===3000&&row.fee_policy_id===STICKER_MANAGEMENT_FEE_POLICY_ID&&Number(row.management_fee_tenths)===Number(row.price_stars)*3&&Number(row.creator_share_tenths)===Number(row.price_stars)*7&&['sending','sent','link_ready','unknown','paid'].includes(row.invoice_state);
   },
   async capturePayment({buyerId,successfulPayment,updateId}={}){
    const buyer=positive(buyerId,'BUYER'),payment=successfulPayment;
@@ -142,13 +151,13 @@ export function createPostgresStickerSales(pool){
          throw Error('STICKER_SALE_PAYMENT_CONFLICT');
        await client.query('COMMIT');return {orderId,duplicate:true};
      }
-     if(!['sending','sent','unknown'].includes(row.invoice_state))
+     if(!['sending','sent','link_ready','unknown'].includes(row.invoice_state))
        throw Error('STICKER_SALE_UNISSUED_INVOICE');
      const shares=splitStarsExact(Number(row.price_stars));
      if(Number(row.management_fee_bps)!==MANAGEMENT_FEE_BASIS_POINTS||row.fee_policy_id!==STICKER_MANAGEMENT_FEE_POLICY_ID||Number(row.management_fee_tenths)!==shares.managementFeeTenths||Number(row.creator_share_tenths)!==shares.creatorShareTenths)
        throw Error('STICKER_SALE_FEE_SNAPSHOT_MISMATCH');
      const changed=await client.query(
-       "UPDATE videobot_sticker_orders SET invoice_state='paid',telegram_payment_charge_id=$2,payment_update_id=$3,paid_at=NOW() WHERE order_id=$1 AND invoice_state IN ('sending','sent','unknown') RETURNING order_id",
+       "UPDATE videobot_sticker_orders SET invoice_state='paid',telegram_payment_charge_id=$2,payment_update_id=$3,paid_at=NOW() WHERE order_id=$1 AND invoice_state IN ('sending','sent','link_ready','unknown') RETURNING order_id",
        [orderId,payment.telegram_payment_charge_id,updateId]);
      if(changed.rowCount!==1)throw Error('STICKER_SALE_PAYMENT_CAS_FAILED');
      for(let i=0;i<files.length;i++)
