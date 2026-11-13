@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS videobot_subscription_previews (
   source_channel_id BIGINT NOT NULL,
   source_message_id BIGINT NOT NULL,
   preview_storage_key TEXT NOT NULL,
+  full_file_id TEXT,
+  sample_file_id TEXT,
   duration_seconds DOUBLE PRECISION NOT NULL CHECK (duration_seconds > 0 AND duration_seconds <= 60),
   streaming_ready BOOLEAN NOT NULL DEFAULT FALSE,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
