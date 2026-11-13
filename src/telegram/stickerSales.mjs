@@ -2,6 +2,7 @@ import {randomBytes} from 'node:crypto';
 import {menuPage} from './menuPanel.mjs';
 import {PRICE_PRESETS} from './creatorUi.mjs';
 import {splitStarsExact,formatTenths,STICKER_MANAGEMENT_FEE_POLICY_ID} from '../sales/managementFee.mjs';
+import {createStickerPaidPhotoFlow} from './stickerPaidPhotoFlow.mjs';
 
 const button=(text,action,rev)=>({text,callback_data:action+'|r'+rev});
 const MONEY_TERMS='Telegramの公開パックは購入者だけに限定できず、第三者への再共有も防止できません。購入対象は現時点の素材版です。素材はBotのDMへ送ります。購入済みの再取得に追加Starsは請求しませんが、Telegramのファイル保持が失効した素材の再送は保証できません。通常の自己都合返金メニューはありません。公式の決済異議は /paysupport で受け付けます。';
@@ -23,7 +24,7 @@ function actor(update){
    throw Error('STICKER_SALE_OWNER_REQUIRED');
  return {userId:from.id,messageId:m.message_id};
 }
-export function createStickerSalesFlow({api,sessionStore,screenTransport,salesStore,packInventory,publishSnapshot,topicPublisher,giftStore}={}){
+export function createStickerSalesFlow({api,sessionStore,screenTransport,salesStore,packInventory,publishSnapshot,topicPublisher,giftStore,paidPhotoStore}={}){
  if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
     typeof screenTransport?.show!=='function'||typeof salesStore?.reserveOrder!=='function'||
@@ -62,7 +63,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
         ...(d.topicStatus==='sent'?[
           [b('✏️ 投稿文を編集','sale:post_edit'),b('🗑 投稿を削除','sale:post_delete')],
           [{text:'🔗 投稿先を開く',url:d.topicLink}]
-        ]:[]),
+        ]:[[b('📣 Topicへ公開','sale:publish_topic')]]),
         [b('↩ メニューへ','sale:cancel')]
       ];break;
     case 'sticker_sale_post_edit':
@@ -135,6 +136,16 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
       keyboard=[...(d.receivedGifts??[]).map((g,i)=>[
         b(g.title+'（版'+g.version+'）','sale:received:'+i)]),
         [b('📦 購入済みに戻る','sale:purchases')]];break;
+    case 'sticker_sale_paid_unpaid':
+      text='⭐ このアカウントでは対象ステッカーパックのStars購入をまだ確認できません。'+
+        '\n専用TopicのStars付き写真から購入後、もう一度確認してください。ここで再請求はしません。';
+      keyboard=[[b('🔄 購入状態を確認','sale:paid_check')],[b('↩ メニューへ','sale:cancel')]];break;
+    case 'sticker_sale_paid_delivery':
+      text='✅ Stars購入済みのステッカーパックです。素材をこのDMで受け取れます。'+
+        '\n続きと再取得は追加Stars不要です。'+
+        (d.deliveryWarning?'\n⚠️ 送信結果不明の素材は自動再送しません。':'');
+      keyboard=[[b('📥 続けて受け取る','sale:paid_next'),b('🔄 無料で再取得','sale:paid_redeliver')],
+        [b('📦 購入済み商品','sale:purchases'),b('↩ メニューへ','sale:cancel')]];break;
     case 'sticker_sale_delivery':
       text=(d.giftId?'🎁 プレゼントを受け取りました。':'✅ 購入を確認しました。')+
         '素材はこのDMへ順番に送信します。\n'+
@@ -151,7 +162,8 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      await sessionStore.setScreen(userId,revision,result.messageId);
    return {handled:true,revision,messageId:result?.messageId};
  }
- async function exitSale(userId,old){
+ const paidPhotoFlow=paidPhotoStore?createStickerPaidPhotoFlow({api,sessionStore,show,paidPhotoStore}):null;
+  async function exitSale(userId,old){
    const revision=old.revision+1;
    const next={...old,revision,screen:'home',stickerSale:null};
    await sessionStore.write(userId,old.revision,next);
@@ -578,5 +590,5 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    }
    return {handled:true,staleButton:true};
  }
- return Object.freeze({handle,payments,beginSell,openOffer,receiveOrder});
+ return Object.freeze({handle,payments,paidMediaPurchase:paidPhotoFlow?.purchased,beginSell,openOffer,receiveOrder});
 }
