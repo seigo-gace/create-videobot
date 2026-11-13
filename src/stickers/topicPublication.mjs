@@ -63,7 +63,7 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
   verifyMembership,verifyRelease,verifyReview,receiptStore,salesStore,createPaidCover,catalogMode=false}={}){
  if(typeof telegramApi!=='function'||typeof getVerifiedStickerTopic!=='function'||
     typeof verifyMembership!=='function'||typeof verifyRelease!=='function'||
-    typeof verifyReview!=='function'||(!catalogMode&&typeof createPaidCover!=='function')||typeof receiptStore?.claim!=='function'||
+    typeof verifyReview!=='function'||typeof createPaidCover!=='function'||typeof receiptStore?.claim!=='function'||
     typeof receiptStore?.getOwned!=='function'||typeof salesStore?.getPublished!=='function')
    throw Error('STICKER_TOPIC_TRUSTED_OWNER_MISSING');
  const identity=async()=>{
@@ -102,12 +102,10 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    await assertOwnPostingAccess({topic,botId:bot.id});
    const text=catalogMode?catalogText({product,description}):
      stickerPaidCaption({product,description});
-   let cover=null;
-   if(!catalogMode){
-     cover=await createPaidCover(product);
-     if(!(cover instanceof Uint8Array)||cover.byteLength<1||cover.byteLength>10000000)
-       throw Error('STICKER_PAID_PHOTO_COVER_INVALID');
-   }
+   // Preview a real registered item without handing out the sticker file.
+   const cover=await createPaidCover(product);
+   if(!(cover instanceof Uint8Array)||cover.byteLength<1||cover.byteLength>10000000)
+     throw Error('STICKER_PAID_PHOTO_COVER_INVALID');
    const claimed=await receiptStore.claim({productId,sellerId,topic,text});
    if(!claimed.claimed){
      if(claimed.status==='sent'&&Number(claimed.messageId)>0)
@@ -118,9 +116,11 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    }
    try{
      const sent=catalogMode?
-       await telegramApi('sendMessage',{
-         chat_id:topic.chatId,message_thread_id:topic.threadId,text,
-         reply_markup:{inline_keyboard:[[{text:'📦 パックの中身を見る',
+       await telegramApi('sendPhoto',{
+         chat_id:topic.chatId,message_thread_id:topic.threadId,
+         photo:'attach://sticker_cover',sticker_cover_bytes:cover,
+         caption:text,
+         reply_markup:{inline_keyboard:[[{text:'📦 絵柄を見る・Starsで購入',
            url:'https://t.me/'+bot.username+'?start=buy_'+productId}]]}
        }):await telegramApi('sendPaidMedia',{
          chat_id:topic.chatId,message_thread_id:topic.threadId,
@@ -160,8 +160,8 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    const text=catalogMode?catalogText({product,description}):stickerPaidCaption({product,description});
    const target={chat_id:Number(current.chat_id),message_id:Number(current.telegram_message_id)};
    try{
-     const r=catalogMode?await telegramApi('editMessageText',{
-        ...target,text,reply_markup:{inline_keyboard:[[{text:'📦 パックの中身を見る',
+     const r=catalogMode?await telegramApi('editMessageCaption',{
+        ...target,caption:text,reply_markup:{inline_keyboard:[[{text:'📦 絵柄を見る・Starsで購入',
           url:'https://t.me/'+(await identity()).username+'?start=buy_'+productId}]]}
        }):await telegramApi('editMessageCaption',{...target,caption:text});
      if(!r)throw Error('STICKER_TOPIC_EDIT_NOT_CONFIRMED');
