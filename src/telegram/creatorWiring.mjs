@@ -1,3 +1,4 @@
+import {createSubscriptionMediaPipeline} from '../collection/subscriptionMediaPipeline.mjs';
 import {createSubscriptionPublisher} from '../collection/subscriptionPublisher.mjs';
 import {createPgSubscriptionPublicationStore} from '../collection/pgSubscriptionPublications.mjs';
 import {createSubscriptionPreviewGenerator} from '../collection/subscriptionPreview.mjs';
@@ -346,7 +347,9 @@ export function createVideoBotSourceModule({
        typeof p?.translateToJapanese!=='function'||
        typeof p?.resolveStoredVideo!=='function'||
        typeof p?.thumbnailDirectory!=='string'||
-       typeof p?.previewDirectory!=='string')
+       typeof p?.previewDirectory!=='string'||
+       typeof p?.uploadVideo!=='function'||
+       typeof p?.verifyRights!=='function')
       throw Error('SUBSCRIPTION_PORTS_NOT_CONNECTED');
     const catalog=createPostgresPublicChannelVideoCatalog(pool);
     const receipts=createPgSubscriptionPublicationStore(pool);
@@ -361,16 +364,25 @@ export function createVideoBotSourceModule({
       outputRoot:p.previewDirectory,
       ...(p.run?{run:p.run}:{})
     });
+    const subscriptionPublisher=createSubscriptionPublisher({
+      telegramApi,verifiedTargets:p.verifiedTargets,
+      verifyBotPostingAccess:p.verifyBotPostingAccess,receipts
+    });
+    const mediaPipeline=createSubscriptionMediaPipeline({
+      catalog,previewGenerator:previews,assetStore:receipts,
+      resolveStoredVideo:p.resolveStoredVideo,
+      uploadVideo:p.uploadVideo,
+      verifyRights:p.verifyRights,
+      publish:subscriptionPublisher.publish
+    });
     subscription=Object.freeze({
       collect:createPublicChannelVideoCollector({
         residentUserbot:p.residentUserbot,catalog,enrichment
       }).collectOnce,
       catalog,receipts,
       createPreview:previews.generate,
-      publish:createSubscriptionPublisher({
-        telegramApi,verifiedTargets:p.verifiedTargets,
-        verifyBotPostingAccess:p.verifyBotPostingAccess,receipts
-      }).publish,
+      publish:subscriptionPublisher.publish,
+      publishCollected:mediaPipeline.publishCollected,
       createInvite:createOfficialSubscriptionInvite({
         telegramApi,verifyChannelAdmin:p.verifyChannelAdmin
       })
