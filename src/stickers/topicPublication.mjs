@@ -21,6 +21,17 @@ function stickerPaidCaption({product,description=''}={}){
  if(message.length>1024)throw Error('STICKER_PAID_PHOTO_CAPTION_LIMIT');
  return message;
 }
+function catalogText({product,description=''}={}){
+ validProduct(product);
+ if(Number(product.management_fee_bps)!==3000||
+    product.fee_policy_id!==STICKER_MANAGEMENT_FEE_POLICY_ID||
+    !product.fee_terms_accepted_at)throw Error('STICKER_CATALOG_FEE_NOT_VERIFIED');
+ if(typeof description!=='string'||description.length>400)throw Error('STICKER_CATALOG_DESCRIPTION_INVALID');
+ const items=typeof product.items==='string'?JSON.parse(product.items):product.items;
+ if(!Array.isArray(items)||items.length<1||items.length>200)throw Error('STICKER_CATALOG_ITEMS_INVALID');
+ return '🎨 '+product.title+'\n⭐ '+Number(product.price_stars)+' Stars · '+items.length+'個'+
+   (description?'\n'+description:'');
+}
 function topicGuard(topic){
  if(!topic||topic.board!=='video_chat'||topic.purpose!=='sticker'||
     topic.enabled!==true||topic.verified!==true||
@@ -49,10 +60,10 @@ export function topicMessageLink(chatId,messageId){
  return 'https://t.me/c/'+String(Math.abs(chatId)).slice(3)+'/'+messageId;
 }
 export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic,
-  verifyMembership,verifyRelease,verifyReview,receiptStore,salesStore,createPaidCover}={}){
+  verifyMembership,verifyRelease,verifyReview,receiptStore,salesStore,createPaidCover,catalogMode=false}={}){
  if(typeof telegramApi!=='function'||typeof getVerifiedStickerTopic!=='function'||
     typeof verifyMembership!=='function'||typeof verifyRelease!=='function'||
-    typeof verifyReview!=='function'||typeof createPaidCover!=='function'||typeof receiptStore?.claim!=='function'||
+    typeof verifyReview!=='function'||(!catalogMode&&typeof createPaidCover!=='function')||typeof receiptStore?.claim!=='function'||
     typeof receiptStore?.getOwned!=='function'||typeof salesStore?.getPublished!=='function')
    throw Error('STICKER_TOPIC_TRUSTED_OWNER_MISSING');
  const identity=async()=>{
@@ -89,12 +100,14 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    const {product,topic}=await guard({sellerId,productId});
    const bot=await identity();
    await assertOwnPostingAccess({topic,botId:bot.id});
-   const text=stickerPaidCaption({product,description});
-   // A real sticker image is converted to a paid PHOTO cover; this is not a video
-   // product. Cover conversion happens before any durable claim or Telegram send.
-   const cover=await createPaidCover(product);
-   if(!(cover instanceof Uint8Array)||cover.byteLength<1||cover.byteLength>10000000)
-     throw Error('STICKER_PAID_PHOTO_COVER_INVALID');
+   const text=catalogMode?catalogText({product,description}):
+     stickerPaidCaption({product,description});
+   let cover=null;
+   if(!catalogMode){
+     cover=await createPaidCover(product);
+     if(!(cover instanceof Uint8Array)||cover.byteLength<1||cover.byteLength>10000000)
+       throw Error('STICKER_PAID_PHOTO_COVER_INVALID');
+   }
    const claimed=await receiptStore.claim({productId,sellerId,topic,text});
    if(!claimed.claimed){
      if(claimed.status==='sent'&&Number(claimed.messageId)>0)
@@ -104,23 +117,28 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
      throw Error('STICKER_TOPIC_POST_NEEDS_RECONCILE');
    }
    try{
-     const sent=await telegramApi('sendPaidMedia',{
-       chat_id:topic.chatId,message_thread_id:topic.threadId,
-       star_count:Number(product.price_stars),
-       media:[{type:'photo',media:'attach://sticker_cover'}],
-       sticker_cover_bytes:cover,
-       payload:'stkmedia_'+productId,caption:text
-     });
+     const sent=catalogMode?
+       await telegramApi('sendMessage',{
+         chat_id:topic.chatId,message_thread_id:topic.threadId,text,
+         reply_markup:{inline_keyboard:[[{text:'📦 パックの中身を見る',
+           url:'https://t.me/'+bot.username+'?start=buy_'+productId}]]}
+       }):await telegramApi('sendPaidMedia',{
+         chat_id:topic.chatId,message_thread_id:topic.threadId,
+         star_count:Number(product.price_stars),
+         media:[{type:'photo',media:'attach://sticker_cover'}],
+         sticker_cover_bytes:cover,
+         payload:'stkmedia_'+productId,caption:text
+       });
      if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0||
         sent?.chat?.id!==topic.chatId||
         sent?.message_thread_id!==topic.threadId||
         sent?.is_topic_message!==true||
         sent?.from?.id!==bot.id||
-        !sent?.paid_media||
-        Number(sent.paid_media.star_count)!==Number(product.price_stars)||
-        !Array.isArray(sent.paid_media.paid_media)||
-        sent.paid_media.paid_media.length!==1||
-        !['preview','photo'].includes(sent.paid_media.paid_media[0]?.type))
+        (!catalogMode&&(!sent?.paid_media||
+          Number(sent.paid_media.star_count)!==Number(product.price_stars)||
+          !Array.isArray(sent.paid_media.paid_media)||
+          sent.paid_media.paid_media.length!==1||
+          !['preview','photo'].includes(sent.paid_media.paid_media[0]?.type))))
        throw Error('STICKER_TOPIC_SEND_NOT_IN_VERIFIED_TOPIC');
      await receiptStore.recorded(productId,sellerId,sent.message_id);
      return {posted:true,alreadySent:false,chatId:topic.chatId,
@@ -139,15 +157,20 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    if(!product||String(product.seller_user_id)!==String(sellerId))
      throw Error('STICKER_TOPIC_PRODUCT_OWNER_MISMATCH');
    await identity();
-   const text=stickerPaidCaption({product,description});
+   const text=catalogMode?catalogText({product,description}):stickerPaidCaption({product,description});
    const target={chat_id:Number(current.chat_id),message_id:Number(current.telegram_message_id)};
    try{
-     const r=await telegramApi('editMessageCaption',{...target,caption:text});
+     const r=catalogMode?await telegramApi('editMessageText',{
+        ...target,text,reply_markup:{inline_keyboard:[[{text:'📦 パックの中身を見る',
+          url:'https://t.me/'+(await identity()).username+'?start=buy_'+productId}]]}
+       }):await telegramApi('editMessageCaption',{...target,caption:text});
      if(!r)throw Error('STICKER_TOPIC_EDIT_NOT_CONFIRMED');
      // Remove the old deep-link button on this SAME existing paid-media post.
      // Do not create a replacement post or alter Telegram's native paywall.
-     const clean=await telegramApi('editMessageReplyMarkup',target);
-     if(!clean)throw Error('STICKER_TOPIC_BUTTON_REMOVE_NOT_CONFIRMED');
+     if(!catalogMode){
+       const clean=await telegramApi('editMessageReplyMarkup',target);
+       if(!clean)throw Error('STICKER_TOPIC_BUTTON_REMOVE_NOT_CONFIRMED');
+     }
      await receiptStore.edited(productId,sellerId,text);
      return {verified:true};
    }catch{

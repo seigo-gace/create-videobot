@@ -80,6 +80,7 @@ export function createVideoBotSourceModule({
       verifyReview:gateOwner.verifyStickerReview,
       verifyRelease:gateOwner.verifyRelease,
       receiptStore:stickerTopicPosts,salesStore:stickerSalesStore,
+      catalogMode:Boolean(stickerShopBaseUrl),
        createPaidCover:createStickerPaidCover({fetchSource:ports.fetchSource})
     }):null;
   // STK-04: CreateVdobot owns its own public Topic entry message and pin.

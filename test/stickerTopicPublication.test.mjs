@@ -114,3 +114,29 @@ test('STK-04 cannot mark a plain or non-paid message as a Stars sale',async()=>{
  assert.equal(f.receipt.status,'needs_reconcile');
  assert.equal(f.writes.filter(x=>x.method==='sendPaidMedia').length,1);
 });
+
+test('Catalog mode publishes a pack list entry, never a Stars photo',async()=>{
+ const f=fixture();
+ const api=async(method,params)=>{
+  f.writes.push({method,params});
+  if(method==='getMe')return {id:901,is_bot:true,username:'CreateVdobot'};
+  if(method==='getChat')return {id:live.chatId,type:'supergroup',is_forum:true};
+  if(method==='getChatMember')return {status:'administrator'};
+  if(method==='sendMessage')return {message_id:507,chat:{id:live.chatId},
+     message_thread_id:live.threadId,is_topic_message:true,from:{id:901}};
+  throw Error('UNEXPECTED_TELEGRAM');
+ };
+ const pub=createStickerTopicPublisher({telegramApi:api,catalogMode:true,
+  getVerifiedStickerTopic:async()=>live,verifyMembership:async()=>true,
+  verifyRelease:async()=>true,verifyReview:async()=>true,
+  receiptStore:{claim:async()=>({claimed:true}),recorded:async()=>{},
+   unknown:async()=>{},getOwned:async()=>null},
+  salesStore:{getPublished:async()=>product}
+ });
+ const result=await pub.publish({sellerId:42,productId});
+ assert.equal(result.messageId,507);
+ const post=f.writes.find(x=>x.method==='sendMessage');
+ assert.ok(post);assert.match(post.params.text,/Stars/);
+ assert.match(post.params.reply_markup.inline_keyboard[0][0].url,/start=buy_sp_/);
+ assert.equal(f.writes.some(x=>x.method==='sendPaidMedia'),false);
+});
