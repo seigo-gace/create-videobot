@@ -40,6 +40,14 @@ const stickerHint=session=>session?.stickerHelp?'\n\n⚠️ '+session.stickerHel
 function panel(session,revision){
   const d=session?.stickerDraft??{};
   const btn=(text,action)=>button(text,action,revision);
+  if(session.screen==='sticker_choose'&&session.stickerPending)return {
+    text:'🎨 ステッカー・絵文字\n\n⚠️ 前回の素材登録が確認待ちです。'+
+      '二重登録を防ぐため元の記録を保存しています。登録状態の確認から再開できます。',
+    reply_markup:{inline_keyboard:[
+      [btn('🔄 登録状態を確認','sticker:resume')],
+      [btn('↩ メニューへ','sticker:cancel')]
+    ]}
+  };
   if(session.screen==='sticker_choose')return {
     text:'🎨 ステッカー・絵文字作成\n作成する種類を選択してください。',
     reply_markup:{inline_keyboard:[
@@ -310,10 +318,17 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       if(old?.stickerPending?.status==='needs_reconcile'&&
          data==='sticker:defer|r'+old.revision&&messageId===old.screenMessageId)
         return persist(id,old,{screen:'home',stickerDeferred:true,stickerHelp:null});
-      if(old?.stickerPending?.status==='needs_reconcile'&&
-         data==='menu:stickers'&&old.stickerDeferred)
-        return persist(id,old,{screen:'sticker_reconcile',stickerDeferred:false,
-          screenMessageId:messageId});
+      if(old?.stickerPending?.status==='needs_reconcile'&&data==='menu:stickers')
+        return persist(id,old,{screen:'sticker_choose',stickerDeferred:true,
+          screenMessageId:messageId,stickerHelp:null});
+      if(old?.stickerPending?.status==='needs_reconcile'&&old.stickerDeferred&&
+         messageId===old.screenMessageId&&
+         data==='sticker:resume|r'+old.revision)
+        return persist(id,old,{screen:'sticker_reconcile',stickerDeferred:false});
+      if(old?.stickerPending?.status==='needs_reconcile'&&old.stickerDeferred&&
+         messageId===old.screenMessageId&&
+         data==='sticker:cancel|r'+old.revision)
+        return persist(id,old,{screen:'home',stickerDeferred:true,stickerHelp:null});
       // Design v0.6 X10: allow read-only reconciliation, never a fresh write.
       if(old?.stickerPending?.status==='in_progress'||
          old?.stickerPending?.status==='needs_reconcile'){
@@ -530,6 +545,28 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           stickerEditPending:{...old.stickerEditPending,status:'needs_reconcile'}});
       return {handled:true,editLocked:true};
     }
+    const topicStickerStart=typeof message.text==='string'&&
+      /^\/start(?:@[A-Za-z0-9_]+)?\s+sticker$/.test(message.text.trim());
+    if(topicStickerStart&&old?.stickerPending?.status==='needs_reconcile'){
+      // Read-back cannot generate a second Telegram sticker set. If the old
+      // operation is still unknown, retain its receipt and show the menu.
+      const verified=typeof reconcileSticker==='function'?
+        await reconcileSticker({owner:id,pending:old.stickerPending})
+          .catch(()=>({verified:false})):
+        {verified:false};
+      if(verified?.verified===true&&verified.status==='registered'&&verified.name){
+        const current=await sessionStore.read(id);
+        if(current?.stickerPending?.status!=='needs_reconcile')
+          return {handled:true,registrationLocked:true};
+        return persist(id,current,{screen:'sticker_choose',
+          stickerPending:null,stickerDeferred:false,stickerHelp:null,
+          stickerSets:{...current.stickerSets,[current.stickerPending.kind]:{
+            name:verified.name,title:current.stickerPending.title}},
+          stickerDraft:null,waiting:null});
+      }
+      return persist(id,old,{screen:'sticker_choose',stickerDeferred:true,
+        stickerHelp:null});
+    }
     // Protect the common VideoBot DM owner as well as sticker callbacks.
     // Any private text/media while a registration is unresolved must not be
     // routed to the video editor or wipe the pending Telegram receipt.
@@ -537,12 +574,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
        old?.stickerPending?.status==='needs_reconcile'){
       // A paused unknown operation is still protected; non-sticker updates
       // remain owned by the existing creator/video wizard.
-      if(old.stickerDeferred){
-        if(typeof message.text==='string'&&
-           /^\/start(?:@[A-Za-z0-9_]+)?\s+sticker$/.test(message.text.trim()))
-          return persist(id,old,{screen:'sticker_reconcile',stickerDeferred:false});
-        return {handled:false};
-      }
+      if(old.stickerDeferred)return {handled:false};
       // A crash may leave an in_progress receipt but the original screen
       // could still show [Register]. Recover the panel without re-registering.
       // This only changes UI state: the Telegram mutation is NEVER reissued.
