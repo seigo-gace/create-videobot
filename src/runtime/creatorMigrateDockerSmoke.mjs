@@ -273,8 +273,8 @@ try {
   const photoForeign=await photo.getEntitlement({buyerId:199,productId:sold.productId});
   if(!entitlement||photoForeign!==null)throw Error('STICKER_PAID_PHOTO_OWNER_LEAK');
   const claimed=await photo.claimItem({saleId:photoRecorded.saleId,buyerId:198,attempt:1,index:0});
-  const double=await photo.claimItem({saleId:photoRecorded.saleId,buyerId:198,attempt:1,index:0});
-  if(!claimed||double!==null)throw Error('STICKER_PAID_PHOTO_DELIVERY_DUPLICATE');
+  const photoDouble=await photo.claimItem({saleId:photoRecorded.saleId,buyerId:198,attempt:1,index:0});
+  if(!claimed||photoDouble!==null)throw Error('STICKER_PAID_PHOTO_DELIVERY_DUPLICATE');
   await photo.itemSent({saleId:photoRecorded.saleId,attempt:1,index:0,messageId:733});
   const next=await photo.redeliver({saleId:photoRecorded.saleId,buyerId:198});
   if(next.attempt!==2||
