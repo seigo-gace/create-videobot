@@ -7,6 +7,7 @@ test('paid PHOTO purchase of stickers creates claimable rights, never an invoice
  let hasEntitlement=false;
  const rows=[{item_index:0,status:'pending'},{item_index:1,status:'pending'}];
  const store={
+  async hasTopicPublication(){return true;},
   async capturePurchase(update){
    assert.equal(update.purchased_paid_media.paid_media_payload,'stkmedia_'+productId);
    hasEntitlement=true;return {recorded:true,duplicate:false,productId,saleId:1};

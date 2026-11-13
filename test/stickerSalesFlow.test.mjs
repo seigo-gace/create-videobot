@@ -140,7 +140,7 @@ test('seller chooses a preset and accepts 30% fee in the same DM',async()=>{
  assert.equal(f.state(42).screen,'sticker_sale_confirm');
  await f.flow.handle(f.cb(42,'sale:publish'));
  assert.equal(f.state(42).screen,'sticker_sale_published');
- assert.match(f.state(42).stickerSale.link,/start=buy_sp_/);
+ assert.match(f.state(42).stickerSale.link,/start=claim_sp_/);
  assert.equal(f.state(42).draft.paidVideo.id,'preserve');
  assert.equal(f.calls.filter(c=>c.method==='sendInvoice').length,0);
 });
