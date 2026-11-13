@@ -174,3 +174,59 @@ test('unique newly created pack recovers when Telegram normalizes uploaded ident
   assert.equal(wrongTitle.verified,false);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('acknowledged append to existing pack accepts exactly one normalized Telegram identity',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'sticker-append-normalized-'));
+ try{
+  const path=join(dir,'new.png');await writeFile(path,'valid-append');
+  const name='s42_1234abcd_by_CreateVdobot';
+  const previous={file_id:'old-file',file_unique_id:'old-unique',is_video:false,is_animated:false};
+  let set={name,title:'Original',sticker_type:'regular',stickers:[previous]};
+  let proof,mutations=0;
+  const api=async method=>{
+   if(method==='uploadStickerFile')return {file_id:'upload-file',file_unique_id:'upload-unique'};
+   if(method==='getStickerSet')return structuredClone(set);
+   if(method==='addStickerToSet'){
+     mutations++;
+     set={...set,stickers:[previous,{file_id:'stored-file',
+       file_unique_id:'stored-unique',is_video:false,is_animated:false,emoji:'🙂'}]};
+     return true;
+   }
+   throw Error('unexpected '+method);
+  };
+  const result=await registerStickerAsset({telegramApi:api,owner:42,
+    botUsername:'CreateVdobot',title:'Original',nonce:'1234abcd',
+    format:'static',mediaPath:path,existingSetName:name,
+    onVerified:async receipt=>{proof=receipt;}});
+  assert.equal(mutations,1);
+  assert.equal(result.verified,true);
+  assert.equal(proof.proof,'unique_acknowledged_append');
+  assert.equal(proof.item.file_unique_id,'stored-unique');
+  assert.equal(proof.item.position,1);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('unacknowledged append with normalized identity remains unknown without replay',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'sticker-append-unknown-'));
+ try{
+  const path=join(dir,'new.png');await writeFile(path,'valid-append');
+  const name='s42_1234abcd_by_CreateVdobot';
+  const previous={file_id:'old-file',file_unique_id:'old-unique',is_video:false,is_animated:false};
+  let set={name,title:'Original',sticker_type:'regular',stickers:[previous]};
+  let mutations=0;
+  const api=async method=>{
+   if(method==='uploadStickerFile')return {file_id:'upload-file',file_unique_id:'upload-unique'};
+   if(method==='getStickerSet')return structuredClone(set);
+   if(method==='addStickerToSet'){
+     mutations++;
+     set={...set,stickers:[previous,{file_id:'stored-file',
+       file_unique_id:'stored-unique',is_video:false,is_animated:false}]};
+     throw Error('timeout');
+   }
+   throw Error('unexpected '+method);
+  };
+  await assert.rejects(registerStickerAsset({telegramApi:api,owner:42,
+    botUsername:'CreateVdobot',title:'Original',nonce:'1234abcd',
+    format:'static',mediaPath:path,existingSetName:name}),/RESULT_UNKNOWN/);
+  assert.equal(mutations,1);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
