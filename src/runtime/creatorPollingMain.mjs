@@ -71,9 +71,10 @@ export async function createCreatorPollingRuntime({
  const outbound=createCreatorTelegramFetch(fetchImpl);
  let api,source,poller;
  try{
-  // An explicitly mounted GateApp owner bridge enables the approved public
-  // video/sticker release path. Without it, private sticker creation and
-  // pack management still work, but public operations fail closed.
+  api=createTelegramBotApi({token,fetchImpl:outbound.fetch,timeoutMs:25000});
+  await verifyCreateVdoBot({api,checkProfile:false});
+  // The approved one-time sticker Topic receipt is an existing on-disk
+  // Telegram-verified Owner proof. No video sale routes are enabled.
   let gateOwner=privateStickerGate,gateConnected=false;
   if(env.VIDEOBOT_GATE_OWNER_ADAPTER){
    if(env.VIDEOBOT_GATE_OWNER_ADAPTER!=='/opt/videobot/owner/gateOwner.mjs')
@@ -81,11 +82,9 @@ export async function createCreatorPollingRuntime({
    const owner=await importOwner(pathToFileURL(env.VIDEOBOT_GATE_OWNER_ADAPTER).href);
    if(typeof owner?.createGateOwner!=='function')
      throw Error('CREATOR_POLL_GATE_OWNER_PROVIDER_INVALID');
-   gateOwner=await owner.createGateOwner();
+   gateOwner=await owner.createGateOwner({telegramApi:api,pool});
    gateConnected=true;
   }
-  api=createTelegramBotApi({token,fetchImpl:outbound.fetch,timeoutMs:25000});
-  await verifyCreateVdoBot({api,checkProfile:false});
   const info=await api('getWebhookInfo',{});
   if(typeof info?.url!=='string'||info.url!=='')
    throw Error('CREATOR_POLL_EXISTING_WEBHOOK_MUST_NOT_BE_REPLACED');
