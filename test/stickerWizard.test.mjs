@@ -86,9 +86,18 @@ test('unknown Telegram registration is locked and never auto retried',async()=>{
  const result=await broken.handle(f.cb('sticker:register|r5'));
  assert.equal(result.registrationLocked,true);
  const menuAttempt=await broken.handle(f.cb('menu:stickers'));
- assert.equal(menuAttempt.registrationLocked,true);
+ assert.equal(menuAttempt.handled,true);
+ assert.equal(f.state().screen,'sticker_choose');
+ assert.equal(f.state().stickerDeferred,true);
  const linkAttempt=await broken.handle(f.msg({text:'/start sticker'}));
- assert.equal(linkAttempt.registrationLocked,true);
+ assert.equal(linkAttempt.handled,true);
+ assert.equal(f.state().screen,'sticker_choose');
+ assert.equal(f.state().stickerPending.status,'needs_reconcile');
+ const blocked=await broken.handle(f.cb('sticker:type:regular|r'+f.state().revision));
+ assert.equal(blocked.registrationLocked,true);
+ const resume=await broken.handle(f.cb('sticker:resume|r'+f.state().revision));
+ assert.equal(resume.handled,true);
+ assert.equal(f.state().screen,'sticker_reconcile');
  const genericStart=await broken.handle(f.msg({text:'/start'}));
  assert.equal(genericStart.registrationLocked,true);
  const inputAttempt=await broken.handle(f.msg({document:{file_id:'fileghi'}}));
@@ -462,4 +471,38 @@ test('unknown registration can leave the DM screen without dropping receipt or r
  assert.equal(f.state().screen,'sticker_reconcile');
  assert.equal(f.state().stickerDeferred,false);
  assert.equal(writes,1);
+});
+
+test('Topic deep link verifies outstanding registration and restores full sticker creation menu',async()=>{
+ const f=fixture(),state=f.state();
+ state.screen='sticker_reconcile';
+ state.stickerPending={status:'needs_reconcile',kind:'regular',title:'Saved pack',
+  nonce:'112233aabbccddff',fileId:'file_old'};
+ const store={
+  read:async()=>structuredClone(f.state()),
+  write:async(_id,prev,next)=>{
+   assert.equal(prev,f.state().revision);
+   Object.assign(f.state(),structuredClone(next));
+  },setScreen:async()=>{}
+ };
+ let readbacks=0,writes=0;
+ const wizard=createStickerWizard({api:async()=>true,sessionStore:store,
+  screenTransport:{show:async(_id,_message,panel)=>{
+   assert.match(panel.text,/ステッカー・絵文字作成/);
+   return {messageId:301};
+  }},
+  publishSticker:async()=>{writes++;throw Error('DUPLICATE_UPLOAD');},
+  reconcileSticker:async({owner,pending})=>{
+   assert.equal(owner,42);assert.equal(pending.nonce,'112233aabbccddff');
+   readbacks++;return {status:'registered',verified:true,
+    name:'s42_112233aabbccddff_by_CreateVdobot'};
+  }
+ });
+ const result=await wizard.handle(f.msg({text:'/start sticker'}));
+ assert.equal(result.handled,true);
+ assert.equal(f.state().screen,'sticker_choose');
+ assert.equal(f.state().stickerPending,null);
+ assert.equal(f.state().stickerSets.regular.title,'Saved pack');
+ assert.equal(f.state().draft.paidVideo.fileId,'preserve-video');
+ assert.equal(readbacks,1);assert.equal(writes,0);
 });
