@@ -42,7 +42,7 @@ function panel(session,revision){
   const btn=(text,action)=>button(text,action,revision);
   if(session.screen==='sticker_choose'&&session.stickerPending)return {
     text:'🎨 ステッカー・絵文字\n\n⚠️ 前回の素材登録が確認待ちです。'+
-      '二重登録を防ぐため元の記録を保存しています。登録状態の確認から再開できます。',
+      '前回の登録結果を確認中です。作成済みの素材は消していません。\n［登録状態を確認］または［マイパックを見る］を押してください。',
     reply_markup:{inline_keyboard:[
       [btn('🔄 登録状態を確認','sticker:resume')],
       [btn('📦 マイパックを見る','sticker:packs')]
@@ -161,14 +161,15 @@ function panel(session,revision){
       '⚠️ この素材の登録結果はまだ確定していません。登録済みパックを確認できます。未確定の作業は保管したまま、ほかのメニューにも戻れます。'+stickerHint(session),
     reply_markup:{inline_keyboard:session.screen==='sticker_reconcile'
       ?[[btn('🔄 登録状態を確認','sticker:check')],
-        [btn('↩ メニューへ戻る','sticker:defer')]]
+        [btn('📦 マイパックを見る','sticker:defer')]]
       :[]}
   };
   if(session.screen==='sticker_done')return {
-    text:'✅ Telegramパックへの登録を確認しました。\n'+d.link+
-      '\n\n続けて同じパックに追加できます。',
+    text:'✅ ステッカーを登録しました！\nパック：'+d.title+'\n'+d.link+
+      '\n\n［続けて追加］で同じパックに素材を追加できます。［マイパック］で登録済みの素材を確認できます。',
     reply_markup:{inline_keyboard:[
-      [btn('➕ 続けて作成','sticker:again'),btn('↩ ステッカーメニュー','sticker:cancel')]
+      [btn('➕ 続けて追加','sticker:again'),btn('📦 マイパック','sticker:packs')],
+      [btn('↩ ステッカーメニュー','sticker:cancel')]
     ]}
   };
   throw new Error('STICKER_SCREEN_UNKNOWN');
@@ -316,7 +317,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       // video menus. Returning to stickers restores its reconciliation view.
       if(old?.stickerPending?.status==='needs_reconcile'&&
          data==='sticker:defer|r'+old.revision&&messageId===old.screenMessageId)
-        return persist(id,old,{screen:'home',stickerDeferred:true,stickerHelp:null});
+        return persist(id,old,{screen:'sticker_choose',stickerDeferred:true,stickerHelp:null});
       if(old?.stickerPending?.status==='needs_reconcile'&&data==='menu:stickers')
         return persist(id,old,{screen:'sticker_choose',stickerDeferred:true,
           screenMessageId:messageId,stickerHelp:null});
@@ -544,8 +545,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           // durably recorded. Failures before that phase cannot have written
           // a pack, so allow the user to correct/retry the same media safely.
           // Once submission_started is recorded, never retry without readback.
-          const phase=current?.stickerPending?.phase;
-          // The publisher must confirm DB claim release before allowing
+                    // The publisher must confirm DB claim release before allowing
           // retry. Session phase alone is not proof that the DB released it.
           if(error?.preMutationVerified===true||error?.safeToRetryVerified===true){
             return persist(id,current,{screen:'sticker_ready',stickerPending:null,
