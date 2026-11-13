@@ -74,7 +74,7 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
     const description=typeof reply?.description==='string'?reply.description.toLowerCase():'';
     if(/^bad request: message is not modified$/.test(description))
       throw new Error('message is not modified');
-    if(/^bad request: (message to edit not found|message to be edited not found|message can.t be edited|message cannot be edited|message_id_invalid)$/.test(description))
+    if(/^bad request: (message to edit not found|message to be edited not found|message can.t be edited|message cannot be edited|message_id_invalid|there is no text in the message to edit|message is not a text message)$/.test(description))
       throw new Error('message cannot be edited');
     throw new Error('Telegram API request failed');
   }
