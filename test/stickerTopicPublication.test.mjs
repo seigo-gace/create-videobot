@@ -131,7 +131,10 @@ test('Catalog mode publishes a pack list entry, never a Stars photo',async()=>{
   verifyRelease:async()=>true,verifyReview:async()=>true,
   receiptStore:{claim:async()=>({claimed:true}),recorded:async()=>{},
    unknown:async()=>{},getOwned:async()=>null},
-  salesStore:{getPublished:async()=>product}
+  salesStore:{getPublished:async()=>({product_id:productId,seller_user_id:42,
+   status:'published',title:'Demo',price_stars:50,
+   items:[{file_id:'file1'}],management_fee_bps:3000,
+   fee_policy_id:'sticker-admin-30-20261113',fee_terms_accepted_at:'2026-11-13'})}
  });
  const result=await pub.publish({sellerId:42,productId});
  assert.equal(result.messageId,507);
