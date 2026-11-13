@@ -10,13 +10,14 @@ function positiveInt(value, field) {
   return value;
 }
 
-export function createPublicChannelVideoCollector({residentUserbot, catalog, maxPerChannel=100}={}) {
+export function createPublicChannelVideoCollector({residentUserbot, catalog, enrichment, maxPerChannel=100}={}) {
   for (const method of ['listJoinedPublicChannels','listChannelVideos','downloadVideo']) {
     if (typeof residentUserbot?.[method] !== 'function')
       throw new Error('RESIDENT_USERBOT_PORT_UNAVAILABLE:'+method);
   }
   if(typeof catalog?.recordDownload !== 'function'||typeof catalog?.hasDownload !== 'function')
     throw new Error('VIDEO_CATALOG_UNAVAILABLE');
+  if(typeof enrichment?.enrich!=='function')throw new Error('VIDEO_ENRICHMENT_UNAVAILABLE');
   if(!Number.isSafeInteger(maxPerChannel)||maxPerChannel<1||maxPerChannel>1000)
     throw new Error('INVALID_CHANNEL_LIMIT');
 
@@ -45,7 +46,10 @@ export function createPublicChannelVideoCollector({residentUserbot, catalog, max
             const result=await residentUserbot.downloadVideo({channelId,messageId});
             if(typeof result?.storageKey!=='string'||!result.storageKey.trim())
               throw new Error('DOWNLOAD_NOT_CONFIRMED');
+            const enriched=await enrichment.enrich({storageKey:result.storageKey,caption:item.caption??'',channelId,messageId});
             const recorded=await catalog.recordDownload({
+              captionJapanese:enriched.captionJapanese,
+              thumbnail1:enriched.thumbnail1,thumbnail2:enriched.thumbnail2,
               channelId,channelUsername:username,channelTitle:String(channel.title??'').slice(0,256),
               messageId,storageKey:result.storageKey,
               fileUniqueId:typeof item.fileUniqueId==='string'?item.fileUniqueId:null,
