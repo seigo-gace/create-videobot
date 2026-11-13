@@ -18,6 +18,7 @@ import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
 import {createPostgresStickerGifts} from '../stickers/pgStickerGifts.mjs';
 import {createPostgresStickerTopicPosts} from '../stickers/pgStickerTopicPosts.mjs';
 import {createStickerTopicPublisher} from '../stickers/topicPublication.mjs';
+import {createStickerPaidCover} from '../stickers/stickerPaidCover.mjs';
 import {createCreatorStickerTopicEntryPin} from '../stickers/creatorTopicEntryPin.mjs';
 import {createPostgresStickerEntryPin} from '../stickers/pgStickerEntryPin.mjs';
 import {createStickerSalesFlow} from './stickerSales.mjs';
@@ -75,7 +76,8 @@ export function createVideoBotSourceModule({
       verifyMembership:gateOwner.verifyMembership,
       verifyReview:gateOwner.verifyStickerReview,
       verifyRelease:gateOwner.verifyRelease,
-      receiptStore:stickerTopicPosts,salesStore:stickerSalesStore
+      receiptStore:stickerTopicPosts,salesStore:stickerSalesStore,
+       createPaidCover:createStickerPaidCover({fetchSource:ports.fetchSource})
     }):null;
   // STK-04: CreateVdobot owns its own public Topic entry message and pin.
   // GateApp supplies only the verified read-only Topic address and does not

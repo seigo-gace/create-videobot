@@ -8,7 +8,9 @@ const live={purpose:'sticker',board:'video_chat',enabled:true,verified:true,
 function fixture({unknown=false}={}){
  let receipt=null,paused=false,writes=[];
  const product={product_id:productId,seller_user_id:42,pack_name:'seller_pack',
-  status:'published',price_stars:50,title:'Demo',items:[{file_id:'file1'}]};
+  status:'published',price_stars:50,title:'Demo',items:[{file_id:'file1'}],
+   management_fee_bps:3000,fee_policy_id:'sticker-admin-30-20261113',
+   fee_terms_accepted_at:'2026-11-13'};
  const store={
   claim:async({productId,sellerId,topic,text})=>{
    assert.equal(sellerId,42);assert.equal(topic.threadId,102);
@@ -27,16 +29,16 @@ function fixture({unknown=false}={}){
  const api=async(method,params)=>{
    writes.push({method,params});
    if(method==='getMe')return {is_bot:true,username:'CreateVdobot'};
-   if(unknown&&method==='sendMessage')throw Error('Telegram timed out');
-   if(method==='sendMessage')return {message_id:506};
-   if(method==='editMessageText')return {message_id:506};
+   if(unknown&&method==='sendPaidMedia')throw Error('Telegram timed out');
+   if(method==='sendPaidMedia')return {message_id:506};
+   if(method==='editMessageCaption')return {message_id:506};
    if(method==='deleteMessage')return true;
    throw Error('Unexpected Telegram call');
  };
  const pub=createStickerTopicPublisher({
    telegramApi:api,getVerifiedStickerTopic:async()=>({...live}),
    verifyMembership:async()=>true,verifyReview:async()=>true,verifyRelease:async()=>true,
-   receiptStore:store,salesStore:{
+   receiptStore:store,createPaidCover:async()=>new Uint8Array([255,216,255]),salesStore:{
      getPublished:async()=>({...product,status:paused?'paused':'published'}),
      pauseProduct:async()=>{paused=true;return {paused:true};}
    }
@@ -51,10 +53,10 @@ test('STK-04 verified owner routes to designated Topic only and stores message I
  assert.equal(sent.groupTitle,'ビデオChatの掲示板');
  assert.equal(sent.topicTitle,'ステッカーの公開と販売');
  assert.equal(sent.link,'https://t.me/c/2373696859/506');
- assert.equal(f.writes.find(x=>x.method==='sendMessage').params.message_thread_id,102);
+ assert.equal(f.writes.find(x=>x.method==='sendPaidMedia').params.message_thread_id,102);
  const repeat=await f.pub.publish({sellerId:42,productId});
  assert.equal(repeat.alreadySent,true);
- assert.equal(f.writes.filter(x=>x.method==='sendMessage').length,1);
+ assert.equal(f.writes.filter(x=>x.method==='sendPaidMedia').length,1);
 });
 test('STK-04 edit only alters post text and delete pauses new sales but preserves ownership',async()=>{
  const f=fixture();
@@ -72,11 +74,11 @@ test('STK-04 uncertain public write is locked without a second Telegram send',as
  await assert.rejects(()=>f.pub.publish({sellerId:42,productId}),/timed out/);
  assert.equal(f.receipt.status,'needs_reconcile');
  await assert.rejects(()=>f.pub.publish({sellerId:42,productId}),/NEEDS_RECONCILE/);
- assert.equal(f.writes.filter(x=>x.method==='sendMessage').length,1);
+ assert.equal(f.writes.filter(x=>x.method==='sendPaidMedia').length,1);
 });
 test('STK-04 rejects unverified board/thread and fabricated links before Telegram mutation',async()=>{
  const f=fixture();
  assert.throws(()=>topicMessageLink(-1002373696859,0),/LINK_INVALID/);
  await assert.rejects(()=>f.pub.publish({sellerId:99,productId}),/OWNER_MISMATCH/);
- assert.equal(f.writes.some(x=>x.method==='sendMessage'),false);
+ assert.equal(f.writes.some(x=>x.method==='sendPaidMedia'),false);
 });

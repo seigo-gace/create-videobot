@@ -1,10 +1,29 @@
 // STK-04. GateApp-Bot remains the only authority for live Topic routing,
 // membership, release policy and pinned entry. No t.me URL suffix is an ID.
+import {STICKER_MANAGEMENT_FEE_POLICY_ID} from '../sales/managementFee.mjs';
 function validProduct(p){
  if(!p||typeof p.product_id!=='string'||!/^sp_[a-f0-9]{24}$/.test(p.product_id)||
     !Number.isSafeInteger(Number(p.price_stars))||Number(p.price_stars)<1||
     Number(p.price_stars)>25000||typeof p.title!=='string'||!p.title)
    throw Error('STICKER_TOPIC_PRODUCT_INVALID');
+}
+function stickerPaidCaption({product,description=''}={}){
+ validProduct(product);
+ if(Number(product.management_fee_bps)!==3000||
+    product.fee_policy_id!==STICKER_MANAGEMENT_FEE_POLICY_ID||
+    !product.fee_terms_accepted_at)throw Error('STICKER_PAID_PHOTO_FEE_NOT_VERIFIED');
+ if(typeof description!=='string'||description.length>400||/[\0]/.test(description))
+   throw Error('STICKER_TOPIC_DESCRIPTION_INVALID');
+ const message='🎨 '+product.title+'\n⭐ '+Number(product.price_stars)+' Stars\n'+
+   '商品：ステッカー・絵文字パックの固定版素材。\n'+
+   'このStars付き画像を購入すると、CreateVdobotで素材を受け取る権利が記録されます。'+
+   '購入後は［ステッカーを受け取る］からDMへ移動してください。\n'+
+   '公開ステッカーセットは購入者だけに制限できず、再共有を防げません。'+
+   '購入前にこの条件をご確認ください。\n'+
+   '運営管理費30%／投稿者分70%。通常の自己都合返金ボタンはありません。'+
+   (description?'\n'+description:'');
+ if(message.length>1024)throw Error('STICKER_PAID_PHOTO_CAPTION_LIMIT');
+ return message;
 }
 function topicGuard(topic){
  if(!topic||topic.board!=='video_chat'||topic.purpose!=='sticker'||
@@ -34,10 +53,10 @@ export function topicMessageLink(chatId,messageId){
  return 'https://t.me/c/'+String(Math.abs(chatId)).slice(3)+'/'+messageId;
 }
 export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic,
-  verifyMembership,verifyRelease,verifyReview,receiptStore,salesStore}={}){
+  verifyMembership,verifyRelease,verifyReview,receiptStore,salesStore,createPaidCover}={}){
  if(typeof telegramApi!=='function'||typeof getVerifiedStickerTopic!=='function'||
     typeof verifyMembership!=='function'||typeof verifyRelease!=='function'||
-    typeof verifyReview!=='function'||typeof receiptStore?.claim!=='function'||
+    typeof verifyReview!=='function'||typeof createPaidCover!=='function'||typeof receiptStore?.claim!=='function'||
     typeof receiptStore?.getOwned!=='function'||typeof salesStore?.getPublished!=='function')
    throw Error('STICKER_TOPIC_TRUSTED_OWNER_MISSING');
  const identity=async()=>{
@@ -64,7 +83,12 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
  async function publish({sellerId,productId,description=''}={}){
    const {product,topic}=await guard({sellerId,productId});
    const username=await identity();
-   const text=publicStickerText({product,description});
+   const text=stickerPaidCaption({product,description});
+   // A real sticker image is converted to a paid PHOTO cover; this is not a video
+   // product. Cover conversion happens before any durable claim or Telegram send.
+   const cover=await createPaidCover(product);
+   if(!(cover instanceof Uint8Array)||cover.byteLength<1||cover.byteLength>10000000)
+     throw Error('STICKER_PAID_PHOTO_COVER_INVALID');
    const claimed=await receiptStore.claim({productId,sellerId,topic,text});
    if(!claimed.claimed){
      if(claimed.status==='sent'&&Number(claimed.messageId)>0)
@@ -74,10 +98,14 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
      throw Error('STICKER_TOPIC_POST_NEEDS_RECONCILE');
    }
    try{
-     const sent=await telegramApi('sendMessage',{
-       chat_id:topic.chatId,message_thread_id:topic.threadId,text,
-       reply_markup:{inline_keyboard:[[{text:'⭐ 購入条件・Stars決済へ',
-         url:'https://t.me/'+username+'?start=buy_'+productId}]]}
+     const sent=await telegramApi('sendPaidMedia',{
+       chat_id:topic.chatId,message_thread_id:topic.threadId,
+       star_count:Number(product.price_stars),
+       media:[{type:'photo',media:'attach://sticker_cover'}],
+       sticker_cover_bytes:cover,
+       payload:'stkmedia_'+productId,caption:text,
+       reply_markup:{inline_keyboard:[[{text:'📦 ステッカーを受け取る',
+         url:'https://t.me/'+username+'?start=claim_'+productId}]]}
      });
      if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0)
        throw Error('STICKER_TOPIC_SEND_UNKNOWN');
@@ -97,12 +125,12 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    const product=await salesStore.getPublished(productId);
    if(!product||String(product.seller_user_id)!==String(sellerId))
      throw Error('STICKER_TOPIC_PRODUCT_OWNER_MISMATCH');
-   const username=await identity(),text=publicStickerText({product,description});
+   const username=await identity(),text=stickerPaidCaption({product,description});
    try{
-     const r=await telegramApi('editMessageText',{
+     const r=await telegramApi('editMessageCaption',{
        chat_id:Number(current.chat_id),message_id:Number(current.telegram_message_id),
-       text,reply_markup:{inline_keyboard:[[{text:'⭐ 購入条件・Stars決済へ',
-         url:'https://t.me/'+username+'?start=buy_'+productId}]]}
+       caption:text,reply_markup:{inline_keyboard:[[{text:'📦 ステッカーを受け取る',
+         url:'https://t.me/'+username+'?start=claim_'+productId}]]}
      });
      if(!r)throw Error('STICKER_TOPIC_EDIT_NOT_CONFIRMED');
      await receiptStore.edited(productId,sellerId,text);

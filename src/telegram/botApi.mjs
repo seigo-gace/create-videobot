@@ -2,7 +2,7 @@
  * Telegram Bot API HTTPS transport. Only explicit allowed methods are exposed.
  * Do not log request URL: it contains the Bot Token.
  */
-const METHODS = new Set(['getMe', 'sendPaidMedia', 'sendMediaGroup', 'deleteMessage', 'getFile', 'getStarTransactions', 'getMyName', 'getMyDescription', 'getMyShortDescription', 'getMyCommands', 'getWebhookInfo', 'getUpdates', 'setWebhook', 'setMyName', 'setMyDescription', 'setMyShortDescription', 'setMyCommands', 'sendMessage', 'editMessageText', 'answerCallbackQuery', 'uploadStickerFile', 'getStickerSet', 'createNewStickerSet', 'addStickerToSet', 'replaceStickerInSet', 'deleteStickerFromSet', 'setStickerPositionInSet', 'setStickerEmojiList', 'setStickerSetTitle', 'deleteStickerSet', 'sendInvoice', 'answerPreCheckoutQuery', 'sendSticker', 'getChat', 'getChatMember', 'pinChatMessage']);
+const METHODS = new Set(['editMessageCaption', 'getMe', 'sendPaidMedia', 'sendMediaGroup', 'deleteMessage', 'getFile', 'getStarTransactions', 'getMyName', 'getMyDescription', 'getMyShortDescription', 'getMyCommands', 'getWebhookInfo', 'getUpdates', 'setWebhook', 'setMyName', 'setMyDescription', 'setMyShortDescription', 'setMyCommands', 'sendMessage', 'editMessageText', 'answerCallbackQuery', 'uploadStickerFile', 'getStickerSet', 'createNewStickerSet', 'addStickerToSet', 'replaceStickerInSet', 'deleteStickerFromSet', 'setStickerPositionInSet', 'setStickerEmojiList', 'setStickerSetTitle', 'deleteStickerSet', 'sendInvoice', 'answerPreCheckoutQuery', 'sendSticker', 'getChat', 'getChatMember', 'pinChatMessage']);
 export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeoutMs=8000}) {
  if(typeof token!=='string' || !/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)) throw new Error('invalid Bot Token');
  if(typeof fetchImpl!=='function') throw new Error('fetch implementation required');
@@ -13,7 +13,21 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
   // Telegram sticker-file upload is multipart, while all existing methods
   // remain JSON. Keep one authenticated/sanitized transport for both.
   let body,headers;
-  if(method==='uploadStickerFile'){
+  if(method==='sendPaidMedia'&&params.sticker_cover_bytes!==undefined){
+    const cover=params.sticker_cover_bytes;
+    if(!(cover instanceof Uint8Array)||cover.byteLength<1||cover.byteLength>10_000_000||
+       !Array.isArray(params.media)||params.media.length!==1||
+       params.media[0]?.type!=='photo'||
+       params.media[0]?.media!=='attach://sticker_cover')
+      throw new Error('STICKER_PAID_PHOTO_UPLOAD_INVALID');
+    const form=new FormData();
+    for(const [key,value] of Object.entries(params)){
+      if(key==='sticker_cover_bytes')continue;
+      form.set(key,typeof value==='object'?JSON.stringify(value):String(value));
+    }
+    form.set('sticker_cover',new Blob([cover],{type:'image/jpeg'}),'sticker-cover.jpg');
+    body=form;headers=undefined;
+  } else if(method==='uploadStickerFile'){
     const bytes=params.sticker;
     const fmt=params.sticker_format;
     if(!Number.isSafeInteger(params.user_id)||params.user_id<=0||
