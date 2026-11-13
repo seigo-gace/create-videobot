@@ -40,7 +40,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
   try{url=new URL(stickerShopBaseUrl);}catch{throw Error('STICKER_SHOP_BASE_URL_INVALID');}
   if(url.protocol!=='https:'||url.username||url.password||url.port||
      url.search||url.hash||url.pathname!=='/'||
-     !/(^|\.)g-acebot\.com$/.test(url.hostname))
+     !/(^|\.)hentaigay\.org$/.test(url.hostname))
    throw Error('STICKER_SHOP_BASE_URL_INVALID');
   return url.origin;
  };
