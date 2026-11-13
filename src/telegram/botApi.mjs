@@ -54,6 +54,18 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
   // Only known edit-screen failures may be converted into predictable UI
   // outcomes. Other Telegram descriptions can contain user-supplied data;
   // never pass them through to logs or the caller.
+  // Telegram can confirm that the existing paid-media caption/keyboard
+  // already matches the requested appearance. Treat only that exact reply
+  // as an idempotent success; do not mark a paid Topic post as UNKNOWN.
+  if(response.status===400&&
+     (method==='editMessageCaption'||method==='editMessageReplyMarkup')){
+    let reply;
+    try{reply=await response.json();}catch{throw new Error('Telegram API request failed');}
+    const description=typeof reply?.description==='string'?reply.description.toLowerCase():'';
+    if(/^bad request: message is not modified$/.test(description))
+      return {alreadyCurrent:true};
+    throw new Error('Telegram API request failed');
+  }
   if(response.status===400&&method==='editMessageText'){
     let reply;
     try{reply=await response.json();}catch{throw new Error('Telegram API request failed');}

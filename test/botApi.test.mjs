@@ -59,3 +59,24 @@ test('Telegram server failure is not a confirmed sticker rejection',async()=>{
    ()=>api('addStickerToSet',{user_id:42,name:'set_by_CreateVdobot',sticker:{}}),
    error=>error.definitiveTelegramRejection!==true);
 });
+
+test('native sticker photo edit treats exact Telegram no-op as a confirmed current state',async()=>{
+ const api=createTelegramBotApi({token,fetchImpl:async()=>({
+   status:400,json:async()=>({ok:false,description:'Bad Request: message is not modified'})
+ })});
+ for(const [method,args] of [
+  ['editMessageCaption',{chat_id:-1002373696859,message_id:4663,caption:'🎨 ちびキャラ'}],
+  ['editMessageReplyMarkup',{chat_id:-1002373696859,message_id:4663}]
+ ]){
+  const result=await api(method,args);
+  assert.deepEqual(result,{alreadyCurrent:true});
+ }
+});
+test('paid photo edit rejects any non-idempotent 400 without leaking Telegram descriptions',async()=>{
+ const api=createTelegramBotApi({token,fetchImpl:async()=>({
+   status:400,json:async()=>({ok:false,description:'Bad Request: private content '+token})
+ })});
+ for(const method of ['editMessageCaption','editMessageReplyMarkup'])
+  await assert.rejects(()=>api(method,{chat_id:-1002373696859,message_id:4663}),
+   error=>error.message==='Telegram API request failed'&&!error.message.includes(token));
+});
