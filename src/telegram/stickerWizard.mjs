@@ -181,6 +181,11 @@ function panel(session,revision){
   };
   throw new Error('STICKER_SCREEN_UNKNOWN');
 }
+// Shared sticker landing panel for exits from the sales flow. Preserve pending
+// registration receipts and never jump to the video creator home.
+export function stickerLandingPanel(session,revision){
+  return panel({...session,screen:'sticker_choose'},revision);
+}
 function mediaFileId(message){
   const id=message?.document?.file_id??message?.animation?.file_id??
     message?.video?.file_id??(Array.isArray(message?.photo)?message.photo.at(-1)?.file_id:null);
