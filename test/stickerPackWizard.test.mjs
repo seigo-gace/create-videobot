@@ -162,3 +162,16 @@ test('STK-02 item replacement uses durable upload checkpoint before Telegram mut
   assert.equal(f.items()[0].file_unique_id,'new_unique');
   assert.equal(f.state().draft.paidVideo.fileId,'must-preserve');
 });
+
+test('STK-02 selected pack exposes native Telegram contents preview with correct pack identity',async()=>{
+ const f=fixture();
+ await f.enter();
+ const panel=f.panels.at(-1);
+ assert.equal(panel.text.includes('2個'),true);
+ const links=panel.reply_markup.inline_keyboard.flat().filter(b=>b.url);
+ assert.deepEqual(links,[{text:'👀 パックの中身を見る',
+   url:'https://t.me/addstickers/s42_112233aabb_by_CreateVdobot'}]);
+ await f.click('sticker:items');
+ const itemLinks=f.panels.at(-1).reply_markup.inline_keyboard.flat().filter(b=>b.url);
+ assert.deepEqual(itemLinks,links);
+});
