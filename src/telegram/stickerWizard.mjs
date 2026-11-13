@@ -45,16 +45,14 @@ function panel(session,revision){
       '二重登録を防ぐため元の記録を保存しています。登録状態の確認から再開できます。',
     reply_markup:{inline_keyboard:[
       [btn('🔄 登録状態を確認','sticker:resume')],
-      [btn('📦 マイパックを見る','sticker:packs')],
-      [btn('↩ メニューへ','sticker:cancel')]
+      [btn('📦 マイパックを見る','sticker:packs')]
     ]}
   };
   if(session.screen==='sticker_choose')return {
     text:'🎨 ステッカー・絵文字作成\n作成する種類を選択してください。',
     reply_markup:{inline_keyboard:[
       [btn('🎨 ステッカー','sticker:type:regular'),btn('😀 絵文字','sticker:type:custom_emoji')],
-      [btn('📦 マイパック','sticker:packs')],
-      [btn('↩ 戻る','sticker:cancel')]
+      [btn('📦 マイパック','sticker:packs')]
     ]}
   };
   if(session.screen==='sticker_packs') {
@@ -170,7 +168,7 @@ function panel(session,revision){
     text:'✅ Telegramパックへの登録を確認しました。\n'+d.link+
       '\n\n続けて同じパックに追加できます。',
     reply_markup:{inline_keyboard:[
-      [btn('➕ 続けて作成','sticker:again'),btn('↩ メニューへ','sticker:cancel')]
+      [btn('➕ 続けて作成','sticker:again'),btn('↩ ステッカーメニュー','sticker:cancel')]
     ]}
   };
   throw new Error('STICKER_SCREEN_UNKNOWN');
@@ -329,7 +327,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       if(old?.stickerPending?.status==='needs_reconcile'&&old.stickerDeferred&&
          messageId===old.screenMessageId&&
          data==='sticker:cancel|r'+old.revision)
-        return persist(id,old,{screen:'home',stickerDeferred:true,stickerHelp:null});
+        return persist(id,old,{screen:'sticker_choose',stickerDeferred:true,stickerHelp:null});
       // An unresolved registration must not swallow the Topic entry or
       // block read-only inspection of existing packs. No new write is allowed.
       if(old?.stickerPending?.status==='needs_reconcile'&&
@@ -484,7 +482,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       if(action==='sticker:replace'&&old.screen==='sticker_ready')
         return persist(id,old,{screen:'sticker_input',stickerHelp:null,
           stickerDraft:{...draft,fileId:null}});
-      if(action==='sticker:cancel')return persist(id,old,{screen:'home',stickerDraft:null,waiting:null});
+      if(action==='sticker:cancel')return persist(id,old,{screen:'sticker_choose',stickerDraft:null,waiting:null});
       if(action==='sticker:back')return persist(id,old,{
         screen:old.screen==='sticker_ready'?'sticker_input':'sticker_choose',
         stickerDraft:old.screen==='sticker_ready'?{...draft,fileId:null}:null,
