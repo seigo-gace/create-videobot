@@ -4,6 +4,7 @@ import {createPostgresStickerInventory} from '../stickers/pgStickerInventory.mjs
 import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
 import {createPostgresStickerGifts} from '../stickers/pgStickerGifts.mjs';
 import {createPostgresStickerTopicPosts} from '../stickers/pgStickerTopicPosts.mjs';
+import {createPostgresStickerPaidPhoto} from '../stickers/pgStickerPaidPhoto.mjs';
 const {Pool}=pg;
 if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
    !/^postgres:\/\/videobot_ci:ci_only_not_a_secret@127\.0\.0\.1:5432\/videobot_migration_ci$/.test(process.env.CI_VIDEO_DB_DSN||'')){
@@ -248,6 +249,38 @@ try {
  if(!topicClaim.claimed||repeatClaim.claimed||repeatClaim.status!=='sending')
    throw new Error('STICKER_TOPIC_POST_CLAIM_BROKEN');
  await topicStore.recorded(sold.productId,42,444);
+  const nativePayload='stkmedia_'+sold.productId;
+  const photo=createPostgresStickerPaidPhoto({pool,telegramApi:async(method)=>{
+    if(method!=='getStarTransactions')throw Error('STICKER_PAID_PHOTO_UNEXPECTED_METHOD');
+    return {transactions:[{id:'ci_native_sticker_tx_1',amount:50,
+      source:{type:'user',transaction_type:'paid_media_payment',
+      paid_media_payload:nativePayload,user:{id:198}}}]};
+  }});
+  const update={update_id:20261113,purchased_paid_media:{
+    paid_media_payload:nativePayload,from:{id:198}}};
+  const recorded=await photo.capturePurchase(update);
+  const replay=await photo.capturePurchase(update);
+  if(recorded.recorded!==true||recorded.duplicate||!replay.duplicate||
+     recorded.saleId!==replay.saleId)throw Error('STICKER_PAID_PHOTO_IDEMPOTENCY_BROKEN');
+  const rows=await pool.query(
+    'SELECT stars,management_fee_tenths,creator_share_tenths FROM videobot_sticker_paid_photo_sales WHERE sale_id=$1',
+    [recorded.saleId]);
+  if(Number(rows.rows[0]?.stars)!==50||
+     Number(rows.rows[0]?.management_fee_tenths)!==150||
+     Number(rows.rows[0]?.creator_share_tenths)!==350)
+    throw Error('STICKER_PAID_PHOTO_30_70_BROKEN');
+  const entitlement=await photo.getEntitlement({buyerId:198,productId:sold.productId});
+  const foreign=await photo.getEntitlement({buyerId:199,productId:sold.productId});
+  if(!entitlement||foreign!==null)throw Error('STICKER_PAID_PHOTO_OWNER_LEAK');
+  const claimed=await photo.claimItem({saleId:recorded.saleId,buyerId:198,attempt:1,index:0});
+  const double=await photo.claimItem({saleId:recorded.saleId,buyerId:198,attempt:1,index:0});
+  if(!claimed||double!==null)throw Error('STICKER_PAID_PHOTO_DELIVERY_DUPLICATE');
+  await photo.itemSent({saleId:recorded.saleId,attempt:1,index:0,messageId:733});
+  const next=await photo.redeliver({saleId:recorded.saleId,buyerId:198});
+  if(next.attempt!==2||
+     (await photo.deliveryRows({saleId:recorded.saleId,attempt:2})).length!==2)
+    throw Error('STICKER_PAID_PHOTO_REDELIVERY_BROKEN');
+  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_PAID_PHOTO=PASS\\n');
  const ownedTopic=await topicStore.getOwned(sold.productId,42);
  const foreignTopic=await topicStore.getOwned(sold.productId,99);
  if(ownedTopic.status!=='sent'||Number(ownedTopic.telegram_message_id)!==444||foreignTopic!==null)
