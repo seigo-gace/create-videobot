@@ -32,6 +32,18 @@ function catalogText({product,description=''}={}){
  return '🎨 '+product.title+'\n⭐ '+Number(product.price_stars)+' Stars · '+items.length+'個'+
    (description?'\n'+description:'');
 }
+function catalogKeyboard(product,username){
+ validProduct(product);
+ const pack=product.pack_name,kind=product.kind;
+ if(typeof pack!=='string'||!/^[A-Za-z0-9_]{1,64}$/.test(pack)||
+    !['regular','custom_emoji'].includes(kind))
+   throw Error('STICKER_CATALOG_PREVIEW_PACK_INVALID');
+ const setUrl='https://t.me/'+(kind==='custom_emoji'?'addemoji/':'addstickers/')+pack;
+ return {inline_keyboard:[
+   [{text:'🎨 パック全体を見る',url:setUrl}],
+   [{text:'⭐ Starsで購入',url:'https://t.me/'+username+'?start=buy_'+product.product_id}]
+ ]};
+}
 function topicGuard(topic){
  if(!topic||topic.board!=='video_chat'||topic.purpose!=='sticker'||
     topic.enabled!==true||topic.verified!==true||
@@ -120,8 +132,7 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
          chat_id:topic.chatId,message_thread_id:topic.threadId,
          photo:'attach://sticker_cover',sticker_cover_bytes:cover,
          caption:text,
-         reply_markup:{inline_keyboard:[[{text:'📦 絵柄を見る・Starsで購入',
-           url:'https://t.me/'+bot.username+'?start=buy_'+productId}]]}
+         reply_markup:catalogKeyboard(product,bot.username)
        }):await telegramApi('sendPaidMedia',{
          chat_id:topic.chatId,message_thread_id:topic.threadId,
          star_count:Number(product.price_stars),
@@ -161,8 +172,8 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    const target={chat_id:Number(current.chat_id),message_id:Number(current.telegram_message_id)};
    try{
      const r=catalogMode?await telegramApi('editMessageCaption',{
-        ...target,caption:text,reply_markup:{inline_keyboard:[[{text:'📦 絵柄を見る・Starsで購入',
-          url:'https://t.me/'+(await identity()).username+'?start=buy_'+productId}]]}
+        ...target,caption:text,
+        reply_markup:catalogKeyboard(product,(await identity()).username)
        }):await telegramApi('editMessageCaption',{...target,caption:text});
      if(!r)throw Error('STICKER_TOPIC_EDIT_NOT_CONFIRMED');
      // Remove the old deep-link button on this SAME existing paid-media post.
