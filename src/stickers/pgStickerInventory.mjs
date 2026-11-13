@@ -95,7 +95,7 @@ export function createPostgresStickerInventory(pool){
       return q.rows?.[0]??null;
     },
     async confirmRegistration({operationId,ownerId,packName,kind:packKind,
-      title,format,fileId,fileUniqueId,position,emoji='🙂',isDefault=true,freshPackProof=false}){
+      title,format,fileId,fileUniqueId,position,emoji='🙂',isDefault=true,freshPackProof=false,acknowledgedAppendProof=false}){
       const o=owner(ownerId),op=requiredText(operationId,'OPERATION',128),
         name=requiredText(packName,'PACK_NAME',64),type=kind(packKind),
         t=requiredText(title,'TITLE',64),file=requiredText(fileId,'FILE'),
@@ -115,9 +115,11 @@ export function createPostgresStickerInventory(pool){
         // from uploadStickerFile. This is valid ONLY for a freshly named,
         // verified one-item pack; an existing pack requires exact identity.
         const normalized=row?.file_unique_id!==unique;
-        const allowNormalized=normalized&&freshPackProof===true&&isDefault===true&&
-          row?.uploaded_file_unique_id===row?.file_unique_id&&
-          ['submission_started','needs_reconcile'].includes(row?.phase);
+        const allowNormalized=normalized&&row?.uploaded_file_unique_id===row?.file_unique_id&&
+          ((freshPackProof===true&&isDefault===true&&
+            ['submission_started','needs_reconcile'].includes(row?.phase))||
+           (acknowledgedAppendProof===true&&isDefault===false&&
+            row?.phase==='submission_started'));
         if(!row||row.pack_name!==name||row.kind!==type||row.format!==format||
            (normalized&&!allowNormalized)||
            !['uploaded','submission_started','needs_reconcile','registered'].includes(row.phase))
