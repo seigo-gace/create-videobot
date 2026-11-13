@@ -326,3 +326,27 @@ test('recipient with an unresolved sticker pack mutation cannot redeem until rec
  assert.equal(gift.recipientId,null);
  assert.equal(f.state(80).screen,'sticker_reconcile');
 });
+
+test('sales cancel returns to sticker menu, never paid-video home',async()=>{
+ const f=fixture();
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ assert.equal(f.state(81).screen,'sticker_sale_offer');
+ await f.flow.handle(f.cb(81,'sale:cancel'));
+ assert.equal(f.state(81).screen,'sticker_choose');
+ assert.match(f.panels.at(-1).text,/ステッカー・絵文字/);
+ assert.doesNotMatch(f.panels.at(-1).text,/クリエータービデオ/);
+ assert.deepEqual(f.state(81).draft,{paidVideo:{id:'preserve'}});
+});
+
+test('sale exit preserves unresolved sticker registration and sticker recovery screen',async()=>{
+ const f=fixture();
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ const pending={status:'needs_reconcile',kind:'regular',nonce:'deadbeef'};
+ f.seed(81,{stickerPending:pending});
+ await f.flow.handle(f.cb(81,'sale:cancel'));
+ assert.equal(f.state(81).screen,'sticker_choose');
+ assert.deepEqual(f.state(81).stickerPending,pending);
+ assert.match(f.panels.at(-1).text,/登録が確認待ち/);
+ assert.ok(f.panels.at(-1).reply_markup.inline_keyboard.some(row=>
+   row.some(button=>button.callback_data?.startsWith('sticker:resume'))));
+});
