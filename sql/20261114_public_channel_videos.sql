@@ -8,6 +8,9 @@ CREATE TABLE IF NOT EXISTS videobot_public_channel_videos (
   file_unique_id TEXT,
   message_date TIMESTAMPTZ,
   caption TEXT NOT NULL DEFAULT '',
+  caption_ja TEXT NOT NULL DEFAULT '',
+  thumbnail_1 TEXT NOT NULL DEFAULT '',
+  thumbnail_2 TEXT NOT NULL DEFAULT '',
   downloaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (channel_id,message_id)
 );
