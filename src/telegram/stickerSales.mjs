@@ -1,8 +1,20 @@
 import {randomBytes} from 'node:crypto';
 import {menuPage} from './menuPanel.mjs';
+import {PRICE_PRESETS} from './creatorUi.mjs';
+import {splitStarsExact,formatTenths,STICKER_MANAGEMENT_FEE_POLICY_ID} from '../sales/managementFee.mjs';
 
 const button=(text,action,rev)=>({text,callback_data:action+'|r'+rev});
 const MONEY_TERMS='Telegramの公開パックは購入者だけに限定できず、第三者への再共有も防止できません。購入対象は現時点の素材版です。素材はBotのDMへ送ります。購入済みの再取得に追加Starsは請求しませんが、Telegramのファイル保持が失効した素材の再送は保証できません。通常の自己都合返金メニューはありません。公式の決済異議は /paysupport で受け付けます。';
+function stickerFeeDisclosure(stars=null){
+ const rows=['運営管理費：売上の30%／投稿者分：70%'];
+ if(stars!==null){
+  const s=splitStarsExact(stars);
+  rows.push('価格'+stars+' Stars → 管理費'+formatTenths(s.managementFeeTenths)+' Stars／投稿者分'+formatTenths(s.creatorShareTenths)+' Stars（計算上）');
+  if(!s.integralSettlementReady)rows.push('※ 1 Star未満の精算端数は未確定です。');
+ }
+ rows.push('※ 投稿者分の実払出は別途確認が必要です。');
+ return rows.join('\n');
+}
 const validId=id=>typeof id==='string'&&/^sp_[a-f0-9]{24}$/.test(id);
 function actor(update){
  const m=update?.callback_query?.message??update?.message;
@@ -28,15 +40,22 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    let text,keyboard=[];
    switch(session.screen){
     case 'sticker_sale_price':
-      text='💰 パック販売価格を1〜25000 Starsの整数で送信してください。動画の30%管理費はこの商品へ適用しません。';
-      keyboard=[[b('↩ メニューへ','sale:cancel')]];break;
+      text='⭐ '+d.title+'\n販売価格を選択してください。\n'+stickerFeeDisclosure();
+      keyboard=[
+        PRICE_PRESETS.slice(0,3).map(n=>b(String(n),'sale:price:'+n)),
+        [...PRICE_PRESETS.slice(3).map(n=>b(String(n),'sale:price:'+n)),b('自分で決める','sale:custom_price')],
+        [b('↩ メニューへ','sale:cancel')]
+      ];break;
+    case 'sticker_sale_custom_price':
+      text='⭐ '+d.title+'\n価格を1〜25000 Starsの整数で送信してください。\n'+stickerFeeDisclosure();
+      keyboard=[[b('↩ 価格を選び直す','sale:price')]];break;
     case 'sticker_sale_confirm':
-      text='💰 '+d.title+'\n価格：'+d.price+' Stars\n'+MONEY_TERMS+
-        '\n\n公開する商品版は後から上書きしません。';
+      text='💰 '+d.title+'\n'+stickerFeeDisclosure(d.price)+'\n'+MONEY_TERMS+
+        '\n\n［この版を公開］で管理費30%・投稿者分70%に同意します。公開版は後から上書きしません。';
       keyboard=[[b('✅ この版を公開','sale:publish')],[b('↩ 価格を修正','sale:price'),b('中止','sale:cancel')]];break;
     case 'sticker_sale_published':
       text='✅ 商品版を登録しました。購入者向けリンク：\n'+d.link+
-        '\n\n商品版は固定され、パックの編集で購入者の版が変わることはありません。'+
+        '\n\n'+stickerFeeDisclosure(d.price)+'\n商品版は固定され、パックの編集で購入者の版が変わることはありません。'+
         (d.topicStatus==='sent'?'\n\n投稿先：'+d.groupTitle+'／'+d.topicTitle:
          '\n\n⚠️ 投稿先Topicの接続・公開をまだ確認できません。Topicへの投稿完了ではありません。');
       keyboard=[
@@ -156,7 +175,8 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
  async function finishPublish(userId,d){
    const product=await salesStore.getPublished(d.productId);
    if(!product||String(product.seller_user_id)!==String(userId)||
-      product.pack_name!==d.packName||Number(product.price_stars)!==d.price)
+      product.pack_name!==d.packName||Number(product.price_stars)!==d.price||
+      Number(product.management_fee_bps)!==3000||product.fee_policy_id!==STICKER_MANAGEMENT_FEE_POLICY_ID||!product.fee_terms_accepted_at)
      throw Error('STICKER_SALE_PUBLISH_RECEIPT_MISMATCH');
    const me=await api('getMe',{});
    if(me?.is_bot!==true||typeof me.username!=='string')
@@ -171,7 +191,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    const existing=await salesStore.getPublished(d.productId);
    if(!existing)
      await publishSnapshot({sellerId:userId,packName:d.packName,
-       priceStars:d.price,productId:d.productId});
+       priceStars:d.price,productId:d.productId,sellerFeeAccepted:d.feeAccepted===true});
    return finishPublish(userId,d);
  }
  async function beginSell({ownerId,packName}){
@@ -405,15 +425,16 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
            }
          }finally{await api('deleteMessage',{chat_id:userId,message_id:m.message_id}).catch(()=>{});}
        }
-       if(old?.screen==='sticker_sale_price'&&old?.stickerSale?.mode==='seller'){
+       if(['sticker_sale_price','sticker_sale_custom_price'].includes(old?.screen)&&old?.stickerSale?.mode==='seller'){
          const {userId}=actor(update);
          try{
+           if(old.screen==='sticker_sale_price')return show(userId,old,{screen:'sticker_sale_price'});
            const value=String(m.text??'').trim();
            const stars=Number(value);
            if(!/^[1-9][0-9]{0,4}$/.test(value)||stars>25000)
-             return show(userId,old,{screen:'sticker_sale_price'});
+             return show(userId,old,{screen:'sticker_sale_custom_price'});
            return show(userId,old,{screen:'sticker_sale_confirm',
-             stickerSale:{...old.stickerSale,price:stars}});
+             stickerSale:{...old.stickerSale,price:stars,priceMode:'custom',feeAccepted:false}});
          }finally{await api('deleteMessage',{chat_id:userId,message_id:m.message_id}).catch(()=>{});}
        }
      }
@@ -497,8 +518,17 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    }
    if(action==='sale:price'&&d.mode==='seller')
      return show(userId,old,{screen:'sticker_sale_price'});
+   if(action==='sale:custom_price'&&d.mode==='seller'&&old.screen==='sticker_sale_price')
+     return show(userId,old,{screen:'sticker_sale_custom_price'});
+   if(action.startsWith('sale:price:')&&d.mode==='seller'&&old.screen==='sticker_sale_price'){
+     const stars=Number(action.slice('sale:price:'.length));
+     if(!PRICE_PRESETS.includes(stars))return {handled:true,staleButton:true};
+     return show(userId,old,{screen:'sticker_sale_confirm',
+       stickerSale:{...d,price:stars,priceMode:'preset',feeAccepted:false}});
+   }
    if(action==='sale:publish'&&old.screen==='sticker_sale_confirm'&&d.mode==='seller'){
-     const pending={...d,productId:'sp_'+randomBytes(12).toString('hex')};
+     if(!Number.isSafeInteger(d.price)||d.price<1||d.price>25000)return {handled:true,staleButton:true};
+     const pending={...d,feeAccepted:true,productId:'sp_'+randomBytes(12).toString('hex')};
      await sessionStore.write(userId,old.revision,{
        ...old,revision:old.revision+1,screen:'sticker_sale_publishing',
        stickerSale:pending});

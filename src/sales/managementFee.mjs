@@ -10,6 +10,7 @@ export const MANAGEMENT_FEE_PERCENT=30;
 export const CREATOR_SHARE_PERCENT=70;
 export const MANAGEMENT_FEE_BASIS_POINTS=3000;
 export const MANAGEMENT_FEE_POLICY_ID='video-admin-30-20261107';
+export const STICKER_MANAGEMENT_FEE_POLICY_ID='sticker-admin-30-20261113';
 
 export function splitStarsExact(grossStars) {
   if(!Number.isSafeInteger(grossStars)||grossStars<0||grossStars>Number.MAX_SAFE_INTEGER/10)

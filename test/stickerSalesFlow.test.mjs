@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createStickerSalesFlow} from '../src/telegram/stickerSales.mjs';
+import {PRICE_PRESETS} from '../src/telegram/creatorUi.mjs';
 
 const productId='sp_'+'a'.repeat(24);
 const orderId='so_'+'b'.repeat(24);
@@ -22,9 +23,9 @@ function fixture(){
  let giftPrepares=0;
  const salesStore={
   getPublished:async id=>id===productId?{product_id:productId,title:'Demo pack',
-    price_stars:50,version:1,status:'published'}:
+    price_stars:50,version:1,status:'published',management_fee_bps:3000,fee_policy_id:'sticker-admin-30-20261113',fee_terms_accepted_at:'2026-11-13'}:
     sellerPublished?.productId===id?{product_id:id,pack_name:'pack',
-      seller_user_id:42,price_stars:50,version:1,title:'Demo pack',status:'published'}:null,
+      seller_user_id:42,price_stars:50,version:1,title:'Demo pack',status:'published',management_fee_bps:3000,fee_policy_id:'sticker-admin-30-20261113',fee_terms_accepted_at:'2026-11-13'}:null,
   reserveOrder:async({buyerId})=>{
     assert.equal(buyerId,81);
     if(phase==='none'){phase='prepared';return {order_id:orderId,price_stars:50,invoice_state:'prepared'};}
@@ -131,17 +132,30 @@ function fixture(){
    get invoiceCount(){return invoiceCount;}};
 }
 
-test('seller publishes a fixed snapshot through the same DM session; no fee is added',async()=>{
+test('seller chooses a preset and accepts 30% fee in the same DM',async()=>{
  const f=fixture();
  await f.flow.beginSell({ownerId:42,packName:'pack'});
  assert.equal(f.state(42).screen,'sticker_sale_price');
- await f.flow.handle(f.msg(42,'50'));
+ await f.flow.handle(f.cb(42,'sale:price:50'));
  assert.equal(f.state(42).screen,'sticker_sale_confirm');
  await f.flow.handle(f.cb(42,'sale:publish'));
  assert.equal(f.state(42).screen,'sticker_sale_published');
  assert.match(f.state(42).stickerSale.link,/start=buy_sp_/);
  assert.equal(f.state(42).draft.paidVideo.id,'preserve');
  assert.equal(f.calls.filter(c=>c.method==='sendInvoice').length,0);
+});
+test('sticker Stars presets and custom option use the same creator price contract',async()=>{
+ assert.deepEqual(PRICE_PRESETS,[50,100,300,500,1000]);
+ const f=fixture();
+ await f.flow.beginSell({ownerId:42,packName:'pack'});
+ await f.flow.handle(f.cb(42,'sale:custom_price'));
+ assert.equal(f.state(42).screen,'sticker_sale_custom_price');
+ await f.flow.handle(f.msg(42,'101'));
+ assert.equal(f.state(42).stickerSale.price,101);
+ await f.flow.handle(f.cb(42,'sale:price'));
+ await f.flow.handle(f.cb(42,'sale:price:300'));
+ assert.equal(f.state(42).stickerSale.price,300);
+ assert.equal(f.state(42).stickerSale.priceMode,'preset');
 });
 test('buyer must accept terms before a single XTR invoice, then payment delivers',async()=>{
  const f=fixture();
