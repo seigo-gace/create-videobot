@@ -185,7 +185,7 @@ test('negative readback never retries registration or clears unknown state',asyn
  assert.equal(writes,1);
 });
 
-test('interrupted registration restores read-only reconciliation screen on /start',async()=>{
+test('interrupted registration restores reconciliation screen on sticker deep link',async()=>{
  const f=fixture();
  const state=f.state();
  state.revision=6;
