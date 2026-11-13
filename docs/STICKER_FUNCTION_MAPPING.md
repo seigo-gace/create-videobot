@@ -76,7 +76,7 @@
 ## 実装・検証の記録契約
 各機能Issueに (1)採用仕様と決定者 (2)Source path・commitとOwner (3)CI run (4)Host request/稼働 HEAD (5)Telegram本番 readback/受入 を分けて残す。UNKNOWNやNOT_VERIFIEDを成功へ書き換えない。
 ソース変更は設計確認→実際の担当パスと依存を照合→変更→テスト→CI→Host→Telegramの順に実証。PRは実装の横断統合記録、Issueは機能別受入の入口。
-動画管理費30%は動画のみ確定。通常の返金申請UIなしと法令・Telegramの決済紛争対応は別。公開Telegramパックの購入者限定利用は保証しない。
+動画・ステッカー／絵文字とも販売管理費30%・出品者分70%（2026-11-13 Master確定）。通常の返金申請UIなしと法令・Telegramの決済紛争対応は別。公開Telegramパックの購入者限定利用は保証しない。
 
 ## 本番反映におけるSource所有境界（2026-11-12実測）
 

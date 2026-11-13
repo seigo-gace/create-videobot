@@ -12,13 +12,13 @@ if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
 const pool=new Pool({connectionString:process.env.CI_VIDEO_DB_DSN,max:1});
 try {
  const result=await applyCreatorSchema({pool});
- if(result.applied!==true||result.migrations!==13)throw new Error('thirteen migrations not confirmed');
+ if(result.applied!==true||result.migrations!==14)throw new Error('thirteen migrations not confirmed');
  const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts, to_regclass('videobot_sticker_products') IS NOT NULL AS products, to_regclass('videobot_sticker_orders') IS NOT NULL AS orders, to_regclass('videobot_sticker_delivery_items') IS NOT NULL AS deliveries, to_regclass('videobot_sticker_payment_support') IS NOT NULL AS support, to_regclass('videobot_sticker_topic_posts') IS NOT NULL AS topic_posts, to_regclass('videobot_sticker_gifts') IS NOT NULL AS gifts, to_regclass('videobot_sticker_gift_delivery_items') IS NOT NULL AS gift_deliveries");
  if(q.rows.length!==1||!Object.values(q.rows[0]).every(v=>v===true))
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==13)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==14)throw new Error('schema re-application invalid');
  // Exercise the actual Node adapter against PostgreSQL, not an in-memory fake.
  const inventory=createPostgresStickerInventory(pool);
  // Regression: a failed conversion/upload before the Telegram pack-write
@@ -117,16 +117,21 @@ try {
  const sales=createPostgresStickerSales(pool);
  const fixedProductId='sp_'+'a'.repeat(24);
  const sold=await sales.publish({sellerId:42,packName:name,set:snapshot,
-   priceStars:50,productId:fixedProductId});
+   priceStars:50,productId:fixedProductId,sellerFeeAccepted:true});
  const repeatedProduct=await sales.publish({sellerId:42,packName:name,set:snapshot,
-   priceStars:50,productId:fixedProductId});
+   priceStars:50,productId:fixedProductId,sellerFeeAccepted:true});
  if(repeatedProduct.productId!==sold.productId||repeatedProduct.duplicate!==true)
    throw new Error('STICKER_STARS_PRODUCT_IDEMPOTENCY_FAILED');
  const product=await sales.getPublished(sold.productId);
- if(!product||product.version!==1||product.price_stars!==50||product.items.length!==2)
+ if(!product||product.version!==1||product.price_stars!==50||product.items.length!==2||Number(product.management_fee_bps)!==3000||product.fee_policy_id!=='sticker-admin-30-20261113'||!product.fee_terms_accepted_at)
    throw new Error('STICKER_STARS_PRODUCT_PUBLISH_FAILED');
  const order=await sales.reserveOrder({productId:sold.productId,buyerId:99});
  const second=await sales.reserveOrder({productId:sold.productId,buyerId:99});
+ const feeRow=await pool.query('SELECT management_fee_bps,fee_policy_id,management_fee_tenths,creator_share_tenths FROM videobot_sticker_orders WHERE order_id=$1',[order.order_id]);
+ if(feeRow.rowCount!==1||Number(feeRow.rows[0].management_fee_bps)!==3000||
+    feeRow.rows[0].fee_policy_id!=='sticker-admin-30-20261113'||
+    Number(feeRow.rows[0].management_fee_tenths)!==150||
+    Number(feeRow.rows[0].creator_share_tenths)!==350)throw Error('STICKER_STARS_FEE_RECEIPT_INVALID');
  if(!order.newOrder||second.newOrder||order.order_id!==second.order_id)
    throw new Error('STICKER_STARS_ORDER_IDEMPOTENCY_FAILED');
  const premature=await sales.checkPreCheckout({
