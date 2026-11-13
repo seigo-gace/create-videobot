@@ -1,5 +1,5 @@
 import {randomBytes} from 'node:crypto';
-import {menuPage} from './menuPanel.mjs';
+import {stickerLandingPanel} from './stickerWizard.mjs';
 import {PRICE_PRESETS} from './creatorUi.mjs';
 import {splitStarsExact,formatTenths,STICKER_MANAGEMENT_FEE_POLICY_ID} from '../sales/managementFee.mjs';
 import {createStickerPaidPhotoFlow} from './stickerPaidPhotoFlow.mjs';
@@ -192,9 +192,9 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
  const paidPhotoFlow=paidPhotoStore?createStickerPaidPhotoFlow({api,sessionStore,show,paidPhotoStore}):null;
   async function exitSale(userId,old){
    const revision=old.revision+1;
-   const next={...old,revision,screen:'home',stickerSale:null};
+   const next={...old,revision,screen:'sticker_choose',stickerSale:null,stickerDeferred:old?.stickerPending?.status==='needs_reconcile'};
    await sessionStore.write(userId,old.revision,next);
-   const result=await screenTransport.show(userId,next.screenMessageId??null,menuPage('home'));
+   const result=await screenTransport.show(userId,next.screenMessageId??null,stickerLandingPanel(next,revision));
    if(result?.messageId!==next.screenMessageId)
      await sessionStore.setScreen(userId,revision,result.messageId);
    return {handled:true};
