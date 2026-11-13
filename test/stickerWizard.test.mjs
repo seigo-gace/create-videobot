@@ -99,7 +99,7 @@ test('unknown Telegram registration is locked and never auto retried',async()=>{
  assert.equal(resume.handled,true);
  assert.equal(f.state().screen,'sticker_reconcile');
  const genericStart=await broken.handle(f.msg({text:'/start'}));
- assert.equal(genericStart.registrationLocked,true);
+ assert.deepEqual(genericStart,{handled:false},'normal menu must remain available');
  const inputAttempt=await broken.handle(f.msg({document:{file_id:'fileghi'}}));
  assert.equal(inputAttempt.registrationLocked,true);
  assert.equal(f.state().screen,'sticker_reconcile');
@@ -204,7 +204,7 @@ test('interrupted registration restores reconciliation screen on sticker deep li
   publishSticker:async()=>{writes++;throw Error('should never publish');},
   reconcileSticker:async()=>({status:'registered',verified:true,name:'s42_112233aabbccddff_by_CreateVdobot'})
  });
- const res=await wizard.handle(f.msg({text:'/start'}));
+ const res=await wizard.handle(f.msg({text:'/start sticker'}));
  assert.equal(res.handled,true);
  assert.equal(state.screen,'sticker_reconcile');
  assert.equal(state.stickerPending.status,'needs_reconcile');
