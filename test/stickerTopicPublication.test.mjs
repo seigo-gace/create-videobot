@@ -115,20 +115,21 @@ test('STK-04 cannot mark a plain or non-paid message as a Stars sale',async()=>{
  assert.equal(f.writes.filter(x=>x.method==='sendPaidMedia').length,1);
 });
 
-test('Catalog mode publishes a pack list entry, never a Stars photo',async()=>{
+test('Catalog mode shows actual sticker cover and purchase entry',async()=>{
  const f=fixture();
  const api=async(method,params)=>{
   f.writes.push({method,params});
   if(method==='getMe')return {id:901,is_bot:true,username:'CreateVdobot'};
   if(method==='getChat')return {id:live.chatId,type:'supergroup',is_forum:true};
   if(method==='getChatMember')return {status:'administrator'};
-  if(method==='sendMessage')return {message_id:507,chat:{id:live.chatId},
+  if(method==='sendPhoto')return {message_id:507,chat:{id:live.chatId},
      message_thread_id:live.threadId,is_topic_message:true,from:{id:901}};
   throw Error('UNEXPECTED_TELEGRAM');
  };
  const pub=createStickerTopicPublisher({telegramApi:api,catalogMode:true,
   getVerifiedStickerTopic:async()=>live,verifyMembership:async()=>true,
   verifyRelease:async()=>true,verifyReview:async()=>true,
+  createPaidCover:async()=>new Uint8Array([255,216,255]),
   receiptStore:{claim:async()=>({claimed:true}),recorded:async()=>{},
    unknown:async()=>{},getOwned:async()=>null},
   salesStore:{getPublished:async()=>({product_id:productId,seller_user_id:42,
@@ -138,8 +139,11 @@ test('Catalog mode publishes a pack list entry, never a Stars photo',async()=>{
  });
  const result=await pub.publish({sellerId:42,productId});
  assert.equal(result.messageId,507);
- const post=f.writes.find(x=>x.method==='sendMessage');
- assert.ok(post);assert.match(post.params.text,/Stars/);
+ const post=f.writes.find(x=>x.method==='sendPhoto');
+ assert.ok(post);assert.match(post.params.caption,/Stars/);
+ assert.equal(post.params.photo,'attach://sticker_cover');
+ assert.deepEqual([...post.params.sticker_cover_bytes],[255,216,255]);
  assert.match(post.params.reply_markup.inline_keyboard[0][0].url,/start=buy_sp_/);
  assert.equal(f.writes.some(x=>x.method==='sendPaidMedia'),false);
+ assert.equal(f.writes.some(x=>x.method==='sendMessage'),false);
 });
