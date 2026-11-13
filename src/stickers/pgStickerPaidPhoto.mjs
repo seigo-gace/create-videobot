@@ -78,6 +78,12 @@ export function createPostgresStickerPaidPhoto({pool,telegramApi}={}){
    }catch(error){if(!committed)await cx.query('ROLLBACK').catch(()=>{});throw error;}
    finally{cx.release();}
   },
+  async hasTopicPublication(productId){
+   const r=await pool.query(
+     "SELECT status FROM videobot_sticker_topic_posts WHERE product_id=$1",
+     [productKey(productId)]);
+   return r.rows?.length>0&&r.rows[0].status!=='deleted';
+  },
   async getEntitlement({buyerId,productId}={}){
    const q=await pool.query(
      "SELECT s.sale_id,s.product_id,p.title,p.version,p.items FROM videobot_sticker_paid_photo_sales s JOIN videobot_sticker_products p ON p.product_id=s.product_id WHERE s.buyer_user_id=$1 AND s.product_id=$2 ORDER BY s.sale_id ASC LIMIT 1",

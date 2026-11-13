@@ -3,7 +3,7 @@
  */
 export function createStickerPaidPhotoFlow({api,sessionStore,show,paidPhotoStore}={}){
  if(typeof api!=='function'||typeof sessionStore?.read!=='function'||typeof show!=='function'||
-    !paidPhotoStore||['capturePurchase','getEntitlement','getSale','listPurchases','deliveryRows',
+    !paidPhotoStore||['capturePurchase','hasTopicPublication','getEntitlement','getSale','listPurchases','deliveryRows',
      'claimItem','itemSent','itemUnknown','redeliver'].some(k=>typeof paidPhotoStore[k]!=='function'))
   throw Error('STICKER_PAID_PHOTO_FLOW_UNAVAILABLE');
  async function receive(userId,saleId,attempt=1){

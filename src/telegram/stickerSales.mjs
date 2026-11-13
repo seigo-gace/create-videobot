@@ -55,7 +55,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
         '\n\n［この版を公開］で管理費30%・投稿者分70%に同意します。公開版は後から上書きしません。';
       keyboard=[[b('✅ この版を公開','sale:publish')],[b('↩ 価格を修正','sale:price'),b('中止','sale:cancel')]];break;
     case 'sticker_sale_published':
-      text='✅ 商品版を登録しました。購入者向けリンク：\n'+d.link+
+      text='✅ 商品版を登録しました。購入後の素材受取リンク：\n'+d.link+
         '\n\n'+stickerFeeDisclosure(d.price)+'\n商品版は固定され、パックの編集で購入者の版が変わることはありません。'+
         (d.topicStatus==='sent'?'\n\n投稿先：'+d.groupTitle+'／'+d.topicTitle:
          '\n\n⚠️ 投稿先Topicの接続・公開をまだ確認できません。Topicへの投稿完了ではありません。');
@@ -196,7 +196,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    const topic=await sendToTopic(userId,d);
    return show(userId,await sessionStore.read(userId),{
      screen:'sticker_sale_published',stickerSale:{...d,version:product.version,
-       link:'https://t.me/'+me.username+'?start=buy_'+d.productId,...topic}
+       link:'https://t.me/'+me.username+'?start=claim_'+d.productId,...topic}
    });
  }
  async function attemptPublish(userId,d){
@@ -222,7 +222,9 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      return {handled:true,unavailable:true};
    const old=await sessionStore.read(userId);
    if(old?.stickerPending||old?.stickerEditPending)return {handled:true,locked:true};
-   return show(userId,old,{screen:'sticker_sale_offer',stickerSale:{
+   if(paidPhotoStore&&await paidPhotoStore.hasTopicPublication(productId))
+      return paidPhotoFlow.claim(userId,productId);
+    return show(userId,old,{screen:'sticker_sale_offer',stickerSale:{
      mode:'buyer',productId:product.product_id,title:product.title,
      version:product.version,price:Number(product.price_stars)
    }});
