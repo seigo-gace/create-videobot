@@ -4,7 +4,7 @@
  const $=id=>document.getElementById(id);
  const pid=new URLSearchParams(location.search).get('product');
  const initData=app?.initData;
- let catalog,loading=false;
+ let catalog,loading=false,invoicePending=false,purchased=false;
  const notice=(value,error=false)=>{$('notice').textContent=value;$('notice').className=error?'error':'';};
  const progress=(value)=>{$('progress').textContent=value;};
  function invalid(){notice('CreateVdobotの「パックを見る」から開いてください。',true);}
@@ -19,6 +19,7 @@
  async function refreshOwnership(){
   const result=await request('/api/status');
   if(result.purchased){
+   purchased=true;invoicePending=false;
    $('buy').disabled=true;
    $('buy').textContent='購入済み ✓';
    progress('購入記録を確認しました。ステッカー素材はCreateVdobotのDMで受け取れます。');
@@ -27,12 +28,13 @@
   return false;
  }
  async function buy(){
-  if(loading||!catalog||!$('consent').checked)return;
+  if(loading||invoicePending||purchased||!catalog||!$('consent').checked)return;
   loading=true;$('buy').disabled=true;progress('TelegramのStars購入画面を準備しています…');
   try{
    const result=await request('/api/invoice',{acceptTerms:true});
    if(result.purchased){await refreshOwnership();return;}
    if(typeof result.invoiceUrl!=='string'||!app?.openInvoice)throw Error('invoice_unavailable');
+   invoicePending=true;
    app.openInvoice(result.invoiceUrl,async status=>{
     if(status==='paid'){
      progress('決済通知を確認しています…');
@@ -42,12 +44,14 @@
      }
      progress('決済通知の処理中です。二重購入せずCreateVdobotのDMをご確認ください。');
     }else if(status==='cancelled'||status==='failed'){
+     invoicePending=false;
      progress('購入は確定していません。再度開く場合も同じ請求書を使います。');
+     $('buy').disabled=!$('consent').checked||purchased;
     }
    });
   }catch{
    progress('購入画面を開けません。二重決済を防ぐため、CreateVdobotのDMで状態をご確認ください。');
-  }finally{loading=false;$('buy').disabled=!$('consent').checked;}
+  }finally{loading=false;$('buy').disabled=invoicePending||purchased||!$('consent').checked;}
  }
  async function main(){
   app?.ready?.();app?.expand?.();
@@ -71,9 +75,10 @@
     box.appendChild(img);grid.appendChild(box);
    }
    $('payment').hidden=false;
-   $('consent').addEventListener('change',()=>{$('buy').disabled=!$('consent').checked;});
+   $('consent').addEventListener('change',()=>{$('buy').disabled=invoicePending||purchased||!$('consent').checked;});
    $('buy').addEventListener('click',buy);
    if(catalog.purchased){
+    purchased=true;
     $('buy').textContent='購入済み ✓';$('buy').disabled=true;
     $('consent').disabled=true;
     progress('購入済みの商品です。追加のStarsは必要ありません。');
