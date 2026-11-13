@@ -5,7 +5,7 @@ import {PRICE_PRESETS} from '../src/telegram/creatorUi.mjs';
 
 const productId='sp_'+'a'.repeat(24);
 const orderId='so_'+'b'.repeat(24);
-function fixture(){
+function fixture(stickerShopBaseUrl=null){
  const states=new Map();
  const calls=[];
  const panels=[];
@@ -121,7 +121,7 @@ function fixture(){
  };
  const flow=createStickerSalesFlow({
    api,sessionStore:store,screenTransport:{show:async(_id,_old,panel)=>{panels.push(panel);return {messageId:301};}},
-   salesStore,giftStore,packInventory:{getOwnedPack:async()=>({pack_name:'pack',title:'Demo pack',kind:'regular'})},
+   salesStore,giftStore,stickerShopBaseUrl,packInventory:{getOwnedPack:async()=>({pack_name:'pack',title:'Demo pack',kind:'regular'})},
    publishSnapshot:async args=>{sellerPublished={productId:args.productId};return {productId:args.productId,version:1};}
  });
  const msg=(user,text)=>({message:{from:{id:user},chat:{id:user,type:'private'},message_id:302,text}});
@@ -158,6 +158,19 @@ test('sticker Stars presets and custom option use the same creator price contrac
  assert.equal(f.state(42).stickerSale.price,300);
  assert.equal(f.state(42).stickerSale.priceMode,'preset');
 });
+test('TGtumbler shop web app uses hentaigay.org and rejects unrelated domain',async()=>{
+ const f=fixture('https://shop.hentaigay.org/');
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ const buttons=f.panels.at(-1).reply_markup.inline_keyboard.flat();
+ assert.equal(buttons.find(b=>b.web_app)?.web_app.url,
+   'https://shop.hentaigay.org/shop?product='+productId);
+ assert.equal(f.invoiceCount,0);
+ assert.throws(()=>fixture('https://shop.g-acebot.com/'),
+   /STICKER_SHOP_BASE_URL_INVALID/);
+ assert.throws(()=>fixture('https://hentaigay.org.evil.example/'),
+   /STICKER_SHOP_BASE_URL_INVALID/);
+});
+
 test('catalog fallback displays actual Telegram pack before consent and XTR invoice',async()=>{
  const f=fixture();
  await f.flow.handle(f.msg(81,'/start buy_'+productId));
