@@ -164,7 +164,8 @@ export function createVideoBotSourceModule({
               title:draft.title,format:receipt.format,fileId:item.file_id,
               fileUniqueId:item.file_unique_id,position:item.position,
               emoji:item.emoji??'🙂',isDefault:draft.setName==null,
-              freshPackProof:receipt.proof==='unique_new_pack'
+              freshPackProof:receipt.proof==='unique_new_pack',
+              acknowledgedAppendProof:receipt.proof==='unique_acknowledged_append'
             });
           }});
       }catch(error){
