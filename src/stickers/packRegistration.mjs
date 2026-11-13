@@ -51,6 +51,28 @@ function uniqueNewPackItem(set,{name,title,kind,format,isNewPack}){
    return null;
  return {...item,position:0};
 }
+// For an existing pack, Telegram may normalize the uploaded file identity.
+// A successful addStickerToSet ACK plus a single, unchanged appended entry
+// establishes the added item without trusting its upload file_unique_id.
+// Never use this proof after a timeout or an unknown API response.
+function uniqueAcknowledgedAppend(before,after,{name,kind,format,acknowledged}){
+  if(acknowledged!==true||!before||!after||before.name!==name||
+     after.name!==name||before.sticker_type!==kind||after.sticker_type!==kind||
+     !Array.isArray(before.stickers)||!Array.isArray(after.stickers)||
+     after.stickers.length!==before.stickers.length+1)return null;
+  for(let i=0;i<before.stickers.length;i++){
+    if(!before.stickers[i]?.file_unique_id||
+       before.stickers[i].file_unique_id!==after.stickers[i]?.file_unique_id)
+      return null;
+  }
+  const item=after.stickers.at(-1);
+  if(typeof item?.file_id!=='string'||!item.file_id||
+     typeof item?.file_unique_id!=='string'||!item.file_unique_id||
+     (format==='video'?item.is_video!==true:item.is_video===true||item.is_animated===true)||
+     before.stickers.some(s=>s.file_unique_id===item.file_unique_id))
+    return null;
+  return {...item,position:after.stickers.length-1};
+}
 export function stickerIdentity(set,uploaded,kind,format) {
   if(!set||!Array.isArray(set.stickers)||
      set.sticker_type!==kind)return false;
@@ -161,19 +183,23 @@ export async function registerStickerAsset({
     await onBeforeMutation({name,kind:sticker_type,format:stickerFormat,
       fileUniqueId:uploaded.file_unique_id});
   }
-  let requestError=null;
+  let requestError=null,mutationAcknowledged=false;
   try{
     const result=existingSetName!==null?
       await telegramApi('addStickerToSet',{user_id,name,sticker:input}):
       await telegramApi('createNewStickerSet',{user_id,name,title,stickers:[input],sticker_type});
     if(result!==true)requestError=new Error('STICKER_REGISTRATION_NOT_CONFIRMED');
+    else mutationAcknowledged=true;
   }catch(error){requestError=error;}
 
   const after=await safelyReadSet(telegramApi,name);
   const exact=matchingItem(after,uploaded,sticker_type,stickerFormat);
   const fresh=exact?null:uniqueNewPackItem(after,{
     name,title,kind:sticker_type,format:stickerFormat,isNewPack:existingSetName===null});
-  const item=exact??fresh;
+  const appended=existingSetName!==null&&!exact
+    ?uniqueAcknowledgedAppend(before,after,{name,kind:sticker_type,
+      format:stickerFormat,acknowledged:mutationAcknowledged}):null;
+  const item=exact??fresh??appended;
   if(!item){
     // A final HTTP 400 proves that this particular mutation was rejected.
     // Only after checking the remote set may we release its durable claim.
@@ -185,7 +211,7 @@ export async function registerStickerAsset({
   if(onVerified!==undefined){
     if(typeof onVerified!=='function')throw new Error('STICKER_VERIFIED_CALLBACK_INVALID');
     await onVerified({name,kind:sticker_type,format:stickerFormat,item,
-      proof:fresh?'unique_new_pack':'file_unique_id'});
+      proof:fresh?'unique_new_pack':appended?'unique_acknowledged_append':'file_unique_id'});
   }
   return {name,alreadyRegistered:false,verified:true,item,
     link:'https://t.me/'+(sticker_type==='custom_emoji'?'addemoji/':'addstickers/')+name};
