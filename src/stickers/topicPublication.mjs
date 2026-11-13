@@ -14,14 +14,10 @@ function stickerPaidCaption({product,description=''}={}){
     !product.fee_terms_accepted_at)throw Error('STICKER_PAID_PHOTO_FEE_NOT_VERIFIED');
  if(typeof description!=='string'||description.length>400||/[\0]/.test(description))
    throw Error('STICKER_TOPIC_DESCRIPTION_INVALID');
- const message='🎨 '+product.title+'\n⭐ '+Number(product.price_stars)+' Stars\n'+
-   '商品：ステッカー・絵文字パックの固定版素材。\n'+
-   'このStars付き画像を購入すると、CreateVdobotで素材を受け取る権利が記録されます。'+
-   '購入後は［ステッカーを受け取る］からDMへ移動してください。\n'+
-   '公開ステッカーセットは購入者だけに制限できず、再共有を防げません。'+
-   '購入前にこの条件をご確認ください。\n'+
-   '運営管理費30%／投稿者分70%。通常の自己都合返金ボタンはありません。'+
-   (description?'\n'+description:'');
+ // Telegram owns the native Stars/paywall UI. The topic shows only the
+ // seller's title (and seller-authored caption, if explicitly provided).
+ // Terms and fee disclosure remain in the private seller editor, not here.
+ const message='🎨 '+product.title+(description?'\n'+description:'');
  if(message.length>1024)throw Error('STICKER_PAID_PHOTO_CAPTION_LIMIT');
  return message;
 }
@@ -93,7 +89,6 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    const {product,topic}=await guard({sellerId,productId});
    const bot=await identity();
    await assertOwnPostingAccess({topic,botId:bot.id});
-   const username=bot.username;
    const text=stickerPaidCaption({product,description});
    // A real sticker image is converted to a paid PHOTO cover; this is not a video
    // product. Cover conversion happens before any durable claim or Telegram send.
@@ -114,9 +109,7 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
        star_count:Number(product.price_stars),
        media:[{type:'photo',media:'attach://sticker_cover'}],
        sticker_cover_bytes:cover,
-       payload:'stkmedia_'+productId,caption:text,
-       reply_markup:{inline_keyboard:[[{text:'📦 ステッカーを受け取る',
-         url:'https://t.me/'+username+'?start=claim_'+productId}]]}
+       payload:'stkmedia_'+productId,caption:text
      });
      if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0||
         sent?.chat?.id!==topic.chatId||
@@ -145,14 +138,16 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    const product=await salesStore.getPublished(productId);
    if(!product||String(product.seller_user_id)!==String(sellerId))
      throw Error('STICKER_TOPIC_PRODUCT_OWNER_MISMATCH');
-   const {username}=await identity(),text=stickerPaidCaption({product,description});
+   await identity();
+   const text=stickerPaidCaption({product,description});
+   const target={chat_id:Number(current.chat_id),message_id:Number(current.telegram_message_id)};
    try{
-     const r=await telegramApi('editMessageCaption',{
-       chat_id:Number(current.chat_id),message_id:Number(current.telegram_message_id),
-       caption:text,reply_markup:{inline_keyboard:[[{text:'📦 ステッカーを受け取る',
-         url:'https://t.me/'+username+'?start=claim_'+productId}]]}
-     });
+     const r=await telegramApi('editMessageCaption',{...target,caption:text});
      if(!r)throw Error('STICKER_TOPIC_EDIT_NOT_CONFIRMED');
+     // Remove the old deep-link button on this SAME existing paid-media post.
+     // Do not create a replacement post or alter Telegram's native paywall.
+     const clean=await telegramApi('editMessageReplyMarkup',target);
+     if(!clean)throw Error('STICKER_TOPIC_BUTTON_REMOVE_NOT_CONFIRMED');
      await receiptStore.edited(productId,sellerId,text);
      return {verified:true};
    }catch{

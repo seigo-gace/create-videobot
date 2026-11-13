@@ -38,6 +38,7 @@ function fixture({unknown=false,wrongTopic=false,missingStars=false}={}){
        paid_media:{star_count:50,paid_media:[{type:'preview',width:512,height:512}]}
      })};
    if(method==='editMessageCaption')return {message_id:506};
+   if(method==='editMessageReplyMarkup')return {message_id:506};
    if(method==='deleteMessage')return true;
    throw Error('Unexpected Telegram call');
  };
@@ -59,7 +60,11 @@ test('STK-04 verified owner routes to designated Topic only and stores message I
  assert.equal(sent.groupTitle,'ビデオChatの掲示板');
  assert.equal(sent.topicTitle,'ステッカーの公開と販売');
  assert.equal(sent.link,'https://t.me/c/2373696859/506');
- assert.equal(f.writes.find(x=>x.method==='sendPaidMedia').params.message_thread_id,102);
+ const paid=f.writes.find(x=>x.method==='sendPaidMedia').params;
+ assert.equal(paid.message_thread_id,102);
+ assert.equal(paid.star_count,50);
+ assert.equal(paid.caption,'🎨 Demo');
+ assert.equal(paid.reply_markup,undefined);
  const repeat=await f.pub.publish({sellerId:42,productId});
  assert.equal(repeat.alreadySent,true);
  assert.equal(f.writes.filter(x=>x.method==='sendPaidMedia').length,1);
@@ -68,7 +73,13 @@ test('STK-04 edit only alters post text and delete pauses new sales but preserve
  const f=fixture();
  await f.pub.publish({sellerId:42,productId});
  await f.pub.edit({sellerId:42,productId,description:'New description'});
- assert.match(f.receipt.display_text,/New description/);
+ assert.equal(f.receipt.display_text,'🎨 Demo\nNew description');
+ assert.equal(f.writes.filter(x=>x.method==='editMessageCaption').length,1);
+ const edit=f.writes.find(x=>x.method==='editMessageCaption');
+ assert.equal(edit.params.reply_markup,undefined);
+ assert.equal(f.writes.filter(x=>x.method==='editMessageReplyMarkup').length,1);
+ assert.deepEqual(f.writes.find(x=>x.method==='editMessageReplyMarkup').params,
+   {chat_id:live.chatId,message_id:506});
  const removed=await f.pub.remove({sellerId:42,productId});
  assert.equal(removed.verified,true);
  assert.equal(f.paused,true);

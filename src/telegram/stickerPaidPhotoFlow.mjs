@@ -46,9 +46,25 @@ export function createStickerPaidPhotoFlow({api,sessionStore,show,paidPhotoStore
   return receive(userId,Number(q.sale_id),1);
  }
  async function purchased(update){
+  // The image tap and official Stars payment are all Telegram UI.
+  // Once the verified transaction is durable, attempt sticker delivery
+  // automatically; no public "receive" button or second invoice is needed.
   const result=await paidPhotoStore.capturePurchase(update);
+  const buyerId=update?.purchased_paid_media?.from?.id;
+  let deliveryReady=false;
+  if(result.recorded===true&&Number.isSafeInteger(buyerId)&&buyerId>0){
+   try{
+    await receive(buyerId,result.saleId,1);
+    deliveryReady=true;
+   }catch{
+    // A Telegram paid-media purchaser may not yet have opened the Bot DM.
+    // Keep the paid entitlement durable and available in "purchased items";
+    // never retry payment or treat an unreachable DM as an unpaid order.
+   }
+  }
   return {handled:true,purchaseRecorded:result.recorded===true,
-   duplicate:result.duplicate===true,productId:result.productId};
+   duplicate:result.duplicate===true,productId:result.productId,
+   deliveryReady};
  }
  async function callback({action,userId,old,d}){
   if(action==='sale:paid_check'&&old.screen==='sticker_sale_paid_unpaid'&&

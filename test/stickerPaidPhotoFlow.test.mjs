@@ -46,8 +46,10 @@ test('paid PHOTO purchase of stickers creates claimable rights, never an invoice
  const verified=await flow.purchased({update_id:901,
   purchased_paid_media:{paid_media_payload:'stkmedia_'+productId,from:{id:81}}});
  assert.equal(verified.purchaseRecorded,true);
- await flow.claim(81,productId);
+ assert.equal(verified.deliveryReady,true);
+ // Telegram payment alone triggers DM sticker delivery: no claim button.
  assert.equal(state.get(81).screen,'sticker_sale_paid_delivery');
+ await flow.claim(81,productId);
  assert.equal(calls.filter(x=>x.method==='sendSticker').length,2);
  const d=state.get(81).stickerSale;
  await flow.callback({action:'sale:paid_next',userId:81,old:state.get(81),d});
