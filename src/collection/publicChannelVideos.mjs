@@ -37,7 +37,9 @@ export function createPublicChannelVideoCollector({residentUserbot, catalog, max
         for(const item of videos) {
           const messageId=positiveInt(item?.messageId,'MESSAGE_ID');
           if(item?.kind!=='video')continue;
-          // Skip already catalogued videos before contacting resident storage.\n          if(await catalog.hasDownload(channelId,messageId)){summary.alreadyPresent++;continue;}\n          // The database owns deduplication. Resident IPC owns physical writes.
+          // Skip already catalogued videos before contacting resident storage.
+          if(await catalog.hasDownload(channelId,messageId)){summary.alreadyPresent++;continue;}
+          // The database owns deduplication. Resident IPC owns physical writes.
           // Never construct an arbitrary destination path from Telegram text.
           try {
             const result=await residentUserbot.downloadVideo({channelId,messageId});
