@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import {menuPage,parseMenuCallback,handleMenuUpdate} from '../src/telegram/menuPanel.mjs';
 test('menu buttons and no slash command UI',()=>{
  const p=menuPage();
- assert.equal(p.reply_markup.inline_keyboard.length,3);
+ assert.equal(p.reply_markup.inline_keyboard.length,2);
  assert.ok(!p.text.includes('/start'));
  assert.deepEqual(p.reply_markup.inline_keyboard[0][0],{text:'🎬 動画を投稿',callback_data:'menu:listing'});
  assert.deepEqual(p.reply_markup.inline_keyboard[0][1],{text:'📦 マイ動画',callback_data:'menu:manage'});
  assert.deepEqual(p.reply_markup.inline_keyboard[1][0],{text:'⭐ 売上・引き出し',callback_data:'menu:sales'});
- assert.deepEqual(p.reply_markup.inline_keyboard[2][0],{text:'🎨 ステッカー・絵文字',callback_data:'menu:stickers'});
+ assert.ok(!p.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='menu:stickers'));
+ assert.ok(!p.text.includes('ステッカー'));
 });
 test('private start opens menu but public group start is ignored',async()=>{
  const calls=[];const api=async(method,body)=>{calls.push({method,body});return {message_id:4}};
