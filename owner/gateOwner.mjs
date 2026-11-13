@@ -6,16 +6,21 @@ import {readFile} from 'node:fs/promises';
  * t.me/c suffix. Neither GateApp tables nor video sales are modified.
  * If the receipt is missing, changed, or ambiguous, public sales stay closed.
  */
-const PATH='/var/lib/videobot/sticker-entry/sticker-entry.json';
+const PATH='/var/lib/videobot/sticker-entry/group2373696859_thread4640.json';
+const OWNER_PIN_LINK='https://t.me/CreateVdobot?start=sticker';
 const ROUTE={board:'video_chat',purpose:'sticker',enabled:true,verified:true,
  chatId:-1002373696859,threadId:4640,
  groupTitle:'ビデオChatの掲示板',title:'ステッカーの公開と販売'};
-function proof(row,me){
- if(row?.status!=='pinned_ack'||Number(row.chatId)!==ROUTE.chatId||
-    Number(row.threadId)!==ROUTE.threadId||
-    Number(row.botId)!==me.id||
-    String(row.botUsername||'').toLowerCase()!=='createvdobot'||
-    !Number.isSafeInteger(Number(row.messageId))||Number(row.messageId)<=0)
+// Exact pre-existing CreateVdobot one-shot receipt from the successful
+// Master Topic 4640 operation (GitHub Actions run #43290509682).
+// Read its original snake_case contract; do not create a new Topic receipt.
+export function verifyPinnedStickerReceipt(row,me){
+ if(row?.status!=='pinned_ack'||Number(row.chat_id)!==ROUTE.chatId||
+    Number(row.thread_id)!==ROUTE.threadId||
+    Number(row.bot_id)!==me?.id||
+    row.link!==OWNER_PIN_LINK||
+    !Number.isSafeInteger(Number(row.message_id))||
+    Number(row.message_id)<=0)
    throw Error('STICKER_TOPIC_VERIFIED_PIN_RECEIPT_REQUIRED');
  return {...ROUTE};
 }
@@ -32,7 +37,7 @@ export async function createGateOwner({telegramApi,pool}={}){
    throw Error('STICKER_GATE_OWNER_BOT_IDENTITY_NOT_VERIFIED');
  const receipt=async()=>{
    const row=JSON.parse(await readFile(PATH,'utf8'));
-   const t=proof(row,me);
+   const t=verifyPinnedStickerReceipt(row,me);
    const chat=await telegramApi('getChat',{chat_id:t.chatId});
    if(chat?.id!==t.chatId||chat?.type!=='supergroup'||chat?.is_forum!==true)
      throw Error('STICKER_GATE_OWNER_TOPIC_CHAT_NOT_VERIFIED');

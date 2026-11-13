@@ -22,7 +22,7 @@ services:
       VIDEOBOT_PRIVATE_INGRESS_ONLY: "true"
       VIDEOBOT_SCHEMA_MIGRATE: "YES"
       VIDEOBOT_GATE_OWNER_ADAPTER: /opt/videobot/owner/gateOwner.mjs
-      VIDEOBOT_STICKER_PIN_RECEIPT_FILE: /var/lib/videobot/sticker-entry/sticker-entry.json
+      VIDEOBOT_STICKER_PIN_RECEIPT_FILE: /var/lib/videobot/sticker-entry/group2373696859_thread4640.json
       VIDEOBOT_TELEGRAM_TOKEN_FILE: /run/secrets/videobot_telegram_token
       VIDEOBOT_DB_PASSWORD_FILE: /run/secrets/videobot_db_password
       VIDEOBOT_DB_HOST: deploy-postgres-1
