@@ -71,7 +71,11 @@ export function createVideoBotSourceModule({
   // GateApp-Bot owns live topic verification; never fabricate a Topic ID
   // from a t.me/c message URL. This port remains unavailable until the
   // actual GateApp verified sticker-topic + review owners are supplied.
+  // The Master-approved public offer is the pack catalog, never the old
+  // native paid-image paywall. Without a verified Shop origin the existing
+  // Topic post stays untouched; do not silently fall back to sendPaidMedia.
   const stickerTopicPublisher=
+    Boolean(stickerShopBaseUrl)&&
     typeof gateOwner.getVerifiedStickerTopic==='function'&&
     typeof gateOwner.verifyStickerReview==='function'
     ?createStickerTopicPublisher({
@@ -80,7 +84,7 @@ export function createVideoBotSourceModule({
       verifyReview:gateOwner.verifyStickerReview,
       verifyRelease:gateOwner.verifyRelease,
       receiptStore:stickerTopicPosts,salesStore:stickerSalesStore,
-      catalogMode:Boolean(stickerShopBaseUrl),
+      catalogMode:true,
        createPaidCover:createStickerPaidCover({fetchSource:ports.fetchSource})
     }):null;
   // STK-04: CreateVdobot owns its own public Topic entry message and pin.
