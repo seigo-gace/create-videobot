@@ -89,3 +89,18 @@ test('only identical native sticker-photo Stars update can resume a failed purch
  await assert.rejects(()=>store.claim(121,fp('b')),/NEEDS_RECONCILE/);
  await assert.rejects(()=>store.claim(121,fp('c'),{recoverStickerPhotoPurchase:true}),/FINGERPRINT_CONFLICT/);
 });
+
+
+test('only matching private start navigation can recover an unknown receipt',async()=>{
+ const pool=db(),store=createPostgresWebhookUpdateStore(pool);
+ await store.claim(200,fp('a'));await store.markUnknown(200);
+ await assert.rejects(()=>store.claim(200,fp('a')),/NEEDS_RECONCILE/);
+ await assert.rejects(()=>store.claim(200,fp('b'),{recoverNavigation:true}),/FINGERPRINT_CONFLICT/);
+ assert.deepEqual(await store.claim(200,fp('a'),{recoverNavigation:true}),
+   {claimed:true,recovered:true});
+ await store.complete(200,true);
+ assert.deepEqual(await store.claim(200,fp('a')),
+   {claimed:false,completed:true,handled:true});
+ await store.claim(201,fp('c'));await store.markUnknown(201);
+ await assert.rejects(()=>store.claim(201,fp('c')),/NEEDS_RECONCILE/);
+});
