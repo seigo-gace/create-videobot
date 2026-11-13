@@ -44,3 +44,17 @@ test('only private chat and valid original message IDs, no silent fallbacks',asy
  await assert.rejects(()=>show.show(33,null,{text:'bad'}),/invalid shared DM screen/);
  assert.throws(()=>createVideoBotScreenTransport(),/verified Telegram/);
 });
+
+test('photo-backed prior DM cannot be edited as text: send replacement sticker menu',async()=>{
+ for(const rejection of ['Bad Request: there is no text in the message to edit','Bad Request: message is not a text message']){
+  const calls=[];
+  const transport=createVideoBotScreenTransport(async(method,args)=>{
+   calls.push({method,args});
+   if(method==='editMessageText')throw Error(rejection);
+   if(method==='sendMessage')return {message_id:303};
+   if(method==='deleteMessage')return true;
+  });
+  assert.deepEqual(await transport.show(33,101,panel),{messageId:303,replaced:false});
+  assert.deepEqual(calls.map(call=>call.method),['editMessageText','sendMessage','deleteMessage']);
+ }
+});
