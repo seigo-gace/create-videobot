@@ -5,7 +5,7 @@ const productId='sp_'+'a'.repeat(24);
 const live={purpose:'sticker',board:'video_chat',enabled:true,verified:true,
  chatId:-1002373696859,threadId:102,groupTitle:'ビデオChatの掲示板',
  title:'ステッカーの公開と販売'};
-function fixture({unknown=false}={}){
+function fixture({unknown=false,wrongTopic=false}={}){
  let receipt=null,paused=false,writes=[];
  const product={product_id:productId,seller_user_id:42,pack_name:'seller_pack',
   status:'published',price_stars:50,title:'Demo',items:[{file_id:'file1'}],
@@ -28,9 +28,13 @@ function fixture({unknown=false}={}){
  };
  const api=async(method,params)=>{
    writes.push({method,params});
-   if(method==='getMe')return {is_bot:true,username:'CreateVdobot'};
+   if(method==='getMe')return {id:901,is_bot:true,username:'CreateVdobot'};
+   if(method==='getChat')return {id:live.chatId,type:'supergroup',is_forum:true};
+   if(method==='getChatMember')return {status:'administrator'};
    if(unknown&&method==='sendPaidMedia')throw Error('Telegram timed out');
-   if(method==='sendPaidMedia')return {message_id:506};
+   if(method==='sendPaidMedia')return {message_id:506,chat:{id:live.chatId},
+     message_thread_id:wrongTopic?777:live.threadId,is_topic_message:true,
+     from:{id:901}};
    if(method==='editMessageCaption')return {message_id:506};
    if(method==='deleteMessage')return true;
    throw Error('Unexpected Telegram call');
@@ -81,4 +85,12 @@ test('STK-04 rejects unverified board/thread and fabricated links before Telegra
  assert.throws(()=>topicMessageLink(-1002373696859,0),/LINK_INVALID/);
  await assert.rejects(()=>f.pub.publish({sellerId:99,productId}),/OWNER_MISMATCH/);
  assert.equal(f.writes.some(x=>x.method==='sendPaidMedia'),false);
+});
+
+test('STK-04 blocks a Telegram response that landed in another Topic',async()=>{
+ const f=fixture({wrongTopic:true});
+ await assert.rejects(()=>f.pub.publish({sellerId:42,productId}),/VERIFIED_TOPIC/);
+ assert.equal(f.receipt.status,'needs_reconcile');
+ assert.equal(f.writes.filter(x=>x.method==='sendPaidMedia').length,1);
+ await assert.rejects(()=>f.pub.publish({sellerId:42,productId}),/NEEDS_RECONCILE/);
 });

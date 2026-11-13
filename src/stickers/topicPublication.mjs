@@ -61,8 +61,17 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    throw Error('STICKER_TOPIC_TRUSTED_OWNER_MISSING');
  const identity=async()=>{
    const me=await telegramApi('getMe',{});
-   if(me?.is_bot!==true)throw Error('STICKER_TOPIC_BOT_INVALID');
-   return botName(me.username);
+   if(me?.is_bot!==true||!Number.isSafeInteger(me.id)||me.id<=0)
+     throw Error('STICKER_TOPIC_BOT_IDENTITY_INVALID');
+   return {id:me.id,username:botName(me.username)};
+ };
+ const assertOwnPostingAccess=async({topic,botId})=>{
+   const chat=await telegramApi('getChat',{chat_id:topic.chatId});
+   if(chat?.id!==topic.chatId||chat.type!=='supergroup'||chat.is_forum!==true)
+     throw Error('STICKER_TOPIC_GROUP_NOT_VERIFIED');
+   const member=await telegramApi('getChatMember',{chat_id:topic.chatId,user_id:botId});
+   if(!['administrator','creator'].includes(member?.status))
+     throw Error('STICKER_TOPIC_BOT_ADMIN_NOT_VERIFIED');
  };
  const guard=async({sellerId,productId})=>{
    const product=await salesStore.getPublished(productId);
@@ -82,7 +91,9 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
  };
  async function publish({sellerId,productId,description=''}={}){
    const {product,topic}=await guard({sellerId,productId});
-   const username=await identity();
+   const bot=await identity();
+   await assertOwnPostingAccess({topic,botId:bot.id});
+   const username=bot.username;
    const text=stickerPaidCaption({product,description});
    // A real sticker image is converted to a paid PHOTO cover; this is not a video
    // product. Cover conversion happens before any durable claim or Telegram send.
@@ -107,8 +118,12 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
        reply_markup:{inline_keyboard:[[{text:'📦 ステッカーを受け取る',
          url:'https://t.me/'+username+'?start=claim_'+productId}]]}
      });
-     if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0)
-       throw Error('STICKER_TOPIC_SEND_UNKNOWN');
+     if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0||
+        sent?.chat?.id!==topic.chatId||
+        sent?.message_thread_id!==topic.threadId||
+        sent?.is_topic_message!==true||
+        sent?.from?.id!==bot.id)
+       throw Error('STICKER_TOPIC_SEND_NOT_IN_VERIFIED_TOPIC');
      await receiptStore.recorded(productId,sellerId,sent.message_id);
      return {posted:true,alreadySent:false,chatId:topic.chatId,
        messageId:sent.message_id,groupTitle:topic.groupTitle,
@@ -125,7 +140,7 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
    const product=await salesStore.getPublished(productId);
    if(!product||String(product.seller_user_id)!==String(sellerId))
      throw Error('STICKER_TOPIC_PRODUCT_OWNER_MISMATCH');
-   const username=await identity(),text=stickerPaidCaption({product,description});
+   const {username}=await identity(),text=stickerPaidCaption({product,description});
    try{
      const r=await telegramApi('editMessageCaption',{
        chat_id:Number(current.chat_id),message_id:Number(current.telegram_message_id),
