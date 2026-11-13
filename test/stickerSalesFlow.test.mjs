@@ -8,6 +8,7 @@ const orderId='so_'+'b'.repeat(24);
 function fixture(){
  const states=new Map();
  const calls=[];
+ const panels=[];
  const rows=[{item_index:0,status:'pending'},{item_index:1,status:'pending'}];
  const init=user=>states.get(user)??{revision:1,screen:'home',screenMessageId:301,draft:{paidVideo:{id:'preserve'}}};
  const store={
@@ -23,7 +24,7 @@ function fixture(){
  let giftPrepares=0;
  const salesStore={
   getPublished:async id=>id===productId?{product_id:productId,title:'Demo pack',
-    price_stars:50,version:1,status:'published',management_fee_bps:3000,fee_policy_id:'sticker-admin-30-20261113',fee_terms_accepted_at:'2026-11-13'}:
+    price_stars:50,version:1,status:'published',pack_name:'demo_by_CreateVdobot',kind:'regular',management_fee_bps:3000,fee_policy_id:'sticker-admin-30-20261113',fee_terms_accepted_at:'2026-11-13'}:
     sellerPublished?.productId===id?{product_id:id,pack_name:'pack',
       seller_user_id:42,price_stars:50,version:1,title:'Demo pack',status:'published',management_fee_bps:3000,fee_policy_id:'sticker-admin-30-20261113',fee_terms_accepted_at:'2026-11-13'}:null,
   reserveOrder:async({buyerId})=>{
@@ -119,14 +120,14 @@ function fixture(){
    return true;
  };
  const flow=createStickerSalesFlow({
-   api,sessionStore:store,screenTransport:{show:async()=>({messageId:301})},
+   api,sessionStore:store,screenTransport:{show:async(_id,_old,panel)=>{panels.push(panel);return {messageId:301};}},
    salesStore,giftStore,packInventory:{getOwnedPack:async()=>({pack_name:'pack',title:'Demo pack',kind:'regular'})},
    publishSnapshot:async args=>{sellerPublished={productId:args.productId};return {productId:args.productId,version:1};}
  });
  const msg=(user,text)=>({message:{from:{id:user},chat:{id:user,type:'private'},message_id:302,text}});
  const cb=(user,action)=>({callback_query:{id:'query',data:action+'|r'+init(user).revision,
    from:{id:user},message:{chat:{id:user,type:'private'},message_id:301}}});
- return {flow,calls,msg,cb,state:init,salesStore,supportCases,gifts,
+ return {flow,calls,panels,msg,cb,state:init,salesStore,supportCases,gifts,
    seed:(user,patch)=>states.set(user,{...structuredClone(init(user)),...patch}),
    get giftPrepares(){return giftPrepares;},get phase(){return phase;},
    get invoiceCount(){return invoiceCount;}};
@@ -156,6 +157,19 @@ test('sticker Stars presets and custom option use the same creator price contrac
  await f.flow.handle(f.cb(42,'sale:price:300'));
  assert.equal(f.state(42).stickerSale.price,300);
  assert.equal(f.state(42).stickerSale.priceMode,'preset');
+});
+test('catalog fallback displays actual Telegram pack before consent and XTR invoice',async()=>{
+ const f=fixture();
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ const panel=f.panels.at(-1);
+ const buttons=panel.reply_markup.inline_keyboard.flat();
+ const preview=buttons.find(x=>x.text.includes('パックの中身'));
+ assert.equal(preview.url,'https://t.me/addstickers/demo_by_CreateVdobot');
+ assert.equal(buttons.some(x=>x.callback_data?.startsWith('sale:accept|r')),true);
+ assert.equal(f.invoiceCount,0);
+ await f.flow.handle(f.cb(81,'sale:accept'));
+ await f.flow.handle(f.cb(81,'sale:pay'));
+ assert.equal(f.invoiceCount,1);
 });
 test('buyer must accept terms before a single XTR invoice, then payment delivers',async()=>{
  const f=fixture();
