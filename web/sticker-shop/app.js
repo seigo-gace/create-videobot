@@ -50,6 +50,7 @@
     }
    });
   }catch{
+   invoicePending=false;
    progress('購入画面を開けません。二重決済を防ぐため、CreateVdobotのDMで状態をご確認ください。');
   }finally{loading=false;$('buy').disabled=invoicePending||purchased||!$('consent').checked;}
  }
