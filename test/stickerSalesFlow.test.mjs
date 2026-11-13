@@ -322,7 +322,7 @@ test('recipient with an unresolved sticker pack mutation cannot redeem until rec
  const gift=[...f.gifts.values()][0];
  f.seed(80,{screen:'sticker_reconcile',stickerPending:{status:'needs_reconcile'}});
  const denied=await f.flow.handle(f.msg(80,'/start gift_'+gift.token));
- assert.equal(denied.registrationLocked,true);
+ assert.equal(denied.locked,true);
  assert.equal(gift.recipientId,null);
  assert.equal(f.state(80).screen,'sticker_reconcile');
 });
