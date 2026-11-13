@@ -11,13 +11,14 @@ test('collects joined public videos through resident IPC and never visits privat
       async listChannelVideos(args){calls.push(['list',args.channelId]);return [{messageId:77,kind:'video',caption:'sample'}];},
       async downloadVideo(args){calls.push(['download',args.channelId,args.messageId]);return {storageKey:'files/77.mp4'};}
     },
+    enrichment:{async enrich(){return {captionJapanese:'日本語',thumbnail1:'/thumb/1.jpg',thumbnail2:'/thumb/2.jpg'};}},
     catalog:{async hasDownload(){return false;},async recordDownload(v){calls.push(['record',v.messageId]);return {inserted:true};}}
   });
   assert.deepEqual(await collector.collectOnce(),{channels:1,downloaded:1,alreadyPresent:0,failed:0});
   assert.deepEqual(calls,[['list',123],['download',123,77],['record',77]]);
 });
 test('requires resident port, not a second Telegram session',()=>{
-  assert.throws(()=>createPublicChannelVideoCollector({residentUserbot:{},catalog:{recordDownload(){},hasDownload(){}}}),/RESIDENT_USERBOT_PORT_UNAVAILABLE/);
+  assert.throws(()=>createPublicChannelVideoCollector({residentUserbot:{},catalog:{recordDownload(){},hasDownload(){}},enrichment:{enrich(){}}}),/RESIDENT_USERBOT_PORT_UNAVAILABLE/);
 });
 test('catalog uses idempotent channel and message key',async()=>{
   let statement='';
