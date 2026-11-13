@@ -44,13 +44,13 @@ test('sticker DM can replace an old photo screen after definitive Telegram non-t
     /message cannot be edited/);
  }
 });
-test('Telegram API rejects unknown edit failure without propagating user data',async()=>{
+test('definitive unknown HTTP 400 edit can replace screen without leaking the response',async()=>{
  const untrusted='private text '+token;
  const api=createTelegramBotApi({token,fetchImpl:async()=>({
    status:400,json:async()=>({ok:false,description:'Bad Request: '+untrusted})
  })});
  await assert.rejects(()=>api('editMessageText',{chat_id:1,message_id:2,text:'new'}),
-   error=>error.message==='Telegram API request failed'&&!error.message.includes(untrusted));
+   error=>error.message==='message cannot be edited'&&!error.message.includes(untrusted));
  await assert.rejects(()=>api('sendMessage',{chat_id:1,text:'x'}),
    /Telegram API request failed/);
 });
@@ -91,4 +91,23 @@ test('paid photo edit rejects any non-idempotent 400 without leaking Telegram de
  for(const method of ['editMessageCaption','editMessageReplyMarkup'])
   await assert.rejects(()=>api(method,{chat_id:-1002373696859,message_id:4663}),
    error=>error.message==='Telegram API request failed'&&!error.message.includes(token));
+});
+
+test('HTTP 400 edit denial replaces the DM screen once; HTTP 503 never does',async()=>{
+ const {createVideoBotScreenTransport}=await import('../src/telegram/creatorScreenTransport.mjs');
+ const panel={text:'通常メニュー',reply_markup:{inline_keyboard:[
+  [{text:'🎨 ステッカー・絵文字',callback_data:'menu:stickers'}]]}};
+ const calls=[];
+ const api=createTelegramBotApi({token,fetchImpl:async(url)=>{
+  const method=url.split('/').pop();calls.push(method);
+  if(method==='editMessageText')return {status:400,json:async()=>({ok:false,description:'Bad Request: unspecified edit rejection'})};
+  if(method==='sendMessage')return {status:200,json:async()=>({ok:true,result:{message_id:9}})};
+  return {status:200,json:async()=>({ok:true,result:true})};
+ }});
+ const transport=createVideoBotScreenTransport(api);
+ assert.deepEqual(await transport.show(33,8,panel),{messageId:9,replaced:false});
+ assert.deepEqual(calls,['editMessageText','sendMessage','deleteMessage']);
+ const unavailable=createTelegramBotApi({token,fetchImpl:async()=>({status:503})});
+ const safe=createVideoBotScreenTransport(unavailable);
+ await assert.rejects(()=>safe.show(33,8,panel),/WIZARD_EDIT_RESULT_UNKNOWN/);
 });
