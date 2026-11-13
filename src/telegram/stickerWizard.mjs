@@ -334,8 +334,8 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       // block read-only inspection of existing packs. No new write is allowed.
       if(old?.stickerPending?.status==='needs_reconcile'&&
          old.stickerDeferred&&messageId===old.screenMessageId&&
-         /^sticker:(?:packs|next|prev|pick:[0-9]+|pack_back|back)\\|r[1-9][0-9]*$/.test(data)){
-        const m=/^(sticker:[a-z_]+(?::[0-9]+)?)\\|r([1-9][0-9]*)$/.exec(data);
+         /^sticker:(?:packs|next|prev|pick:[0-9]+|pack_back|back)\|r[1-9][0-9]*$/.test(data)){
+        const m=/^(sticker:[a-z_]+(?::[0-9]+)?)\|r([1-9][0-9]*)$/.exec(data);
         if(!m||Number(m[2])!==old.revision)return {handled:true,staleButton:true};
         if(m[1]==='sticker:back'||m[1]==='sticker:pack_back')
           return persist(id,old,{screen:'sticker_choose'});
@@ -359,7 +359,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       // Design v0.6 X10: allow read-only reconciliation, never a fresh write.
       if(old?.stickerPending?.status==='in_progress'||
          old?.stickerPending?.status==='needs_reconcile'){
-        const check=/^sticker:check\\|r([1-9][0-9]*)$/.exec(data);
+        const check=/^sticker:check\|r([1-9][0-9]*)$/.exec(data);
         if(!check||old.stickerPending.status!=='needs_reconcile'||
            Number(check[1])!==old.revision||
            messageId!==old.screenMessageId||
