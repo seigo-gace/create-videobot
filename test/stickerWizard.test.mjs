@@ -602,3 +602,47 @@ test('Topic sticker entry and cancel remain in sticker-only DM navigation',async
  assert.match(f.calls.at(-1)[1],/ステッカー・絵文字作成/);
  assert.ok(!f.calls.at(-1)[1].includes('クリエータービデオ'));
 });
+
+test('unverified registration stays in sticker UI and offers pack inspection instead of video home',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'Pending pack'}));
+ await f.wizard.handle(f.msg({photo:[{file_id:'fileabc'}]}));
+ const state=f.state();
+ const broken=createStickerWizard({
+   api:async()=>true,
+   sessionStore:{
+     read:async()=>structuredClone(state),
+     write:async(_id,prev,next)=>{assert.equal(state.revision,prev);Object.assign(state,structuredClone(next));},
+     setScreen:async()=>{}
+   },
+   screenTransport:{show:async(_id,_messageId,panel)=>{
+     assert.doesNotMatch(panel.text,/クリエータービデオ/);
+     return {messageId:301};
+   }},
+   publishSticker:async({onUploaded,onBeforeMutation})=>{
+     const receipt={name:'pending_by_CreateVdobot',fileUniqueId:'unique-42',format:'static'};
+     await onUploaded(receipt);await onBeforeMutation(receipt);
+     throw new Error('Telegram timeout');
+   }
+ });
+ await broken.handle(f.cb('sticker:register|r5'));
+ assert.equal(state.screen,'sticker_reconcile');
+ await broken.handle(f.cb('sticker:defer|r'+state.revision));
+ assert.equal(state.screen,'sticker_choose');
+ assert.equal(state.stickerPending.status,'needs_reconcile');
+ assert.equal(state.stickerDeferred,true);
+ assert.equal(state.draft.paidVideo.fileId,'preserve-video');
+});
+test('successful creation gives visible pack link and same-pack add and pack inspection actions',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.cb('menu:stickers'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ await f.wizard.handle(f.msg({text:'My stickers'}));
+ await f.wizard.handle(f.msg({photo:[{file_id:'fileabc'}]}));
+ await f.wizard.handle(f.cb('sticker:register|r5'));
+ assert.match(f.calls.at(-1)[1],/登録しました！/);
+ assert.match(f.calls.at(-1)[1],/https:\/\/t.me\/addstickers\//);
+ assert.equal(f.state().screen,'sticker_done');
+});
