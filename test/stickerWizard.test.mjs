@@ -588,3 +588,17 @@ test('ordinary /start yields to shared home while unresolved sticker receipts su
   assert.deepEqual(state,original);
  }
 });
+
+test('Topic sticker entry and cancel remain in sticker-only DM navigation',async()=>{
+ const f=fixture();
+ await f.wizard.handle(f.msg({text:'/start sticker'}));
+ assert.equal(f.state().screen,'sticker_choose');
+ assert.match(f.calls.at(-1)[1],/ステッカー・絵文字作成/);
+ assert.ok(!f.calls.at(-1)[1].includes('クリエータービデオ'));
+ await f.wizard.handle(f.cb('sticker:type:regular|r2'));
+ assert.equal(f.state().screen,'sticker_title');
+ await f.wizard.handle(f.cb('sticker:cancel|r3'));
+ assert.equal(f.state().screen,'sticker_choose');
+ assert.match(f.calls.at(-1)[1],/ステッカー・絵文字作成/);
+ assert.ok(!f.calls.at(-1)[1].includes('クリエータービデオ'));
+});
