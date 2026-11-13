@@ -100,8 +100,8 @@ function panel(session,revision){
       ...(page>0?[btn('◀ 前へ','sticker:items_prev')]:[]),
       ...(rows.length===10?[btn('次へ ▶','sticker:items_next')]:[])
     ]);
-    keys.push(...(packLink(session.stickerSelectedPack?.pack_name,session.stickerSelectedPack?.kind)?[openPackButton(session.stickerSelectedPack.pack_name,session.stickerSelectedPack.kind)]:[])
-    ]);
+    if(packLink(session.stickerSelectedPack?.pack_name,session.stickerSelectedPack?.kind))
+      keys.push([openPackButton(session.stickerSelectedPack.pack_name,session.stickerSelectedPack.kind)]);
     keys.push([btn('↩ パックへ','sticker:pack_back')]);
     return {text:'🧩 素材の編集（'+(page+1)+'ページ）'+stickerHint(session),
       reply_markup:{inline_keyboard:keys.filter(x=>x.length>0)}};
