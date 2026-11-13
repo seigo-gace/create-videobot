@@ -2,6 +2,13 @@
 export function createPostgresPublicChannelVideoCatalog(pool) {
   if(typeof pool?.query!=='function')throw new Error('PRIVATE_SQL_POOL_REQUIRED');
   return {
+    async hasDownload(channelId,messageId) {
+      const r=await pool.query(
+        'SELECT 1 FROM videobot_public_channel_videos WHERE channel_id=$1 AND message_id=$2',
+        [channelId,messageId]
+      );
+      return (r.rows?.length??0)>0;
+    },
     async recordDownload(video) {
       const r=await pool.query(
         `INSERT INTO videobot_public_channel_videos
