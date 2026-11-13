@@ -322,7 +322,7 @@ test('recipient with an unresolved sticker pack mutation cannot redeem until rec
  const gift=[...f.gifts.values()][0];
  f.seed(80,{screen:'sticker_reconcile',stickerPending:{status:'needs_reconcile'}});
  const denied=await f.flow.handle(f.msg(80,'/start gift_'+gift.token));
- assert.equal(denied.locked,true);
+ assert.equal(denied.registrationLocked,true);
  assert.equal(gift.recipientId,null);
  assert.equal(f.state(80).screen,'sticker_reconcile');
 });
@@ -344,7 +344,7 @@ test('sales cannot erase unresolved sticker registration by exiting',async()=>{
  const pending={status:'needs_reconcile',kind:'regular',nonce:'deadbeef'};
  f.seed(81,{stickerPending:pending});
  const denied=await f.flow.handle(f.cb(81,'sale:cancel'));
- assert.equal(denied.registrationLocked,true);
+ assert.equal(denied.locked,true);
  assert.equal(f.state(81).screen,'sticker_sale_offer');
  assert.deepEqual(f.state(81).stickerPending,pending);
 });
