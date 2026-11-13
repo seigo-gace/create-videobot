@@ -14,7 +14,8 @@ const FILES=Object.freeze([
  '011_sticker_entry_pin.sql',
  '012_creator_poll_cursor.sql',
  '013_sticker_uploaded_identity.sql',
- '014_sticker_management_fee_30.sql'
+ '014_sticker_management_fee_30.sql',
+ '015_sticker_paid_photo_sales.sql'
 ]);
 
 /** Apply the owned VideoBot schema atomically under a PostgreSQL advisory
