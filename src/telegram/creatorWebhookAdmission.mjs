@@ -31,7 +31,7 @@ export function createCreatorWebhookAdmission({expectedSecret,handleCreatorUpdat
       // editor. Never extend this recovery to purchases or sticker mutations.
       const recoverNavigation=update?.message?.chat?.type==='private' &&
         update.message?.from?.id===update.message.chat.id &&
-        /^\\/start(?:@[A-Za-z0-9_]+)?$/.test(String(update.message.text??'').trim());
+        /^\/start(?:@[A-Za-z0-9_]+)?$/.test(String(update.message.text??'').trim());
       const admission=await updateStore.claim(update.update_id,digest,{
         recoverStickerPayment,recoverStickerPhotoPurchase,recoverNavigation});
       if(!admission?.claimed) {
