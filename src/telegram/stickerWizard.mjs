@@ -45,6 +45,7 @@ function panel(session,revision){
       '二重登録を防ぐため元の記録を保存しています。登録状態の確認から再開できます。',
     reply_markup:{inline_keyboard:[
       [btn('🔄 登録状態を確認','sticker:resume')],
+      [btn('📦 マイパックを見る','sticker:packs')],
       [btn('↩ メニューへ','sticker:cancel')]
     ]}
   };
@@ -329,6 +330,32 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
          messageId===old.screenMessageId&&
          data==='sticker:cancel|r'+old.revision)
         return persist(id,old,{screen:'home',stickerDeferred:true,stickerHelp:null});
+      // An unresolved registration must not swallow the Topic entry or
+      // block read-only inspection of existing packs. No new write is allowed.
+      if(old?.stickerPending?.status==='needs_reconcile'&&
+         old.stickerDeferred&&messageId===old.screenMessageId&&
+         /^sticker:(?:packs|next|prev|pick:[0-9]+|pack_back|back)\\|r[1-9][0-9]*$/.test(data)){
+        const m=/^(sticker:[a-z_]+(?::[0-9]+)?)\\|r([1-9][0-9]*)$/.exec(data);
+        if(!m||Number(m[2])!==old.revision)return {handled:true,staleButton:true};
+        if(m[1]==='sticker:back'||m[1]==='sticker:pack_back')
+          return persist(id,old,{screen:'sticker_choose'});
+        if(!packInventory)return {handled:true,registrationLocked:true};
+        if(m[1].startsWith('sticker:pick:')){
+          if(old.screen!=='sticker_packs')return {handled:true,staleButton:true};
+          const idx=Number(m[1].slice('sticker:pick:'.length));
+          const candidate=old.stickerPackRows?.[idx];
+          if(!candidate)return {handled:true,staleButton:true};
+          const pack=await packInventory.getOwnedPack(id,candidate.pack_name);
+          if(!pack||pack.kind!==candidate.kind)return {handled:true,staleButton:true};
+          return persist(id,old,{screen:'sticker_pack',stickerSelectedPack:pack});
+        }
+        const previous=old.screen==='sticker_packs'?(old.stickerPackPage??0):0;
+        const page=m[1]==='sticker:next'?previous+1:
+          m[1]==='sticker:prev'?Math.max(0,previous-1):0;
+        const rows=await packInventory.listPacks(id,{limit:10,offset:page*10});
+        return persist(id,old,{screen:'sticker_packs',stickerPackPage:page,
+          stickerPackRows:rows,stickerSelectedPack:null});
+      }
       // Design v0.6 X10: allow read-only reconciliation, never a fresh write.
       if(old?.stickerPending?.status==='in_progress'||
          old?.stickerPending?.status==='needs_reconcile'){
