@@ -110,3 +110,25 @@ test('uncertain Telegram side-effect never reprocesses a failed update',async()=
  await assert.rejects(()=>admission({secretHeader:secret,body}),/NEEDS_RECONCILE/);
  assert.equal(tries,1);
 });
+
+
+test('recovery flag only applies to private plain start, never sticker registration or payment',async()=>{
+ const types=[];
+ const updateStore={
+  claim:async(_id,_hash,flags)=>{types.push(flags);return {claimed:true};},
+  complete:async()=>{},markUnknown:async()=>{}
+ };
+ const admission=createCreatorWebhookAdmission({
+  expectedSecret:secret,updateStore,handleCreatorUpdate:async()=>({handled:true})
+ });
+ const base={message:{chat:{id:42,type:'private'},from:{id:42},text:'/start'}};
+ for(const [id,message,expected] of [
+  [300,base,true],
+  [301,{message:{...base.message,text:'/start sticker'}},false],
+  [302,{message:{...base.message,chat:{id:-1,type:'group'}}},false],
+  [303,purchase,false]
+ ]){
+  await admission({secretHeader:secret,body:Buffer.from(JSON.stringify({update_id:id,...message}))});
+  assert.equal(types.at(-1).recoverNavigation,expected);
+ }
+});
