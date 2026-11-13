@@ -32,6 +32,18 @@ test('Telegram DM edit maps only known not-editable failures for safe screen rep
  })});
  await assert.rejects(()=>unchanged('editMessageText',{chat_id:1,message_id:2,text:'old'}),/message is not modified/);
 });
+test('sticker DM can replace an old photo screen after definitive Telegram non-text denial',async()=>{
+ for(const description of [
+   'Bad Request: there is no text in the message to edit',
+   'Bad Request: message is not a text message'
+ ]){
+  const api=createTelegramBotApi({token,fetchImpl:async()=>({
+    status:400,json:async()=>({ok:false,description})
+  })});
+  await assert.rejects(()=>api('editMessageText',{chat_id:42,message_id:301,text:'🎨 ステッカー'}),
+    /message cannot be edited/);
+ }
+});
 test('Telegram API rejects unknown edit failure without propagating user data',async()=>{
  const untrusted='private text '+token;
  const api=createTelegramBotApi({token,fetchImpl:async()=>({
