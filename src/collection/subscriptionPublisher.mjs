@@ -75,8 +75,9 @@ export function createSubscriptionPublisher({
       targetChatId:chatId,targetThreadId:threadId};
     const prior=await receipts.read(key);
     if(prior) {
-      if(prior.target_chat_id!==chatId ||
-         (prior.target_thread_id??null)!==(threadId??null))
+      // PostgreSQL bigint values are commonly returned as strings.
+      if(Number(prior.target_chat_id)!==chatId ||
+         (prior.target_thread_id==null?null:Number(prior.target_thread_id))!==(threadId??null))
         throw Error('SUBSCRIPTION_TARGET_CHANGED_NEEDS_RECONCILE');
       if(prior.status==='sent' && Number.isSafeInteger(Number(prior.telegram_message_id)) &&
          Number(prior.telegram_message_id)>0)
