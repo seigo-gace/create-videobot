@@ -258,27 +258,27 @@ try {
   }});
   const update={update_id:20261113,purchased_paid_media:{
     paid_media_payload:nativePayload,from:{id:198}}};
-  const recorded=await photo.capturePurchase(update);
+  const photoRecorded=await photo.capturePurchase(update);
   const replay=await photo.capturePurchase(update);
-  if(recorded.recorded!==true||recorded.duplicate||!replay.duplicate||
-     recorded.saleId!==replay.saleId)throw Error('STICKER_PAID_PHOTO_IDEMPOTENCY_BROKEN');
-  const rows=await pool.query(
+  if(photoRecorded.recorded!==true||photoRecorded.duplicate||!replay.duplicate||
+     photoRecorded.saleId!==replay.saleId)throw Error('STICKER_PAID_PHOTO_IDEMPOTENCY_BROKEN');
+  const photoRows=await pool.query(
     'SELECT stars,management_fee_tenths,creator_share_tenths FROM videobot_sticker_paid_photo_sales WHERE sale_id=$1',
-    [recorded.saleId]);
-  if(Number(rows.rows[0]?.stars)!==50||
-     Number(rows.rows[0]?.management_fee_tenths)!==150||
-     Number(rows.rows[0]?.creator_share_tenths)!==350)
+    [photoRecorded.saleId]);
+  if(Number(photoRows.rows[0]?.stars)!==50||
+     Number(photoRows.rows[0]?.management_fee_tenths)!==150||
+     Number(photoRows.rows[0]?.creator_share_tenths)!==350)
     throw Error('STICKER_PAID_PHOTO_30_70_BROKEN');
   const entitlement=await photo.getEntitlement({buyerId:198,productId:sold.productId});
-  const foreign=await photo.getEntitlement({buyerId:199,productId:sold.productId});
-  if(!entitlement||foreign!==null)throw Error('STICKER_PAID_PHOTO_OWNER_LEAK');
-  const claimed=await photo.claimItem({saleId:recorded.saleId,buyerId:198,attempt:1,index:0});
-  const double=await photo.claimItem({saleId:recorded.saleId,buyerId:198,attempt:1,index:0});
+  const photoForeign=await photo.getEntitlement({buyerId:199,productId:sold.productId});
+  if(!entitlement||photoForeign!==null)throw Error('STICKER_PAID_PHOTO_OWNER_LEAK');
+  const claimed=await photo.claimItem({saleId:photoRecorded.saleId,buyerId:198,attempt:1,index:0});
+  const double=await photo.claimItem({saleId:photoRecorded.saleId,buyerId:198,attempt:1,index:0});
   if(!claimed||double!==null)throw Error('STICKER_PAID_PHOTO_DELIVERY_DUPLICATE');
-  await photo.itemSent({saleId:recorded.saleId,attempt:1,index:0,messageId:733});
-  const next=await photo.redeliver({saleId:recorded.saleId,buyerId:198});
+  await photo.itemSent({saleId:photoRecorded.saleId,attempt:1,index:0,messageId:733});
+  const next=await photo.redeliver({saleId:photoRecorded.saleId,buyerId:198});
   if(next.attempt!==2||
-     (await photo.deliveryRows({saleId:recorded.saleId,attempt:2})).length!==2)
+     (await photo.deliveryRows({saleId:photoRecorded.saleId,attempt:2})).length!==2)
     throw Error('STICKER_PAID_PHOTO_REDELIVERY_BROKEN');
   process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_PAID_PHOTO=PASS\\n');
  const ownedTopic=await topicStore.getOwned(sold.productId,42);
