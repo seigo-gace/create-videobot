@@ -18,6 +18,14 @@ export function createCreatorBotUpdateHandler(options={}) {
     // Paid-media purchase updates have no DM message envelope. They are not
     // ordinary creator input and must never be counted without transaction proof.
     if (update?.purchased_paid_media) {
+      const payload=update.purchased_paid_media.paid_media_payload;
+      // A sticker-photo purchase is owned by the sticker ledger, never
+      // by paid-video listings or the video fee ledger.
+      if(typeof payload==='string'&&/^stkmedia_sp_[a-f0-9]{24}$/.test(payload)){
+        if(typeof options.stickerPaidPhotoPurchase!=='function')
+          throw Error('STICKER_PAID_PHOTO_PURCHASE_OWNER_MISSING');
+        return options.stickerPaidPhotoPurchase(update);
+      }
       if (typeof options.starsLedger?.confirmPurchase !== 'function')
         throw new Error('verified Stars receipt ledger unavailable');
       const receipt=await options.starsLedger.confirmPurchase(update);
@@ -38,7 +46,7 @@ export function createCreatorBotUpdateHandler(options={}) {
       // link. Route it before a dormant sticker media-input screen so that
       // recipients need not cancel their unrelated draft to claim the gift.
       // The sales handler itself preserves unresolved registration locks.
-      if(/^\/start(?:@[A-Za-z0-9_]+)?\s+(?:buy_sp_[a-f0-9]{24}|gift_[A-Za-z0-9_-]{32})$/
+      if(/^\/start(?:@[A-Za-z0-9_]+)?\s+(?:buy_sp_[a-f0-9]{24}|claim_sp_[a-f0-9]{24}|gift_[A-Za-z0-9_-]{32})$/
           .test(message.text.trim())&&typeof options.stickerSalesHandler==='function'){
         const sale=await options.stickerSalesHandler(update);
         if(sale?.handled)return sale;
