@@ -456,6 +456,19 @@ available_for_subscription_discovery
 
 未決定項目は架空の定数で埋めず、独立した収集・翻訳・加工・DB機能はそのまま進められる。
 
-## 9. 開発状態
-**設計記録のみ。この文書を作る操作は実装・配備・課金設定・公開を実行しない。**
-Collector、DB、翻訳/画像抽出に関するSourceはPR #6上の暫定実装であり、Host IPC接続、60秒プレビュー、Telegram投稿、Subscriptionチャンネル作成、実テストは未完了。
+## 11. 実装と検証の現在状態（2026-11-14 JST）
+**設計およびSourceコードをPR #6で追加済み。GitHub Unit CIはPASS。本番Runtimeは未完了。**
+- Userbot収集: `src/collection/publicChannelVideos.mjs`
+- 収集DBと日本語検索: `src/collection/pgPublicChannelVideos.mjs`
+- 中国語翻訳／サムネ2枚: `src/collection/videoEnrichment.mjs`
+- 60秒MP4生成: `src/collection/subscriptionPreview.mjs`
+- 取得済み動画→Telegram file_id アップロード: `src/collection/subscriptionMediaPipeline.mjs`
+- Stars公式チャンネル招待: `src/collection/subscriptionInvite.mjs`
+- 本編先行→無料トピック投稿: `src/collection/subscriptionPublisher.mjs`
+- PostgreSQL送信重複制御: `src/collection/pgSubscriptionPublications.mjs`
+- CreateVdobot既存配線（subscriptionPorts任意）: `src/telegram/creatorWiring.mjs`
+- SQL: `sql/20261114_public_channel_videos.sql` と `sql/20261114_subscription_publications.sql`
+- CI証拠: [Unit PASS #43503626156](https://github.com/seigo-gace/create-videobot/actions/runs/43503626156) (commit 5013e40c46162b2bc814740351474b9bdfeb5c0c; 以降ドキュメント更新のみ)。
+- **未完了**：常駐Userbot実IPC接続、実翻訳、承認済み保存先、DB本番適用、実Telegram IDとBot権限、非公開チャンネル作成、Stars月額価格、実投稿とStars加入／更新E2E。既存単品販売への変更・本番課金・公開投稿は行っていない。
+
+本設計のコード生成は、Userbotログインやチャンネルの作成・有料リンクの自動発行・実動画投稿を意味しない。
