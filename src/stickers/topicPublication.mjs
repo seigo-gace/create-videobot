@@ -122,7 +122,12 @@ export function createStickerTopicPublisher({telegramApi,getVerifiedStickerTopic
         sent?.chat?.id!==topic.chatId||
         sent?.message_thread_id!==topic.threadId||
         sent?.is_topic_message!==true||
-        sent?.from?.id!==bot.id)
+        sent?.from?.id!==bot.id||
+        !sent?.paid_media||
+        Number(sent.paid_media.star_count)!==Number(product.price_stars)||
+        !Array.isArray(sent.paid_media.paid_media)||
+        sent.paid_media.paid_media.length!==1||
+        !['preview','photo'].includes(sent.paid_media.paid_media[0]?.type))
        throw Error('STICKER_TOPIC_SEND_NOT_IN_VERIFIED_TOPIC');
      await receiptStore.recorded(productId,sellerId,sent.message_id);
      return {posted:true,alreadySent:false,chatId:topic.chatId,
