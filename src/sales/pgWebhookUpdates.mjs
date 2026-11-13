@@ -17,7 +17,7 @@ function fingerprint(hex) {
 export function createPostgresWebhookUpdateStore(pool) {
  if(typeof pool?.query!=='function')throw new Error('private webhook SQL pool required');
  return {
-  async claim(id,digest,{recoverStickerPayment=false}={}) {
+  async claim(id,digest,{recoverStickerPayment=false,recoverStickerPhotoPurchase=false}={}) {
    updateId(id);fingerprint(digest);
    const added=await pool.query(
      "INSERT INTO videobot_webhook_updates (update_id,payload_sha256,status) VALUES ($1,$2,'processing') ON CONFLICT (update_id) DO NOTHING RETURNING update_id",
@@ -36,7 +36,11 @@ export function createPostgresWebhookUpdateStore(pool) {
    // A Telegram successful_payment has a stable charge ID and is captured
    // idempotently in the independent sticker ledger. Only that exact payload
    // may be safely retried after a known failed handler.
-   if(recoverStickerPayment===true&&row.status==='needs_reconcile'){
+   // A native paid-photo callback has no charge amount, but the handler always
+   // rechecks a unique immutable Telegram transaction before an idempotent
+   // sticker entitlement INSERT. Recovery never applies to video purchases.
+   if((recoverStickerPayment===true||recoverStickerPhotoPurchase===true)&&
+      row.status==='needs_reconcile'){
      const recovered=await pool.query(
        "UPDATE videobot_webhook_updates SET status='processing',updated_at=NOW()"+
        " WHERE update_id=$1 AND payload_sha256=$2 AND status='needs_reconcile'"+

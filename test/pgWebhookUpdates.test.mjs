@@ -76,3 +76,16 @@ test('identical sticker successful_payment recovery is CAS guarded; video unknow
  await assert.rejects(()=>store.claim(91,fp('b')),/NEEDS_RECONCILE/);
  await assert.rejects(()=>store.claim(91,fp('c'),{recoverStickerPayment:true}),/FINGERPRINT_CONFLICT/);
 });
+
+test('only identical native sticker-photo Stars update can resume a failed purchase receipt',async()=>{
+ const pool=db(),store=createPostgresWebhookUpdateStore(pool);
+ await store.claim(120,fp('a'));await store.markUnknown(120);
+ assert.deepEqual(await store.claim(120,fp('a'),{recoverStickerPhotoPurchase:true}),
+   {claimed:true,recovered:true});
+ await assert.rejects(()=>store.claim(120,fp('a'),{recoverStickerPhotoPurchase:true}),/NEEDS_RECONCILE/);
+ await store.complete(120,true);
+ assert.deepEqual(await store.claim(120,fp('a')),{claimed:false,completed:true,handled:true});
+ await store.claim(121,fp('b'));await store.markUnknown(121);
+ await assert.rejects(()=>store.claim(121,fp('b')),/NEEDS_RECONCILE/);
+ await assert.rejects(()=>store.claim(121,fp('c'),{recoverStickerPhotoPurchase:true}),/FINGERPRINT_CONFLICT/);
+});

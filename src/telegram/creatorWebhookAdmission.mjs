@@ -24,8 +24,11 @@ export function createCreatorWebhookAdmission({expectedSecret,handleCreatorUpdat
       const recoverStickerPayment=
         /^stk:so_[a-f0-9]{24}$/.test(String(
           update?.message?.successful_payment?.invoice_payload??''));
+      const recoverStickerPhotoPurchase=
+        /^stkmedia_sp_[a-f0-9]{24}$/.test(String(
+          update?.purchased_paid_media?.paid_media_payload??''));
       const admission=await updateStore.claim(update.update_id,digest,{
-        recoverStickerPayment});
+        recoverStickerPayment,recoverStickerPhotoPurchase});
       if(!admission?.claimed) {
         if(admission?.completed!==true||typeof admission.handled!=='boolean')
           throw new Error('WEBHOOK_UPDATE_NEEDS_RECONCILE');
