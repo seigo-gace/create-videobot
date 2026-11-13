@@ -507,3 +507,60 @@ test('Topic deep link verifies outstanding registration and restores full sticke
  assert.equal(f.state().draft.paidVideo.fileId,'preserve-video');
  assert.equal(readbacks,1);assert.equal(writes,0);
 });
+
+test('pending Topic deep link shows usable menu and allows read-only owned pack listing',async()=>{
+ let state={revision:1,screen:'sticker_reconcile',screenMessageId:301,
+   stickerDeferred:false,stickerSets:{},
+   stickerPending:{status:'needs_reconcile',kind:'regular',title:'Old pack',nonce:'n1'}};
+ const displayed=[];
+ const inventory={
+   async listPacks(owner,{limit,offset}){
+     assert.equal(owner,42);assert.equal(limit,10);assert.equal(offset,0);
+     return [{pack_name:'owned_pack',title:'Owned pack',kind:'regular'}];
+   },
+   async getOwnedPack(owner,name){
+     assert.equal(owner,42);assert.equal(name,'owned_pack');
+     return {pack_name:name,title:'Owned pack',kind:'regular',item_count:1};
+   },
+   async listOwnedItems(){return [];}
+ };
+ const sessionStore={
+   async read(){return structuredClone(state);},
+   async write(owner,prev,next){
+     assert.equal(owner,42);assert.equal(prev,state.revision);
+     state=structuredClone(next);
+   },
+   async setScreen(owner,rev,messageId){
+     assert.equal(owner,42);assert.equal(rev,state.revision);
+     state.screenMessageId=messageId;
+   }
+ };
+ const wizard=createStickerWizard({
+   api:async()=>true,sessionStore,
+   screenTransport:{async show(_id,_old,panel){
+     displayed.push(panel);return {messageId:301};
+   }},
+   publishSticker:async()=>{throw new Error('must not publish while pending');},
+   reconcileSticker:async()=>({status:'unknown',verified:false}),
+   packInventory:inventory
+ });
+ const message={message:{chat:{id:42,type:'private'},from:{id:42},
+   message_id:302,text:'/start sticker'}};
+ const callback=data=>({callback_query:{id:'c',data,from:{id:42},
+   message:{chat:{id:42,type:'private'},message_id:301}}});
+ await wizard.handle(message);
+ assert.equal(state.screen,'sticker_choose');
+ assert.equal(state.stickerPending.status,'needs_reconcile');
+ assert.ok(displayed.at(-1).reply_markup.inline_keyboard.flat()
+   .some(button=>button.text.includes('マイパック')));
+ await wizard.handle(callback('sticker:packs|r2'));
+ assert.equal(state.screen,'sticker_packs');
+ await wizard.handle(callback('sticker:pick:0|r3'));
+ assert.equal(state.screen,'sticker_pack');
+ assert.equal(state.stickerSelectedPack.title,'Owned pack');
+ const blocked=await wizard.handle(callback('sticker:add|r4'));
+ assert.equal(blocked.registrationLocked,true);
+ assert.equal(state.stickerPending.status,'needs_reconcile');
+ await wizard.handle(callback('sticker:pack_back|r4'));
+ assert.equal(state.screen,'sticker_choose');
+});
