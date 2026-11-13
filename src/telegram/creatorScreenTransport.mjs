@@ -15,7 +15,7 @@ function positive(value,name) {
 function editOutcome(error){
   const message=error instanceof Error?error.message:'';
   if(/message is not modified/i.test(message))return 'already';
-  if(/message (?:to edit|to be edited) not found|message can't be edited|message cannot be edited|MESSAGE_ID_INVALID/i.test(message))
+  if(/message (?:to edit|to be edited) not found|message can't be edited|message cannot be edited|there is no text in the message to edit|message is not a text message|MESSAGE_ID_INVALID/i.test(message))
     return 'cannot_edit';
   return 'unknown';
 }
