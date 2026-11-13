@@ -45,6 +45,11 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
   return url.origin;
  };
  const shopUrl=shopOrigin();
+ const nativePackPreview=d=>{
+   if(typeof d.packName!=='string'||!/^[A-Za-z0-9_]{1,64}$/.test(d.packName)||
+      !['regular','custom_emoji'].includes(d.kind))return null;
+   return 'https://t.me/'+(d.kind==='custom_emoji'?'addemoji/':'addstickers/')+d.packName;
+ };
  async function show(userId,old,patch){
    const revision=(old?.revision??0)+1,session={...old,...patch,revision};
    await sessionStore.write(userId,revision-1,session);
@@ -94,15 +99,20 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
       keyboard=[[b('🔄 登録状態を確認','sale:check_publish')],
         [b('📦 同じ商品番号で続ける','sale:retry_publish')],
         [b('↩ メニューへ','sale:cancel')]];break;
-    case 'sticker_sale_offer':
+    case 'sticker_sale_offer': {
+      const preview=nativePackPreview(d);
       text='📦 '+d.title+'（版'+d.version+'）\n価格：'+d.price+' Stars'+
-        (shopUrl?'\n\nパックの中身を一覧で確認してから購入できます。':'\n\n'+MONEY_TERMS);
+        '\n\nパックの中身を確認してから購入してください。'+
+        (shopUrl?'':'\n\n'+MONEY_TERMS);
       keyboard=[
-       ...(shopUrl?[[{text:'🎨 パックの中身を見る',
-         web_app:{url:shopUrl+'/shop?product='+d.productId}}]]:
-         [[b('同意して購入へ','sale:accept')]]),
-       [b('↩ 戻る','sale:cancel')]
+        ...(shopUrl?[[{text:'🎨 パックの中身を見る',
+          web_app:{url:shopUrl+'/shop?product='+d.productId}}]]:
+          preview?[[{text:'📦 パックの中身を見る',url:preview}],
+            [b('同意して購入へ','sale:accept')]]:
+            [[b('同意して購入へ','sale:accept')]]),
+        [b('↩ 戻る','sale:cancel')]
       ];break;
+    }
     case 'sticker_sale_agreed':
       text='購入内容：'+d.title+'\n価格：'+d.price+
         ' Stars\n購入条件を承諾しました。次にTelegram公式のStars請求へ進みます。';
@@ -243,7 +253,8 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
       return paidPhotoFlow.claim(userId,productId);
     return show(userId,old,{screen:'sticker_sale_offer',stickerSale:{
      mode:'buyer',productId:product.product_id,title:product.title,
-     version:product.version,price:Number(product.price_stars)
+     version:product.version,price:Number(product.price_stars),
+     packName:product.pack_name,kind:product.kind
    }});
  }
  async function sendInvoice(userId,session){
