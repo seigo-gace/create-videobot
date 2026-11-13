@@ -564,3 +564,27 @@ test('pending Topic deep link shows usable menu and allows read-only owned pack 
  await wizard.handle(callback('sticker:pack_back|r4'));
  assert.equal(state.screen,'sticker_choose');
 });
+
+
+test('ordinary /start yields to shared home while unresolved sticker receipts survive',async()=>{
+ for(const pendingType of ['stickerPending','stickerEditPending']){
+  let state={revision:3,screen:'sticker_reconcile',screenMessageId:301,
+    [pendingType]:{status:'needs_reconcile',nonce:'preserved'}};
+  const original=structuredClone(state);
+  const wizard=createStickerWizard({
+   api:async()=>true,
+   sessionStore:{
+    read:async()=>structuredClone(state),
+    write:async()=>{throw Error('plain start must not change sticker state');},
+    setScreen:async()=>{throw Error('plain start must not change sticker screen')}
+   },
+   screenTransport:{show:async()=>{throw Error('sticker wizard must yield to home')}},
+   publishSticker:async()=>{throw Error('must not publish')}
+  });
+  const result=await wizard.handle({message:{
+   from:{id:42},chat:{id:42,type:'private'},message_id:401,text:'/start'
+  }});
+  assert.deepEqual(result,{handled:false});
+  assert.deepEqual(state,original);
+ }
+});
