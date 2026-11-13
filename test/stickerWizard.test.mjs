@@ -642,7 +642,7 @@ test('successful creation gives visible pack link and same-pack add and pack ins
  await f.wizard.handle(f.msg({text:'My stickers'}));
  await f.wizard.handle(f.msg({photo:[{file_id:'fileabc'}]}));
  await f.wizard.handle(f.cb('sticker:register|r5'));
- assert.match(f.calls.at(-1)[1],/登録しました！/);
+ assert.match(f.calls.at(-1)[1],/登録できました！/);
  assert.match(f.calls.at(-1)[1],/https:\/\/t.me\/addstickers\//);
  assert.equal(f.state().screen,'sticker_done');
 });
