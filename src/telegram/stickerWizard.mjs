@@ -566,6 +566,10 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     const {id}=privateActor(update);
     const old=await sessionStore.read(id);
     if(old?.stickerEditPending){
+      // Plain /start must always be allowed to open the shared video home.
+      // Preserve the unresolved edit receipt in the durable session.
+      if(/^\/start(?:@[A-Za-z0-9_]+)?$/.test(message.text?.trim()??''))
+        return {handled:false};
       if(typeof message.text==='string'&&
          /^\/start(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message.text.trim()))
         return persist(id,old,{screen:'sticker_edit_reconcile',
@@ -602,6 +606,10 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       // A paused unknown operation is still protected; non-sticker updates
       // remain owned by the existing creator/video wizard.
       if(old.stickerDeferred)return {handled:false};
+      // A plain /start belongs to the common home menu, without erasing the
+      // pending sticker receipt. /start sticker stays in sticker recovery.
+      if(/^\/start(?:@[A-Za-z0-9_]+)?$/.test(message.text?.trim()??''))
+        return {handled:false};
       // A crash may leave an in_progress receipt but the original screen
       // could still show [Register]. Recover the panel without re-registering.
       // This only changes UI state: the Telegram mutation is NEVER reissued.
