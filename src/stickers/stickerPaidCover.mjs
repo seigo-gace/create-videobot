@@ -12,7 +12,8 @@ const exec=promisify(execFile);
 export function createStickerPaidCover({fetchSource}={}){
  if(typeof fetchSource!=='function')throw Error('STICKER_COVER_FETCHER_MISSING');
  return async function paidCover(product){
-  const fileId=product?.items?.[0]?.file_id;
+  const items=typeof product?.items==='string'?JSON.parse(product.items):product?.items;
+  const fileId=items?.[0]?.file_id;
   if(typeof fileId!=='string'||!/^[A-Za-z0-9_-]{3,256}$/.test(fileId))
     throw Error('STICKER_COVER_SOURCE_INVALID');
   const dir=await mkdtemp(join(tmpdir(),'sticker-paid-cover-'));
