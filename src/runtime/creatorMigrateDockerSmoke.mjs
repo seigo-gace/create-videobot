@@ -259,9 +259,9 @@ try {
   const update={update_id:20261113,purchased_paid_media:{
     paid_media_payload:nativePayload,from:{id:198}}};
   const photoRecorded=await photo.capturePurchase(update);
-  const replay=await photo.capturePurchase(update);
-  if(photoRecorded.recorded!==true||photoRecorded.duplicate||!replay.duplicate||
-     photoRecorded.saleId!==replay.saleId)throw Error('STICKER_PAID_PHOTO_IDEMPOTENCY_BROKEN');
+  const photoReplay=await photo.capturePurchase(update);
+  if(photoRecorded.recorded!==true||photoRecorded.duplicate||!photoReplay.duplicate||
+     photoRecorded.saleId!==photoReplay.saleId)throw Error('STICKER_PAID_PHOTO_IDEMPOTENCY_BROKEN');
   const photoRows=await pool.query(
     'SELECT stars,management_fee_tenths,creator_share_tenths FROM videobot_sticker_paid_photo_sales WHERE sale_id=$1',
     [photoRecorded.saleId]);
