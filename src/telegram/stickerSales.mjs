@@ -24,7 +24,7 @@ function actor(update){
    throw Error('STICKER_SALE_OWNER_REQUIRED');
  return {userId:from.id,messageId:m.message_id};
 }
-export function createStickerSalesFlow({api,sessionStore,screenTransport,salesStore,packInventory,publishSnapshot,topicPublisher,giftStore,paidPhotoStore}={}){
+export function createStickerSalesFlow({api,sessionStore,screenTransport,salesStore,packInventory,publishSnapshot,topicPublisher,giftStore,paidPhotoStore,stickerShopBaseUrl=null}={}){
  if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
     typeof screenTransport?.show!=='function'||typeof salesStore?.reserveOrder!=='function'||
@@ -34,6 +34,17 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
     (topicPublisher!==undefined&&topicPublisher!==null&&
     (typeof topicPublisher.publish!=='function'||typeof topicPublisher.edit!=='function'||
      typeof topicPublisher.remove!=='function')))throw Error('STICKER_SALE_DEPENDENCIES_MISSING');
+ const shopOrigin=()=>{
+  if(!stickerShopBaseUrl)return null;
+  let url;
+  try{url=new URL(stickerShopBaseUrl);}catch{throw Error('STICKER_SHOP_BASE_URL_INVALID');}
+  if(url.protocol!=='https:'||url.username||url.password||url.port||
+     url.search||url.hash||url.pathname!=='/'||
+     !/(^|\.)g-acebot\.com$/.test(url.hostname))
+   throw Error('STICKER_SHOP_BASE_URL_INVALID');
+  return url.origin;
+ };
+ const shopUrl=shopOrigin();
  async function show(userId,old,patch){
    const revision=(old?.revision??0)+1,session={...old,...patch,revision};
    await sessionStore.write(userId,revision-1,session);
@@ -84,8 +95,14 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
         [b('📦 同じ商品番号で続ける','sale:retry_publish')],
         [b('↩ メニューへ','sale:cancel')]];break;
     case 'sticker_sale_offer':
-      text='📦 '+d.title+'（版'+d.version+'）\n価格：'+d.price+' Stars\n\n'+MONEY_TERMS;
-      keyboard=[[b('同意して購入へ','sale:accept')],[b('↩ 戻る','sale:cancel')]];break;
+      text='📦 '+d.title+'（版'+d.version+'）\n価格：'+d.price+' Stars'+
+        (shopUrl?'\n\nパックの中身を一覧で確認してから購入できます。':'\n\n'+MONEY_TERMS);
+      keyboard=[
+       ...(shopUrl?[[{text:'🎨 パックの中身を見る',
+         web_app:{url:shopUrl+'/shop?product='+d.productId}}]]:
+         [[b('同意して購入へ','sale:accept')]]),
+       [b('↩ 戻る','sale:cancel')]
+      ];break;
     case 'sticker_sale_agreed':
       text='購入内容：'+d.title+'\n価格：'+d.price+
         ' Stars\n購入条件を承諾しました。次にTelegram公式のStars請求へ進みます。';
@@ -222,7 +239,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      return {handled:true,unavailable:true};
    const old=await sessionStore.read(userId);
    if(old?.stickerPending||old?.stickerEditPending)return {handled:true,locked:true};
-   if(paidPhotoStore&&await paidPhotoStore.hasTopicPublication(productId))
+   if(paidPhotoStore&&await paidPhotoStore.getEntitlement({buyerId:userId,productId}))
       return paidPhotoFlow.claim(userId,productId);
     return show(userId,old,{screen:'sticker_sale_offer',stickerSale:{
      mode:'buyer',productId:product.product_id,title:product.title,

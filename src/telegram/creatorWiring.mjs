@@ -37,7 +37,8 @@ import {join} from 'node:path';
  */
 export function createVideoBotSourceModule({
   pool,telegramApi,screenTransport,gateOwner,mediaPorts,webhookSecret,
-  mediaRun,storageApproved=false,botToken,verifyPrivateMediaStore,fetchImpl
+  mediaRun,storageApproved=false,botToken,verifyPrivateMediaStore,fetchImpl,
+  stickerShopBaseUrl=null
 }={}) {
   if(typeof pool?.query!=='function'||typeof telegramApi!=='function'||
       (screenTransport!=null&&typeof screenTransport?.show!=='function')||!gateOwner||
@@ -294,6 +295,7 @@ export function createVideoBotSourceModule({
     api:telegramApi,sessionStore,screenTransport:screen,
     salesStore:stickerSalesStore,giftStore:stickerGifts,packInventory:stickerInventory,
     topicPublisher:stickerTopicPublisher,paidPhotoStore:stickerPaidPhoto,
+    stickerShopBaseUrl,
     publishSnapshot:async({sellerId,packName,priceStars,productId,sellerFeeAccepted})=>{
       const own=await stickerInventory.getOwnedPack(sellerId,packName);
       if(!own)throw Error('STICKER_SALE_PACK_OWNER_REQUIRED');

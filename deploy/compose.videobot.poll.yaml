@@ -21,6 +21,8 @@ services:
       VIDEOBOT_RUN_MODE: telegram_poll
       VIDEOBOT_PRIVATE_INGRESS_ONLY: "true"
       VIDEOBOT_SCHEMA_MIGRATE: "YES"
+      VIDEOBOT_SHOP_HTTP_PORT: "8766"
+      VIDEOBOT_SHOP_PUBLIC_URL: ${VIDEOBOT_SHOP_PUBLIC_URL:-}
       VIDEOBOT_GATE_OWNER_ADAPTER: /opt/videobot/owner/gateOwner.mjs
       VIDEOBOT_STICKER_PIN_RECEIPT_FILE: /var/lib/videobot/sticker-entry/group2373696859_thread4640.json
       VIDEOBOT_TELEGRAM_TOKEN_FILE: /run/secrets/videobot_telegram_token
@@ -28,6 +30,8 @@ services:
       VIDEOBOT_DB_HOST: deploy-postgres-1
       VIDEOBOT_DB_NAME: videobot
       VIDEOBOT_DB_USER: ${GSERVER_POSTGRES_USER:?existing_postgres_owner_required}
+    ports:
+      - "127.0.0.1:18766:8766"
     volumes:
       - ${VIDEOBOT_TELEGRAM_TOKEN_SOURCE:?createvdobot_existing_token_required}:/run/secrets/videobot_telegram_token:ro
       - ${VIDEOBOT_DB_PASSWORD_SOURCE:?gserver_db_password_source_required}:/run/secrets/videobot_db_password:ro

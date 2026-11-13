@@ -12,6 +12,8 @@ import {createVideoBotSourceModule} from '../telegram/creatorWiring.mjs';
 import {createCreatorPollingConsumer} from './creatorPollingConsumer.mjs';
 import {applyCreatorSchema} from './creatorMigrate.mjs';
 import {createCreatorTelegramFetch} from './creatorEgress.mjs';
+import {createStickerShopPreview} from '../stickers/shopPreview.mjs';
+import {createStickerShopServer} from '../stickers/shopHttp.mjs';
 
 const {Pool}=pg;
 // Gserver host network has verified IPv4 Telegram egress, while default
@@ -96,6 +98,7 @@ export async function createCreatorPollingRuntime({
   const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch});
   source=createSource({
    pool,telegramApi:api,gateOwner,botToken:token,
+   stickerShopBaseUrl:env.VIDEOBOT_SHOP_PUBLIC_URL??null,
    webhookSecret:pollAdmissionSecret,
    storageApproved:false,
    mediaPorts:{
@@ -109,7 +112,7 @@ export async function createCreatorPollingRuntime({
    webhookSecret:pollAdmissionSecret,
    pool
   });
-  return {pool,source,api,poller,gateConnected,
+  return {pool,source,api,poller,gateConnected,botToken:token,fetchSource,
    async close(){await outbound.close();await pool.end();}};
  }catch(err){await outbound.close();await pool.end();throw err;}
 }
@@ -117,14 +120,34 @@ export async function runCreatorPollingMain({
  createRuntime=createCreatorPollingRuntime,signal=undefined,onStatus=()=>{}
 }={}){
  const rt=await createRuntime();
+ let shopServer=null;
  try{
+  const port=process.env.VIDEOBOT_SHOP_HTTP_PORT;
+  if(port!==undefined&&port!==''){
+   if(port!=='8766')throw Error('STICKER_SHOP_UNAPPROVED_LISTEN_PORT');
+   shopServer=createStickerShopServer({
+    pool:rt.pool,salesStore:rt.source.stickerSalesStore,
+    telegramApi:rt.api,botToken:rt.botToken,
+    preview:createStickerShopPreview({fetchSource:rt.fetchSource})
+   });
+   await new Promise((resolve,reject)=>{
+    shopServer.once('error',reject);
+    shopServer.listen(8766,'0.0.0.0',()=>{
+     shopServer.removeListener('error',reject);resolve();
+    });
+   });
+   onStatus('STICKER_SHOP_HTTP_READY=PASS');
+  }
   onStatus('CREATOR_DM_POLL_READY=PASS');
   onStatus('CREATOR_GATE_PUBLIC_RELEASE='+(rt.gateConnected?'CONNECTED':'NOT_VERIFIED'));
   while(!signal?.aborted){
    const outcome=await rt.poller.pollBatch({timeout:8});
    if(outcome.accepted>0)onStatus('CREATOR_DM_UPDATES_HANDLED='+outcome.accepted);
   }
- }finally{await rt.close();}
+ }finally{
+  if(shopServer?.listening)await new Promise(resolve=>shopServer.close(()=>resolve()));
+  await rt.close();
+ }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const stop=new AbortController();
