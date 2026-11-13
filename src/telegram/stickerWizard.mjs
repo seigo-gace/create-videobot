@@ -9,6 +9,9 @@ function privateActor(update){
   return {id:message.chat.id,messageId:message.message_id};
 }
 const button=(name,action,rev)=>({text:name,callback_data:action+'|r'+rev});
+const packLink=(name,kind)=>typeof name==='string'&&/^[A-Za-z][A-Za-z0-9_]{1,63}$/.test(name)
+  ?'https://t.me/'+(kind==='custom_emoji'?'addemoji/':'addstickers/')+name:null;
+const openPackButton=(name,kind)=>({text:'👀 パックの中身を見る',url:packLink(name,kind)});
 function stickerHelp(error){
   const code=String(error?.message??'');
   // Do not display raw Telegram errors, local paths, or secret-bearing URLs.
@@ -76,6 +79,7 @@ function panel(session,revision){
       (p.kind==='custom_emoji'?'カスタム絵文字':'ステッカー')+
       '｜'+(p.item_count??0)+'個'+stickerHint(session),
       reply_markup:{inline_keyboard:[
+        ...(packLink(p.pack_name,p.kind)?[[openPackButton(p.pack_name,p.kind)]]:[]),
         [btn('➕ このパックに追加','sticker:add')],
         [btn('✏️ タイトル変更','sticker:rename'),btn('🧩 素材を管理','sticker:items')],
         [btn('⭐ このパックを販売','sticker:sell')],
@@ -95,6 +99,8 @@ function panel(session,revision){
     keys.push([
       ...(page>0?[btn('◀ 前へ','sticker:items_prev')]:[]),
       ...(rows.length===10?[btn('次へ ▶','sticker:items_next')]:[])
+    ]);
+    keys.push(...(packLink(session.stickerSelectedPack?.pack_name,session.stickerSelectedPack?.kind)?[openPackButton(session.stickerSelectedPack.pack_name,session.stickerSelectedPack.kind)]:[])
     ]);
     keys.push([btn('↩ パックへ','sticker:pack_back')]);
     return {text:'🧩 素材の編集（'+(page+1)+'ページ）'+stickerHint(session),
@@ -165,9 +171,10 @@ function panel(session,revision){
       :[]}
   };
   if(session.screen==='sticker_done')return {
-    text:'✅ ステッカーを登録しました！\nパック：'+d.title+'\n'+d.link+
+    text:'✅ 登録できました！\nパック：'+d.title+'\n'+d.link+
       '\n\n［続けて追加］で同じパックに素材を追加できます。［マイパック］で登録済みの素材を確認できます。',
     reply_markup:{inline_keyboard:[
+      ...(packLink(d.setName,d.kind)?[[openPackButton(d.setName,d.kind)]]:[]),
       [btn('➕ 続けて追加','sticker:again'),btn('📦 マイパック','sticker:packs')],
       [btn('↩ ステッカーメニュー','sticker:cancel')]
     ]}
