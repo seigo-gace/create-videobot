@@ -53,9 +53,9 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
    body,signal:AbortSignal.timeout(timeoutMs),redirect:'error'
   });
   if(!response)throw new Error('Telegram API request failed');
-  // Only known edit-screen failures may be converted into predictable UI
-  // outcomes. Other Telegram descriptions can contain user-supplied data;
-  // never pass them through to logs or the caller.
+  // Definitively rejected edit-screen requests may safely use the shared
+  // replacement path. Network/5xx ambiguity remains unknown; never expose
+  // Telegram descriptions containing user-supplied data.
   // Telegram can confirm that the existing paid-media caption/keyboard
   // already matches the requested appearance. Treat only that exact reply
   // as an idempotent success; do not mark a paid Topic post as UNKNOWN.
@@ -76,7 +76,10 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
       throw new Error('message is not modified');
     if(/^bad request: (message to edit not found|message to be edited not found|message can.t be edited|message cannot be edited|message_id_invalid|there is no text in the message to edit|message is not a text message)$/.test(description))
       throw new Error('message cannot be edited');
-    throw new Error('Telegram API request failed');
+    // HTTP 400 definitively rejected this edit. The shared DM transport may
+    // replace the screen with sendMessage, but a timeout/5xx still must not
+    // cause a duplicate. Never expose Telegram's untrusted description.
+    throw new Error('message cannot be edited');
   }
   // An explicit HTTP 400 for a set mutation is a confirmed rejection,
   // unlike a network timeout or an unreadable success response. Keep Telegram
