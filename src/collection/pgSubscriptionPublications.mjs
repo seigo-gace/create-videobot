@@ -12,6 +12,23 @@ function key(v) {
 export function createPgSubscriptionPublicationStore(pool) {
   if(typeof pool?.query!=='function')throw Error('SUBSCRIPTION_DB_UNAVAILABLE');
   return {
+    async readAssets({channelId,messageId}) {
+      const r=await pool.query(
+        'SELECT full_file_id,sample_file_id,preview_storage_key,duration_seconds,streaming_ready FROM videobot_subscription_previews WHERE source_channel_id=$1 AND source_message_id=$2',
+        [channelId,messageId]);
+      return r.rows[0]??null;
+    },
+    async saveAssets({channelId,messageId,previewStorageKey,durationSeconds,fullFileId,sampleFileId}) {
+      if(typeof fullFileId!=='string'||!fullFileId.trim()||
+         typeof sampleFileId!=='string'||!sampleFileId.trim()||
+         typeof previewStorageKey!=='string'||!previewStorageKey.trim()||
+         !Number.isFinite(durationSeconds)||durationSeconds<=0||durationSeconds>60)
+        throw Error('SUBSCRIPTION_ASSETS_INVALID');
+      const r=await pool.query(
+        'INSERT INTO videobot_subscription_previews (source_channel_id,source_message_id,preview_storage_key,duration_seconds,streaming_ready,full_file_id,sample_file_id) VALUES ($1,$2,$3,$4,TRUE,$5,$6) ON CONFLICT (source_channel_id,source_message_id) DO UPDATE SET preview_storage_key=EXCLUDED.preview_storage_key,duration_seconds=EXCLUDED.duration_seconds,streaming_ready=TRUE,full_file_id=EXCLUDED.full_file_id,sample_file_id=EXCLUDED.sample_file_id,updated_at=NOW() RETURNING source_message_id',
+        [channelId,messageId,previewStorageKey,durationSeconds,fullFileId,sampleFileId]);
+      if(r.rowCount!==1)throw Error('SUBSCRIPTION_ASSETS_WRITE_FAILED');
+    },
     async read(v) {
       const r=await pool.query(
         'SELECT status,telegram_message_id,target_chat_id,target_thread_id FROM videobot_subscription_publications WHERE source_channel_id=$1 AND source_message_id=$2 AND kind=$3',
