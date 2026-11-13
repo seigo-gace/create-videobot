@@ -388,6 +388,11 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      return show(userId,old,{screen:'sticker_sale_support',
        stickerSale:{...old?.stickerSale,mode:'buyer',supportError:false}});
    }
+   if(m?.text&&/^\/start(?:@[A-Za-z0-9_]+)?\s+claim_sp_[a-f0-9]{24}$/.test(m.text.trim())){
+     const {userId}=actor(update);
+     if(!paidPhotoFlow)throw Error('STICKER_PAID_PHOTO_NOT_CONNECTED');
+     return paidPhotoFlow.claim(userId,m.text.trim().split('claim_')[1]);
+   }
    if(m?.text&&/^\/start(?:@[A-Za-z0-9_]+)?\s+buy_sp_[a-f0-9]{24}$/.test(m.text.trim())){
      const {userId}=actor(update);
      return openOffer(userId,m.text.trim().split('buy_')[1]);
@@ -464,6 +469,13 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    if(action==='sale:support')
      return show(userId,old,{screen:'sticker_sale_support',
        stickerSale:{...d,mode:'buyer',supportError:false}});
+   if(action==='sale:publish_topic'&&old.screen==='sticker_sale_published'&&
+      d.mode==='seller'&&d.topicStatus!=='sent'&&validId(d.productId))
+      return finishPublish(userId,d);
+   if(action.startsWith('sale:paid_')){
+     if(!paidPhotoFlow)throw Error('STICKER_PAID_PHOTO_NOT_CONNECTED');
+     return paidPhotoFlow.callback({action,userId,old,d});
+   }
    if(action==='sale:post_edit'&&old.screen==='sticker_sale_published'&&
       d.mode==='seller'&&d.topicStatus==='sent'&&topicPublisher)
      return show(userId,old,{screen:'sticker_sale_post_edit'});
@@ -568,7 +580,9 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
    if(action==='sale:pay'&&old.screen==='sticker_sale_agreed'&&d.accepted===true)
      return sendInvoice(userId,old);
    if(action==='sale:purchases'){
-     const purchases=await salesStore.listPurchases(userId);
+     const invoices=await salesStore.listPurchases(userId);
+     const photos=paidPhotoFlow?await paidPhotoFlow.listPurchases(userId):[];
+     const purchases=[...photos,...invoices].slice(0,10);
      return show(userId,old,{screen:'sticker_sale_purchases',
        stickerSale:{...d,mode:'buyer',purchases}});
    }
@@ -576,6 +590,12 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
      const idx=Number(action.slice('sale:owned:'.length));
      const selected=d.purchases?.[idx];
      if(!selected)return {handled:true,staleButton:true};
+     if(selected.paid_photo===true){
+       if(!paidPhotoFlow)throw Error('STICKER_PAID_PHOTO_NOT_CONNECTED');
+       const saleId=Number(String(selected.order_id).slice('paidphoto:'.length));
+       if(!Number.isSafeInteger(saleId)||saleId<=0)return {handled:true,staleButton:true};
+       return paidPhotoFlow.receive(userId,saleId,1);
+     }
      return receiveOrder(userId,selected.order_id,1);
    }
    if(action==='sale:next'&&old.screen==='sticker_sale_delivery')
