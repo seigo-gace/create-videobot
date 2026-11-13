@@ -15,7 +15,7 @@ export function createPublicChannelVideoCollector({residentUserbot, catalog, max
     if (typeof residentUserbot?.[method] !== 'function')
       throw new Error('RESIDENT_USERBOT_PORT_UNAVAILABLE:'+method);
   }
-  if(typeof catalog?.recordDownload !== 'function')
+  if(typeof catalog?.recordDownload !== 'function'||typeof catalog?.hasDownload !== 'function')
     throw new Error('VIDEO_CATALOG_UNAVAILABLE');
   if(!Number.isSafeInteger(maxPerChannel)||maxPerChannel<1||maxPerChannel>1000)
     throw new Error('INVALID_CHANNEL_LIMIT');
@@ -37,7 +37,7 @@ export function createPublicChannelVideoCollector({residentUserbot, catalog, max
         for(const item of videos) {
           const messageId=positiveInt(item?.messageId,'MESSAGE_ID');
           if(item?.kind!=='video')continue;
-          // The database owns deduplication. Resident IPC owns physical writes.
+          // Skip already catalogued videos before contacting resident storage.\n          if(await catalog.hasDownload(channelId,messageId)){summary.alreadyPresent++;continue;}\n          // The database owns deduplication. Resident IPC owns physical writes.
           // Never construct an arbitrary destination path from Telegram text.
           try {
             const result=await residentUserbot.downloadVideo({channelId,messageId});
