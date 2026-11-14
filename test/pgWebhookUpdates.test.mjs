@@ -1,0 +1,106 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createPostgresWebhookUpdateStore} from '../src/sales/pgWebhookUpdates.mjs';
+
+function db(){
+ const rows=new Map();
+ return {rows,async query(sql,params){
+  const id=params[0],row=rows.get(id);
+  if(sql.startsWith('INSERT INTO videobot_webhook_updates')){
+   if(row)return {rowCount:0,rows:[]};
+   rows.set(id,{payload_sha256:params[1],status:'processing',handled:null});
+   return {rowCount:1,rows:[{update_id:id}]};
+  }
+  if(sql.startsWith('SELECT payload_sha256')){
+   return {rowCount:row?1:0,rows:row?[{...row}]:[]};
+  }
+  if(sql.startsWith("UPDATE videobot_webhook_updates SET status='completed'")){
+   if(!row||row.status!=='processing'||row.handled!==null)return {rowCount:0,rows:[]};
+   row.status='completed';row.handled=params[1];
+   return {rowCount:1,rows:[{update_id:id}]};
+  }
+  if(sql.startsWith("UPDATE videobot_webhook_updates SET status='processing'")){
+   if(!row||row.status!=='needs_reconcile'||row.payload_sha256!==params[1])
+     return {rowCount:0,rows:[]};
+   row.status='processing';return {rowCount:1,rows:[{update_id:id}]};
+  }
+  if(sql.startsWith("UPDATE videobot_webhook_updates SET status='needs_reconcile'")){
+   if(!row||row.status!=='processing')return {rowCount:0,rows:[]};
+   row.status='needs_reconcile';
+   return {rowCount:1,rows:[{update_id:id}]};
+  }
+  throw Error('Unexpected SQL');
+ }};
+}
+const fp=c=>c.repeat(64);
+test('Telegram webhook update is completed exactly once and replays without running handler',async()=>{
+ const pool=db(),store=createPostgresWebhookUpdateStore(pool);
+ assert.deepEqual(await store.claim(42,fp('a')),{claimed:true});
+ await store.complete(42,true);
+ assert.deepEqual(await store.claim(42,fp('a')),{claimed:false,completed:true,handled:true});
+ assert.equal(pool.rows.size,1);
+ await assert.rejects(()=>store.complete(42,true),/COMPLETION_STALE/);
+});
+test('same update ID with different bytes is not accepted',async()=>{
+ const store=createPostgresWebhookUpdateStore(db());
+ await store.claim(43,fp('b'));
+ await assert.rejects(()=>store.claim(43,fp('c')),/FINGERPRINT_CONFLICT/);
+ await assert.rejects(()=>store.claim(43,fp('b')),/NEEDS_RECONCILE/);
+});
+test('failed media processing is locked for explicit reconciliation and never automatically retried',async()=>{
+ const pool=db(),store=createPostgresWebhookUpdateStore(pool);
+ await store.claim(44,fp('d'));await store.markUnknown(44);
+ await assert.rejects(()=>store.claim(44,fp('d')),/NEEDS_RECONCILE/);
+ assert.equal(pool.rows.get(44).status,'needs_reconcile');
+ assert.equal(pool.rows.get(44).handled,null);
+});
+test('reject invalid fingerprint, ID and missing pool before persistence',async()=>{
+ const store=createPostgresWebhookUpdateStore(db());
+ await assert.rejects(()=>store.claim(-1,fp('a')),/invalid Telegram/);
+ await assert.rejects(()=>store.claim(3,'aaa'),/fingerprint/);
+ await assert.rejects(()=>store.complete(5,'true'),/invalid webhook completion/);
+ assert.throws(()=>createPostgresWebhookUpdateStore(),/private webhook SQL pool/);
+});
+
+test('identical sticker successful_payment recovery is CAS guarded; video unknown stays locked',async()=>{
+ const pool=db(),store=createPostgresWebhookUpdateStore(pool);
+ await store.claim(90,fp('a'));
+ await store.markUnknown(90);
+ assert.deepEqual(await store.claim(90,fp('a'),{recoverStickerPayment:true}),
+   {claimed:true,recovered:true});
+ await assert.rejects(()=>store.claim(90,fp('a'),{recoverStickerPayment:true}),
+   /NEEDS_RECONCILE/);
+ await store.complete(90,true);
+ assert.deepEqual(await store.claim(90,fp('a')),{claimed:false,completed:true,handled:true});
+ await store.claim(91,fp('b'));await store.markUnknown(91);
+ await assert.rejects(()=>store.claim(91,fp('b')),/NEEDS_RECONCILE/);
+ await assert.rejects(()=>store.claim(91,fp('c'),{recoverStickerPayment:true}),/FINGERPRINT_CONFLICT/);
+});
+
+test('only identical native sticker-photo Stars update can resume a failed purchase receipt',async()=>{
+ const pool=db(),store=createPostgresWebhookUpdateStore(pool);
+ await store.claim(120,fp('a'));await store.markUnknown(120);
+ assert.deepEqual(await store.claim(120,fp('a'),{recoverStickerPhotoPurchase:true}),
+   {claimed:true,recovered:true});
+ await assert.rejects(()=>store.claim(120,fp('a'),{recoverStickerPhotoPurchase:true}),/NEEDS_RECONCILE/);
+ await store.complete(120,true);
+ assert.deepEqual(await store.claim(120,fp('a')),{claimed:false,completed:true,handled:true});
+ await store.claim(121,fp('b'));await store.markUnknown(121);
+ await assert.rejects(()=>store.claim(121,fp('b')),/NEEDS_RECONCILE/);
+ await assert.rejects(()=>store.claim(121,fp('c'),{recoverStickerPhotoPurchase:true}),/FINGERPRINT_CONFLICT/);
+});
+
+
+test('only matching private start navigation can recover an unknown receipt',async()=>{
+ const pool=db(),store=createPostgresWebhookUpdateStore(pool);
+ await store.claim(200,fp('a'));await store.markUnknown(200);
+ await assert.rejects(()=>store.claim(200,fp('a')),/NEEDS_RECONCILE/);
+ await assert.rejects(()=>store.claim(200,fp('b'),{recoverNavigation:true}),/FINGERPRINT_CONFLICT/);
+ assert.deepEqual(await store.claim(200,fp('a'),{recoverNavigation:true}),
+   {claimed:true,recovered:true});
+ await store.complete(200,true);
+ assert.deepEqual(await store.claim(200,fp('a')),
+   {claimed:false,completed:true,handled:true});
+ await store.claim(201,fp('c'));await store.markUnknown(201);
+ await assert.rejects(()=>store.claim(201,fp('c')),/NEEDS_RECONCILE/);
+});

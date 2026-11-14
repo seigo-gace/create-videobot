@@ -1,0 +1,81 @@
+name: Pre-Gserver unit tests
+on:
+  push:
+    branches: ['feat/assistant-ai-and-sales-core']
+  pull_request:
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: videobot_ci
+          POSTGRES_PASSWORD: ci_only_not_a_secret
+          POSTGRES_DB: videobot_ci
+        options: >-
+          --health-cmd "pg_isready -U videobot_ci -d videobot_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: npm test
+      - name: Build actual Telegram runtime image and validate private Compose contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/runtime/main.mjs
+          node --check src/runtime/creatorEntrypoint.mjs
+          node --check src/runtime/creatorLiveService.mjs
+          node --check src/runtime/creatorHttpService.mjs
+          docker build --pull=false -f deploy/Dockerfile -t create-videobot:ci .
+          # Actual transcoding in the SAME Node+FFmpeg image used at runtime.
+          docker run --rm -e STICKER_FFMPEG_INTEGRATION=1 -v "$PWD/test:/opt/videobot/test:ro" create-videobot:ci node --test test/stickerRealFfmpeg.test.mjs
+          export VIDEOBOT_GATE_OWNER_SOURCE=/tmp/ci-owner-provider-do-not-create
+          export VIDEOBOT_TELEGRAM_TOKEN_SOURCE=/tmp/ci-telegram-token-do-not-create
+          export VIDEOBOT_WEBHOOK_SECRET_SOURCE=/tmp/ci-webhook-secret-do-not-create
+          export VIDEOBOT_DATABASE_URL_SOURCE=/tmp/ci-pg-dsn-do-not-create
+          export GSERVER_PRIVATE_NETWORK=ci-mocked-only
+          export VIDEOBOT_WEBHOOK_URL=https://video.example.test/telegram/creator
+          docker compose -f deploy/compose.videobot.telegram.yaml config --quiet
+      - name: Verify VideoBot PostgreSQL migrations and purchase schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          container='${{ job.services.postgres.id }}'
+          test -n "$container"
+          for sql in sql/001_video_post_receipts.sql sql/002_creator_sessions.sql sql/003_video_listings.sql sql/004_stars_ledger.sql sql/005_management_fee_30.sql sql/006_webhook_updates.sql sql/007_sticker_packs.sql; do
+            docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < "$sql"
+          done
+          docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < test/sqlSchemaSmoke.sql
+          docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < test/sqlStickerSmoke.sql
+          docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < test/sqlWebhookUpdateSmoke.sql
+          # Repeating the policy migration must be safe after initial adoption.
+          docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_ci < sql/005_management_fee_30.sql
+          # A historical transaction in another disposable CI database must NOT be
+          # silently assigned the new management fee during the first migration.
+          docker exec "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d postgres -c "CREATE DATABASE videobot_legacy_fee_ci"
+          for sql in sql/001_video_post_receipts.sql sql/002_creator_sessions.sql sql/003_video_listings.sql sql/004_stars_ledger.sql; do
+            docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_legacy_fee_ci < "$sql"
+          done
+          docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_legacy_fee_ci < test/sqlLegacyFeeGuard.sql
+          if docker exec -i "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_legacy_fee_ci < sql/005_management_fee_30.sql; then
+            echo "ERROR: historical sale was silently assigned a new fee policy" >&2
+            exit 1
+          fi
+          cols=$(docker exec "$container" psql -X -tA -v ON_ERROR_STOP=1 -U videobot_ci -d videobot_legacy_fee_ci -c "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='videobot_stars_ledger' AND column_name='management_fee_bps'")
+          test "$cols" = "0"
+      - name: Prove actual Docker Node runtime applies seven migrations to real PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          container='${{ job.services.postgres.id }}'
+          test -n "$container"
+          docker exec "$container" psql -X -v ON_ERROR_STOP=1 -U videobot_ci -d postgres -c 'CREATE DATABASE videobot_migration_ci'
+          docker run --rm --network "container:$container"             -e CI_DOCKER_DB_TEST_ONLY=YES             -e CI_VIDEO_DB_DSN=postgres://videobot_ci:ci_only_not_a_secret@127.0.0.1:5432/videobot_migration_ci             create-videobot:ci node src/runtime/creatorMigrateDockerSmoke.mjs
+

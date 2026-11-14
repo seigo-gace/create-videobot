@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+ <meta name="color-scheme" content="light dark">
+ <title>ステッカーパック</title>
+ <link rel="stylesheet" href="/shop/style.css">
+ <script src="https://telegram.org/js/telegram-web-app.js?65"></script>
+ <script defer src="/shop/app.js"></script>
+</head>
+<body>
+ <main class="page">
+  <header class="header">
+   <div class="eyebrow">CREATEVDOBOT · STICKERS</div>
+   <h1 id="title">パックを読み込み中…</h1>
+   <p id="summary" class="muted"></p>
+  </header>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <section class="grid" id="grid" aria-label="パックのステッカー一覧"></section>
+  <section class="payment" id="payment" hidden>
+   <div class="price"><span id="price"></span><span class="muted">Telegram Stars</span></div>
+   <p class="terms">購入すると、表示された版のステッカー素材をCreateVdobotのDMで受け取れます。公開ステッカーセットや素材の再共有は技術的に防げません。通常の自己都合返金ボタンはありません（法令・Telegramの正当な異議申立ては除きます）。</p>
+   <label class="check"><input type="checkbox" id="consent"><span>商品の内容・購入条件を確認しました</span></label>
+   <button id="buy" disabled>⭐ Starsで購入</button>
+   <p class="hint" id="progress"></p>
+  </section>
+ </main>
+</body>
+</html>

@@ -2,7 +2,7 @@
 
 Telegram Stars paid-video sales bot with independently bounded Assistant AI integration.
 
-> Pre-Gserver staging only. No production integration, credentials, personal records, payment keys or real transactions.
+> Current evidence: source/CI and offline integration checks only. Real Telegram/Gserver/Stars purchase testing has not yet been verified. Stars paid-video sales and live testing are product acceptance goals, not prohibited features. Never commit credentials or personal/payment records.
 
 ## Ownership
 - VideoBot owns paid-media listings, purchase-event reconciliation and creator sales ledger.

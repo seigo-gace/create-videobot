@@ -1,0 +1,50 @@
+# The existing @CreateVdobot identity has NO webhook and NO live updater.
+# This ONE long-polling consumer uses its own DB, session/Stars and current
+# creatorWiring modules. No second Telegram identity or polling worker.
+services:
+  videobot-poll:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: create-videobot:local-poll
+    pull_policy: never
+    init: true
+    restart: unless-stopped
+    read_only: true
+    # Use the image's non-root "node" UID. Host preflight confirms both
+    # read-only secret files are owned by this same UID; root plus cap_drop ALL
+    # cannot bypass the 0600 mount permissions.
+    networks:
+      - gserver-db
+    environment:
+      NODE_ENV: production
+      VIDEOBOT_RUN_MODE: telegram_poll
+      VIDEOBOT_PRIVATE_INGRESS_ONLY: "true"
+      VIDEOBOT_SCHEMA_MIGRATE: "YES"
+      VIDEOBOT_SHOP_HTTP_PORT: "8766"
+      VIDEOBOT_SHOP_PUBLIC_URL: ${VIDEOBOT_SHOP_PUBLIC_URL:-}
+      VIDEOBOT_GATE_OWNER_ADAPTER: /opt/videobot/owner/gateOwner.mjs
+      VIDEOBOT_STICKER_PIN_RECEIPT_FILE: /var/lib/videobot/sticker-entry/group2373696859_thread4640.json
+      VIDEOBOT_TELEGRAM_TOKEN_FILE: /run/secrets/videobot_telegram_token
+      VIDEOBOT_DB_PASSWORD_FILE: /run/secrets/videobot_db_password
+      VIDEOBOT_DB_HOST: deploy-postgres-1
+      VIDEOBOT_DB_NAME: videobot
+      VIDEOBOT_DB_USER: ${GSERVER_POSTGRES_USER:?existing_postgres_owner_required}
+    ports:
+      - "127.0.0.1:18766:8766"
+    volumes:
+      - ${VIDEOBOT_TELEGRAM_TOKEN_SOURCE:?createvdobot_existing_token_required}:/run/secrets/videobot_telegram_token:ro
+      - ${VIDEOBOT_DB_PASSWORD_SOURCE:?gserver_db_password_source_required}:/run/secrets/videobot_db_password:ro
+      - ${VIDEOBOT_STICKER_PIN_STATE_SOURCE:?verified_existing_CreateVdobot_pin_receipt_required}:/var/lib/videobot/sticker-entry:ro
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m,mode=1777
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 0.8
+    stop_grace_period: 30s
+networks:
+  gserver-db:
+    external: true
+    name: ${GSERVER_POSTGRES_NETWORK:?verified_postgres_network_required}
