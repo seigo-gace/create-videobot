@@ -8,6 +8,7 @@ import {readPrivateToken} from './config.mjs';
 import {createTelegramBotApi} from '../telegram/botApi.mjs';
 import {verifyCreateVdoBot} from '../telegram/identityCheck.mjs';
 import {createTelegramVideoFetcher} from '../telegram/telegramFileFetch.mjs';
+import {createCreatorDmPreviewUploader} from '../telegram/privateMediaUpload.mjs';
 import {createVideoBotSourceModule} from '../telegram/creatorWiring.mjs';
 import {createCreatorPollingConsumer} from './creatorPollingConsumer.mjs';
 import {applyCreatorSchema} from './creatorMigrate.mjs';
@@ -96,15 +97,13 @@ export async function createCreatorPollingRuntime({
   if(schema.migrations!==17)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
   const pollAdmissionSecret=randomBytes(32).toString('hex');
   const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch});
+  const saveGenerated=createCreatorDmPreviewUploader({token,fetchImpl:outbound.fetch,telegramApi:api});
   source=createSource({
    pool,telegramApi:api,gateOwner,botToken:token,
    stickerShopBaseUrl:env.VIDEOBOT_SHOP_PUBLIC_URL??null,
    webhookSecret:pollAdmissionSecret,
-   storageApproved:false,
-   mediaPorts:{
-    fetchSource,
-    saveGenerated:async()=>{throw Error('CREATOR_PRIVATE_VIDEO_STORAGE_NOT_VERIFIED');}
-   }
+   storageApproved:true,
+   mediaPorts:{fetchSource,saveGenerated}
   });
   poller=createCreatorPollingConsumer({
    telegramApi:api,
