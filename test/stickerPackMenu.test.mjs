@@ -59,7 +59,7 @@ function setup(){
     message:{chat:{id:42,type:'private'},message_id:301}
   }});
   const labels=()=>panels.at(-1).reply_markup.inline_keyboard.map(row=>row.map(b=>b.text));
-  return {tap,labels,state:()=>state,calls,seenPacks,panels,selectGalleryItem:wizard.selectGalleryItem};
+  return {tap,labels,state:()=>state,calls,seenPacks,panels};
 }
 
 test('My Packs selects kind, shows 10 compact rows and remains separated from emoji packs',async()=>{
@@ -105,10 +105,11 @@ test('per-pack add preserves exact pack and edit opens its actual item list',asy
   await f.tap('sticker:items_next');
   assert.equal(f.state().stickerItemPage,1);
   assert.equal(f.state().stickerItemRows.length,2);
-  assert.ok(f.panels.at(-1).reply_markup.inline_keyboard.flat().some(b=>
-    b.web_app?.url==='https://shop.hentaigay.org/shop/my-pack?pack=regular_0'));
-  assert.ok(!f.labels().flat().some(x=>x.includes('番目を編集')));
-  await f.selectGalleryItem({ownerId:42,packName:'regular_0',index:0});
+  assert.deepEqual(f.panels.at(-1).reply_markup.inline_keyboard
+    .filter(row=>row.some(b=>b.callback_data?.startsWith('sticker:item:')))
+    .map(row=>row.length),[2]);
+  assert.ok(!f.panels.at(-1).reply_markup.inline_keyboard.flat().some(b=>b.web_app));
+  await f.tap('sticker:item:0');
   assert.equal(f.state().screen,'sticker_item');
   assert.ok(f.labels().flat().includes('🔄 素材の変更'));
   assert.ok(f.labels().flat().includes('😀 ステッカーの絵文字変更'));
@@ -137,21 +138,21 @@ test('old inline keyboard cannot mutate a selected pack',async()=>{
   assert.equal(f.state().screen,'sticker_packs');
 });
 
-test('one tap on the pack Edit Web App chooses its image without a numbered DM button',async()=>{
+test('pack Edit uses Bot callback and next selects the correct owned item',async()=>{
   const f=setup();
   await f.tap('menu:stickers');await f.tap('sticker:packs');
   await f.tap('sticker:kind:regular');
   assert.equal(f.state().screen,'sticker_packs');
   const edit=f.panels.at(-1).reply_markup.inline_keyboard[0][2];
-  assert.deepEqual(edit,{text:'✏️ 編集',web_app:{
-    url:'https://shop.hentaigay.org/shop/my-pack?pack=regular_0'
-  }});
-  await f.selectGalleryItem({ownerId:42,packName:'regular_0',index:1,page:1});
+  assert.deepEqual(edit,{text:'✏️ 編集',callback_data:'sticker:edit_pack:0|r3'});
+  await f.tap('sticker:edit_pack:0');
+  const rows=f.panels.at(-1).reply_markup.inline_keyboard;
+  assert.deepEqual(rows.filter(row=>row.some(b=>b.callback_data?.startsWith('sticker:item:')))
+    .map(row=>row.length),[4,4,2]);
+  await f.tap('sticker:items_next');
+  await f.tap('sticker:item:1');
   assert.equal(f.state().screen,'sticker_item');
   assert.equal(f.state().stickerSelectedItem.file_unique_id,'unique_11');
   assert.equal(f.state().stickerItemPage,1);
   assert.equal(f.state().draft.paidVideo.id,'keep');
-  await assert.rejects(()=>f.selectGalleryItem({
-    ownerId:42,packName:'emoji_0',index:0,page:0
-  }),/STICKER_GALLERY_SESSION_STALE/);
 });
