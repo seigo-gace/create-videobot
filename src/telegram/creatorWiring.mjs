@@ -209,11 +209,14 @@ export function createVideoBotSourceModule({
   const releasePendingSticker=async({owner,pending})=>{
     if(!Number.isSafeInteger(owner)||owner<=0||
        typeof pending?.nonce!=='string'||
-       !['preparing','uploaded'].includes(pending.phase))
+       !['preparing','uploaded','submission_started'].includes(pending.phase))
       return {released:false};
     const operationId='s'+String(owner)+'_'+pending.nonce;
     const receipt=await stickerInventory.getRegistration({operationId,ownerId:owner});
-    if(!receipt)return {released:true};
+    // A missing DB receipt is safe only while the session is pre-write.
+    // For submission_started, require an existing pre-write DB receipt:
+    // the inventory DB submitting() must succeed BEFORE Telegram mutation.
+    if(!receipt)return {released:pending.phase!=='submission_started'};
     if(!['preparing','uploaded'].includes(receipt.phase))
       return {released:false};
     const result=await stickerInventory.abandonBeforeMutation({operationId,ownerId:owner});
