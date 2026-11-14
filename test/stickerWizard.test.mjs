@@ -698,3 +698,41 @@ test('Bot-only item chooser lays out 10 emoji controls horizontally and pages fo
  assert.equal(state.screen,'sticker_item');
  assert.equal(state.stickerSelectedItem.file_unique_id,'u10');
 });
+
+test('ambiguous Telegram acknowledgement is automatically reconciled before asking owner to retry',async()=>{
+  let state={revision:5,screen:'sticker_ready',screenMessageId:301,
+    stickerDraft:{kind:'regular',title:'Pack',nonce:'n1',fileId:'fileabc',setName:null},
+    stickerSets:{regular:null}};
+  let registrations=0,readbacks=0;
+  const store={
+    read:async()=>structuredClone(state),
+    write:async(_owner,rev,next)=>{assert.equal(rev,state.revision);state=structuredClone(next);},
+    setScreen:async()=>{}
+  };
+  const wizard=createStickerWizard({
+    api:async()=>true,sessionStore:store,
+    screenTransport:{show:async()=>({messageId:301})},
+    publishSticker:async({onUploaded,onBeforeMutation})=>{
+      registrations++;
+      const receipt={name:'s42_112233aabbccddff_by_CreateVdobot',
+        fileUniqueId:'unique-42',format:'static'};
+      await onUploaded(receipt);
+      await onBeforeMutation(receipt);
+      throw Error('Telegram response lost');
+    },
+    reconcileSticker:async({owner,pending})=>{
+      readbacks++;
+      assert.equal(owner,42);
+      assert.equal(pending.fileUniqueId,'unique-42');
+      return {verified:true,status:'registered',
+        name:'s42_112233aabbccddff_by_CreateVdobot'};
+    }
+  });
+  const update={callback_query:{id:'a',data:'sticker:register|r5',
+    from:{id:42},message:{chat:{type:'private',id:42},message_id:301}}};
+  await wizard.handle(update);
+  assert.equal(state.screen,'sticker_done');
+  assert.equal(state.stickerPending,null);
+  assert.equal(registrations,1);
+  assert.equal(readbacks,1);
+});
