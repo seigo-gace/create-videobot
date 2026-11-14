@@ -21,23 +21,26 @@ test('new and existing listing share field editor, edit protects existing fields
   assert.throws(() => openCreatorEditor({ sellerId:'other1', existing }), /ownership/);
 });
 
-test('preset price requires one line title and custom uses one Telegram message with two lines', () => {
+test('sticker and video use numeric-only custom Stars price without changing title', () => {
   let d = openCreatorEditor({ sellerId:'seller1' });
-  d = editCreatorDraft(d, { type:'preset', stars:300 });
-  d = editCreatorDraft(d, { type:'titleInput', text:'夏の思い出動画' });
-  assert.equal(d.title,'夏の思い出動画');
-  assert.equal(d.priceStars,300);
-  d = editCreatorDraft(d, { type:'custom' });
-  const view = creatorEditorPanel(d,1,'price');
-  assert.match(view.text, /2行で送信/);
+  d = editCreatorDraft(d,{type:'preset',stars:300});
+  d = editCreatorDraft(d,{type:'captionTitle',text:'夏の思い出動画'});
+  d = editCreatorDraft(d,{type:'custom'});
+  const view=creatorEditorPanel(d,1,'price');
+  assert.match(view.text,/1〜25000 Starsの整数/);
   assert.equal(view.reply_markup.inline_keyboard[1].length,3);
-  d = editCreatorDraft(d, { type:'titleInput', text:'新しい動画\n250' });
+  d=editCreatorDraft(d,{type:'customPriceInput',text:'250'});
+  assert.equal(d.title,'夏の思い出動画');
   assert.equal(d.priceStars,250);
-  assert.equal(d.title,'新しい動画');
-  assert.throws(() => editCreatorDraft(d,{type:'titleInput',text:'タイトルだけ'}), /first line/);
-  assert.throws(() => editCreatorDraft(d,{type:'titleInput',text:'タイトル\n2.5'}), /numeric Stars/);
-  assert.throws(() => editCreatorDraft(d,{type:'titleInput',text:'タイトル\n25001'}), /25000/);
-  assert.throws(() => editCreatorDraft(d,{type:'preset',stars:99}), /unknown/);
+  assert.equal(d.priceMode,'custom');
+  assert.throws(()=>editCreatorDraft(d,{type:'customPriceInput',text:'タイトル\\n251'}),/integer/);
+  for(const invalid of ['0','2.5','-1','25001','001','abc','']) {
+    assert.throws(()=>editCreatorDraft(d,{type:'customPriceInput',text:invalid}),/integer/);
+  }
+  d=editCreatorDraft(d,{type:'titleInput',text:'改訂タイトル'});
+  assert.equal(d.priceStars,250);
+  assert.equal(d.title,'改訂タイトル');
+  assert.throws(()=>editCreatorDraft(d,{type:'preset',stars:99}),/unknown/);
 });
 
 test('sample media must be verified <=30 seconds before being accepted by creator editor', () => {
