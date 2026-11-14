@@ -107,9 +107,8 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
       keyboard=[
         ...(shopUrl?[[{text:'🎨 パックの中身を見る',
           web_app:{url:shopUrl+'/shop?product='+d.productId}}]]:
-          preview?[[{text:'📦 パックの中身を見る',url:preview}],
-            [b('同意して購入へ','sale:accept')]]:
-            [[b('同意して購入へ','sale:accept')]]),
+          preview?[[{text:'📦 パックの中身を見る',url:preview}]]:[]),
+        [b('同意して購入へ','sale:accept')],
         [b('↩ 戻る','sale:cancel')]
       ];break;
     }
