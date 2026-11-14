@@ -9,7 +9,9 @@ function targets() {
     subscription:{verified:true,type:'channel',chatId:-100333,priceStars:300,
       periodSeconds:2592000,inviteUrl:'https://t.me/+ValidSubscription1'},
     topic:{verified:true,board:'video_chat',groupTitle:'ビデオChatの掲示板',
-      enabled:true,chatId:-100444,threadId:123}
+      enabled:true,chatId:-1002373696859,threadId:123,
+      threadIdVerified:true,referenceUrl:'https://t.me/c/2373696859/4672',
+      referenceMessageId:4672}
   };
 }
 function video() {
@@ -52,7 +54,7 @@ test('full member video before topic teaser; uses direct official subscription U
   });
   const first=await publisher.publish(video());
   assert.equal(first.published,true);
-  assert.deepEqual(events.map(x=>x.chat_id),[-100333,-100444]);
+  assert.deepEqual(events.map(x=>x.chat_id),[-100333,-1002373696859]);
   assert.equal(events[0].video,'FULL_FILE_ID');
   assert.equal(events[1].video,'SAMPLE_FILE_ID');
   assert.equal(events[1].message_thread_id,123);
@@ -112,4 +114,17 @@ test('channel invite uses official Stars subscription, no individual invoice',as
   assert.equal(link.periodSeconds,2592000);
   assert.deepEqual(calls.map(x=>x.method),['createChatSubscriptionInviteLink']);
   assert.equal(calls[0].args.subscription_price,400);
+});
+
+test('sample topic link must not silently become thread ID',async()=>{
+  const store=memoryStore();let sent=0;
+  const t=targets();t.topic.threadIdVerified=false;
+  const p=createSubscriptionPublisher({
+    telegramApi:async()=>{sent++;},
+    verifiedTargets:async()=>t,
+    verifyBotPostingAccess:async()=>true,
+    receipts:store
+  });
+  await assert.rejects(p.publish(video()),/MASTER_SAMPLE_TOPIC_NOT_VERIFIED/);
+  assert.equal(sent,0);
 });
