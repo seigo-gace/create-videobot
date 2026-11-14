@@ -107,8 +107,11 @@ test('new/edit and review all disclose 30 percent management fee without adding 
  assert.match(editor.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.match(editor.text,/30%/);
  assert.equal(editor.reply_markup.inline_keyboard.length,4);
- assert.match(editor.reply_markup.inline_keyboard[0][0].text,/［編集］/);
+ assert.equal(editor.reply_markup.inline_keyboard[0][0].text,'🎬 本編を登録');
+ assert.equal(editor.reply_markup.inline_keyboard[2][0].text,'⭐ 価格を設定');
  assert.equal(editor.reply_markup.inline_keyboard[2][0].callback_data,'edit:price|r2');
+ assert.ok(editor.reply_markup.inline_keyboard.flat().every(b=>!b.text.includes('編集')),
+   'unpublished video cannot display edit controls');
  const review=creatorReviewPanel(d,3);
  assert.match(review.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.match(review.text,/投稿する.*30%を運営管理費/);
@@ -131,4 +134,14 @@ test('video-caption title is accepted atomically without custom-price title pars
  assert.throws(()=>editCreatorDraft(d,{type:'captionTitle',text:'複数\n行'}),/one line/);
  const pricePanel=creatorEditorPanel(d,5,'price');
  assert.deepEqual(pricePanel.reply_markup.inline_keyboard[2].map(b=>b.text),['🔙 編集画面へ戻る']);
+});
+
+test('new registration remains registration-only after uploading source and selecting price',()=>{
+ let d=openCreatorEditor({sellerId:'seller1'});
+ for(const phase of [d,editCreatorDraft(d,{type:'paidVideo',media:{fileId:'file_123'}})]){
+   const screen=creatorEditorPanel(phase,3);
+   assert.doesNotMatch(screen.text,/［編集］/);
+   assert.ok(screen.reply_markup.inline_keyboard.flat().every(b=>!/編集/.test(b.text)));
+   assert.ok(screen.reply_markup.inline_keyboard.flat().some(b=>b.text==='🎬 本編を登録'));
+ }
 });
