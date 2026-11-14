@@ -62,3 +62,26 @@ test('do not mistake unauthorized callback ownership errors for harmless stale t
  await assert.rejects(()=>bot({callback_query:{id:'unauthorized',from:{id:9},
   data:'menu:listing',message:{chat:{id:33,type:'private'},message_id:3}}}),/PRIVATE_OWNER_REQUIRED/);
 });
+
+test('GayBBS handoff uses existing video and sticker owner without a duplicate menu',async()=>{
+ const calls=[],states=new Map();
+ const api=async(method,payload)=>{calls.push({method,payload});return {message_id:27}};
+ const sessionStore={
+  async read(id){return states.get(id)||null;},
+  async write(id,revision,next){assert.equal(states.get(id)?.revision??0,revision);states.set(id,next);},
+  async setScreen(id,revision,messageId){states.set(id,{...states.get(id),screenMessageId:messageId})}
+ };
+ const handler=createCreatorBotUpdateHandler({
+  api,sessionStore,
+  screenTransport:{show:async(_,oldId,panel)=>{calls.push({method:'screen',payload:panel});return {messageId:oldId||27}}},
+  listingStore:{listByOwner:async()=>[],getOwned:async()=>null},
+  stickerHandler:async(update)=>update.message?.text==='/start sticker'?
+    {handled:true,owner:'sticker'}:{handled:false}
+ });
+ const sticker=await handler({message:{chat:{id:39,type:'private'},from:{id:39},text:'/start sticker',message_id:1}});
+ assert.deepEqual(sticker,{handled:true,owner:'sticker'});
+ assert.equal(calls.length,0,'sticker must not open the unrelated video menu');
+ await handler({message:{chat:{id:39,type:'private'},from:{id:39},text:'/start video',message_id:2}});
+ assert.equal(calls.filter(c=>c.method==='screen').length,1);
+ assert.match(calls.at(-1).payload.text,/動画/);
+});
