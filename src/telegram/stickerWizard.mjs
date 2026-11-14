@@ -44,11 +44,11 @@ function panel(session,revision){
   const d=session?.stickerDraft??{};
   const btn=(text,action)=>button(text,action,revision);
   if(session.screen==='sticker_choose'&&session.stickerPending)return {
-    text:'🎨 ステッカー・絵文字\n\n⚠️ 前回の素材登録が確認待ちです。'+
-      '前回の登録結果を確認中です。作成済みの素材は消していません。\n［登録状態を確認］または［マイパックを見る］を押してください。',
+    text:'🎨 ステッカー・絵文字\n\n⏳ 前回の素材登録をBotが自動確認しています。'+
+      '通信回復後に登録済みと確認できれば自動で処理を完了します。作成済み素材は保持しています。',
     reply_markup:{inline_keyboard:[
-      [btn('🔄 登録状態を確認','sticker:resume')],
-      [btn('📦 マイパックを見る','sticker:packs')]
+      [btn('📦 マイパックを見る','sticker:packs')],
+      [btn('↩ 戻る','sticker:cancel')]
     ]}
   };
   if(session.screen==='sticker_choose')return {
@@ -186,10 +186,9 @@ function panel(session,revision){
   };
   if(session.screen==='sticker_registering'||session.screen==='sticker_reconcile')return {
     text:session.screen==='sticker_registering'?'⏳ 素材を変換・登録中です。':
-      '⚠️ この素材の登録結果はまだ確定していません。登録済みパックを確認できます。未確定の作業は保管したまま、ほかのメニューにも戻れます。'+stickerHint(session),
+      '⏳ Telegramへの登録状態をBotが自動確認しています。完了すると結果を表示します。ほかの操作中も記録は保持されます。'+stickerHint(session),
     reply_markup:{inline_keyboard:session.screen==='sticker_reconcile'
-      ?[[btn('🔄 登録状態を確認','sticker:check')],
-        [btn('📦 マイパックを見る','sticker:defer')]]
+      ?[[btn('📦 マイパックを見る','sticker:defer')]]
       :[]}
   };
   if(session.screen==='sticker_done')return {
@@ -420,7 +419,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       // video menus. Returning to stickers restores its reconciliation view.
       if(old?.stickerPending?.status==='needs_reconcile'&&
          data==='sticker:defer|r'+old.revision&&messageId===old.screenMessageId)
-        return persist(id,old,{screen:'sticker_choose',stickerDeferred:true,stickerHelp:null});
+        return persist(id,old,{screen:'sticker_pack_kinds',stickerDeferred:true,stickerHelp:null});
       if(old?.stickerPending?.status==='needs_reconcile'&&data==='menu:stickers')
         return persist(id,old,{screen:'sticker_choose',stickerDeferred:true,
           screenMessageId:messageId,stickerHelp:null});
