@@ -355,6 +355,47 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
         stickerEditPending:{...current.stickerEditPending,status:'needs_reconcile'}});
     }
   }
+  // Called only by the existing poller's bounded recovery sweep.
+  // Never replays createNewStickerSet/addStickerToSet.
+  async function recoverPending(ownerId){
+    if(!Number.isSafeInteger(ownerId)||ownerId<=0||
+       typeof reconcileSticker!=='function')return {status:'unavailable'};
+    const old=await sessionStore.read(ownerId);
+    const pending=old?.stickerPending;
+    if(!pending||!['needs_reconcile','in_progress'].includes(pending.status))
+      return {status:'already_resolved'};
+    if(!pending.fileUniqueId||!pending.format)
+      return {status:'missing_receipt'};
+    const outcome=await reconcileSticker({owner:ownerId,pending})
+      .catch(()=>({verified:false,status:'unavailable'}));
+    if(outcome?.verified!==true||outcome.status!=='registered'||!outcome.name)
+      return {status:'retry_readback'};
+    const current=await sessionStore.read(ownerId);
+    if(current?.stickerPending?.nonce!==pending.nonce||
+       current.stickerPending.fileUniqueId!==pending.fileUniqueId||
+       !['needs_reconcile','in_progress'].includes(current.stickerPending.status))
+      return {status:'concurrent_change'};
+    const kind=pending.kind;
+    const link=(kind==='custom_emoji'
+      ?'https://t.me/addemoji/':'https://t.me/addstickers/')+outcome.name;
+    const patch={
+      stickerPending:null,stickerDeferred:false,stickerHelp:null,
+      stickerSets:{...current.stickerSets,[kind]:{
+        name:outcome.name,title:pending.title}},
+      stickerDraft:{...current.stickerDraft,kind,title:pending.title,
+        setName:outcome.name,link,fileId:null}
+    };
+    if(current.stickerDeferred===true||
+       !['sticker_reconcile','sticker_registering','sticker_choose'].includes(current.screen)){
+      // Clear the lock without replacing an unrelated DM editor.
+      await sessionStore.write(ownerId,current.revision,{
+        ...current,...patch,revision:current.revision+1
+      });
+      return {status:'recovered_silently'};
+    }
+    await persist(ownerId,current,{...patch,screen:'sticker_done'});
+    return {status:'registered'};
+  }
   async function handle(update){
     const message=update?.message,cb=update?.callback_query;
     if(cb){
@@ -765,5 +806,5 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     }
     return {handled:false};
   }
-  return {handle};
+  return {handle,recoverPending};
 }
