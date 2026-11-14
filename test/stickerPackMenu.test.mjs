@@ -51,14 +51,15 @@ function setup(){
     screenTransport:{async show(id,_old,panel){
       assert.equal(id,42);panels.push(panel);return {messageId:301};
     }},
-    packInventory:inventory,publishSticker:async()=>{throw Error('NO_PUBLISH_EXPECTED');}
+    packInventory:inventory,stickerShopBaseUrl:'https://shop.hentaigay.org/',
+    publishSticker:async()=>{throw Error('NO_PUBLISH_EXPECTED');}
   });
   const tap=async action=>wizard.handle({callback_query:{
     id:'q',data:action+'|r'+state.revision,from:{id:42},
     message:{chat:{id:42,type:'private'},message_id:301}
   }});
   const labels=()=>panels.at(-1).reply_markup.inline_keyboard.map(row=>row.map(b=>b.text));
-  return {tap,labels,state:()=>state,calls,seenPacks,panels};
+  return {tap,labels,state:()=>state,calls,seenPacks,panels,selectGalleryItem:wizard.selectGalleryItem};
 }
 
 test('My Packs selects kind, shows 10 compact rows and remains separated from emoji packs',async()=>{
@@ -104,7 +105,10 @@ test('per-pack add preserves exact pack and edit opens its actual item list',asy
   await f.tap('sticker:items_next');
   assert.equal(f.state().stickerItemPage,1);
   assert.equal(f.state().stickerItemRows.length,2);
-  await f.tap('sticker:item:0');
+  assert.ok(f.panels.at(-1).reply_markup.inline_keyboard.flat().some(b=>
+    b.web_app?.url==='https://shop.hentaigay.org/shop/my-pack?pack=regular_0'));
+  assert.ok(!f.labels().flat().some(x=>x.includes('番目を編集')));
+  await f.selectGalleryItem({ownerId:42,packName:'regular_0',index:0});
   assert.equal(f.state().screen,'sticker_item');
   assert.ok(f.labels().flat().includes('🔄 素材の変更'));
   assert.ok(f.labels().flat().includes('😀 ステッカーの絵文字変更'));
