@@ -1,6 +1,6 @@
 const PAGES=Object.freeze({
  home:{text:'🎨 クリエーター投稿\n\n作成するコンテンツを選んでください。',buttons:[
-  [['🎬 動画','menu:video'],['🎨 ステッカー/絵文字','menu:stickers']]
+  [['🎬 ビデオ','menu:listing'],['🎨 ステッカー／絵文字','menu:stickers']]
  ]},
  video:{text:'🎬 クリエータービデオ\n\n動画の投稿・管理・売上確認ができます。\n販売売上から運営管理費30%を控除し、投稿者分は70%です。',buttons:[
   [['🎬 動画を投稿','menu:listing'],['📦 マイ動画','menu:manage']],
