@@ -48,9 +48,13 @@ export function createPostgresCreatorSessionStore(pool) {
         "SELECT owner_user_id,updated_at FROM videobot_creator_sessions"+
         " WHERE owner_user_id>$1"+
         " AND state ? 'stickerPending'"+
+        " AND COALESCE((state->'stickerPending'->>'recoveryAttempts')::integer,0)<5"+
         " AND (state->'stickerPending'->>'status'='needs_reconcile'"+
         " OR (state->'stickerPending'->>'status'='in_progress'"+
         " AND updated_at < NOW()-INTERVAL '2 minutes'))"+
+        " AND (state->'stickerPending'->>'recoveryLastAttemptAt' IS NULL"+
+        " OR (state->'stickerPending'->>'recoveryLastAttemptAt')::timestamptz"+
+        " < NOW()-INTERVAL '30 seconds')"+
         " ORDER BY owner_user_id ASC LIMIT $2",[afterOwnerId,limit]);
       return (r.rows??[]).map(row=>({ownerId:Number(row.owner_user_id),
         updatedAt:row.updated_at}));
