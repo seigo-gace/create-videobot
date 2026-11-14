@@ -17,7 +17,7 @@
 - **Masterが作成済みの非公開チャンネルの投稿リンク**: https://t.me/c/4396338340/3
 - **チャンネルID（リンクから導出）**: `-1004396338340`。末尾 `3` は投稿メッセージ番号であり、チャンネルIDではない。
 - **用途（確定）**: 月額Stars見放題の**フル動画本編**の投稿先。無料サンプル掲載トピック `https://t.me/c/2373696859/4672` と混同しない。
-- **Bot管理権限の本番API照合は別条件**: 当該チャンネルでCreateVdobotが実際に管理者か、投稿・招待権限が有効かを `getChat`/`getChatMember` 等で確認し、`verifiedTargets()`に提供する。URLだけで `verified=true` と設定しない。
+- **本番API実測（2026-11-14 JST）**: CreateVdobot本番コンテナから `getChat(-1004396338340)` が `id=-1004396338340, type=channel, title=サブスクチャンネル` を返却。`getChatMember` は当該Botの `status=administrator`, `can_invite_users=true`。正規Gserver Host 実行 `req_20261114004716000000c293` PASS、出力はTGserver非公開Artifactで回収して照合済み。**投稿権限 `can_post_messages` と実動画投稿は未検証**。URLからの推測だけではなくTelegram側のチャンネル実体と招待権限まで確認済み。
 - Masterから提示された通常招待リンク `https://t.me/+33qVqdy84LthNTI0` は**月額有料リンクとして利用しない**。Stars金額と公式有料招待URLは別途確定・実発行する。
 - 同チャンネルを自動的に新規作成しない。元の動画・ステッカー単品販売と会計を分離する。
 
