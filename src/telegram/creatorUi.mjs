@@ -42,6 +42,7 @@ export function openCreatorEditor({ sellerId, existing = null } = {}) {
     listingId: existing?.id ?? null,
     revision: existing?.revision ?? 0,
     title: existing?.title ?? '',
+    description: existing?.description ?? '',
     priceStars: existing?.priceStars ?? null,
     priceMode: existing?.priceMode ?? 'preset',
     thumbnail: existing?.thumbnail ?? null,
@@ -92,69 +93,68 @@ export function editCreatorDraft(draft, action) {
     }
     case 'titleInput':
       field = 'title'; value = title(action.text); break;
+    case 'descriptionInput':
+      if(typeof action.text!=='string'||action.text.trim().length>800)
+        throw new Error('description must be up to 800 characters');
+      field='description'; value=action.text.trim(); break;
     default: throw new Error('unknown editor action');
   }
   return { ...draft, [field]: value, dirtyFields: [...new Set([...draft.dirtyFields, field])] };
 }
 
-/** One shared DM editor for new and owned unpublished videos. */
+/** Telegram creator registration: upload -> automatic private preview -> optional description -> registration. */
 export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   expectDraft(draft);
-  if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('invalid screen revision');
-  const btn=(label,action)=>({text:label,callback_data:action+(revision?'|r'+revision:'')});
-  const lines=[draft.mode==='edit'?'🎬 動画の登録内容':'🎬 動画を投稿',''];
-  const editLinks=[];
-  // Text links invoke the existing Bot DM field editor. They are not keyboard
-  // buttons; do not show them before a field has actually been registered.
-  function line(field,value,registered) {
-    const prefix=registered?'［編集］ ':'';
-    const lineIndex=lines.length;
-    lines.push(prefix+value);
-    if(registered)editLinks.push({field,lineIndex});
+  if(!Number.isSafeInteger(revision)||revision<0)throw new Error('invalid screen revision');
+  const btn=(text,action)=>({text,callback_data:action+(revision?'|r'+revision:'')});
+  if(screen==='await_video' || (screen==='editor'&&!draft.paidVideo)){
+    return {text:'🎬 動画を投稿\n\nタイトルと動画を投稿してください。\n動画のキャプションにタイトルを入力し、1回で送信してください。',
+      reply_markup:{inline_keyboard:[[btn('❌ キャンセル','edit:cancel')]]}};
   }
-  line('title','📝 タイトル：'+(draft.title||'未入力'),!!draft.paidVideo&&!!draft.title);
-  line('paidVideo','🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録'),!!draft.paidVideo);
-  line('thumbnail','🖼 サムネ：'+(draft.thumbnail?'登録済み':'未登録（本編から自動生成）'),!!draft.thumbnail);
-  line('sample','🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒）':'未登録（本編から先頭30秒を自動生成）'),!!draft.sample);
-  line('price','⭐ 価格：'+(draft.priceStars==null?'未設定':draft.priceStars+' Stars'),draft.priceStars!=null&&!!draft.paidVideo);
-  lines.push(managementFeeDisclosure(draft.priceStars));
-  const linkEntities=()=> {
-    const entities=[];
-    let offset=0;
-    for(let i=0;i<lines.length;i++){
-      for(const link of editLinks.filter(x=>x.lineIndex===i))
-        entities.push({type:'text_link',offset,length:'［編集］'.length,
-          url:'https://t.me/CreateVdobot?start=ved_'+link.field+'_r'+revision});
-      offset+=lines[i].length+1;
-    }
-    return entities;
-  };
+  if(screen==='description'){
+    return {text:'🎬 動画のアルバムプレビュー\n\n'+
+      '📝 タイトル：'+draft.title+'\n'+
+      '🖼 サムネ：'+(draft.thumbnail?'自動生成済み':'未生成')+'\n'+
+      '🎞 サンプル：'+(draft.sample?'先頭'+draft.sample.durationSeconds+'秒':'未生成')+'\n'+
+      '🎬 有料本編：登録済み\n\n'+
+      '次は動画の説明を入力してください。（スキップ可）',
+      reply_markup:{inline_keyboard:[
+        [btn('⏭ スキップ','entry:skip')],
+        [btn('❌ キャンセル','edit:cancel')]
+      ]}};
+  }
+  const rows=[
+    '🎬 動画の登録内容','',
+    '［編集］ タイトル：'+draft.title,
+    '［編集］ 説明：'+(draft.description||'なし'),
+    '🖼 サムネ：'+(draft.thumbnail?'登録済み':'未生成'),
+    '🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒）':'未生成'),
+    '🎬 本動画：登録済み',
+    '⭐ Stars：'+(draft.priceStars==null?'未設定':draft.priceStars+' Stars'),
+    managementFeeDisclosure(draft.priceStars)
+  ];
+  const text=rows.join('\n');
+  const entities=[];
+  for(const [field,index] of [['title',2],['description',3]]){
+    const offset=rows.slice(0,index).reduce((n,v)=>n+v.length+1,0);
+    entities.push({type:'text_link',offset,length:'［編集］'.length,
+      url:'https://t.me/CreateVdobot?start=ved_'+field+'_r'+revision});
+  }
   if(screen==='price'){
-    lines.push('','価格を選択してください。自由入力では1〜25000 Starsの整数を送信してください。');
-    const prices=[
-      PRICE_PRESETS.slice(0,3).map(n=>btn(String(n)+' ⭐'+(draft.priceStars===n?' ✓':''),'edit:price:'+n)),
-      [...PRICE_PRESETS.slice(3).map(n=>btn(String(n)+' ⭐'+(draft.priceStars===n?' ✓':''),'edit:price:'+n)),
-        btn('自分で決める','edit:price:custom')],
-      [btn('🔙 登録画面へ戻る','edit:back')]
-    ];
-    return {text:lines.join('\n'),...(editLinks.length?{entities:linkEntities()}:{}),reply_markup:{inline_keyboard:prices}};
+    return {text:text+'\n\nStars価格を選択してください。自由入力は数字のみ（1〜25000）。',entities,
+      reply_markup:{inline_keyboard:[
+        PRICE_PRESETS.slice(0,3).map(n=>btn(n+' ⭐','edit:price:'+n)),
+        [...PRICE_PRESETS.slice(3).map(n=>btn(n+' ⭐','edit:price:'+n)),
+          btn('自分で決める','edit:price:custom')],
+        [btn('↩ 戻る','edit:back')]
+      ]}};
   }
-  if(!draft.paidVideo)lines.push('','📎 販売動画を送信し、キャプションにタイトルを1行で入力してください。');
-  else if(draft.priceMode==='custom')lines.push('','自由入力中：Stars価格の数字だけを送信してください。');
-  // This is a registration screen, never the post-publication editor.
-  // Keep callback identifiers for existing persisted sessions; only user-visible
-  // controls change. Telegram cannot make ordinary plain-text [編集] tappable.
-  const keyboard=[];
-  if(!draft.paidVideo)keyboard.push([btn('🎬 本編を登録','edit:paidVideo')]);
-  const mediaRegister=[];
-  if(!draft.thumbnail)mediaRegister.push(btn('🖼 サムネを登録','edit:thumbnail'));
-  if(!draft.sample)mediaRegister.push(btn('🎞 サンプルを登録','edit:sample'));
-  if(mediaRegister.length)keyboard.push(mediaRegister);
-  if(draft.priceStars==null)keyboard.push([btn('⭐ 価格を設定','edit:price')]);
-  keyboard.push([btn('👁 プレビュー','edit:preview'),btn('❌ キャンセル','edit:cancel')]);
-  const entities=linkEntities();
-  return {text:lines.join('\n'),...(entities.length?{entities}:{}),
-    reply_markup:{inline_keyboard:keyboard}};
+  return {text:text+'\n\n※［登録］で権利・出演者の成人と掲載同意、および売上の管理費30%に同意して公開します。',
+    entities,reply_markup:{inline_keyboard:[
+      [btn('🎬 動画変更','edit:paidVideo'),btn('🖼 サムネ変更','edit:thumbnail'),btn('🎞 サンプル変更','edit:sample')],
+      [btn('⭐ Stars設定','edit:price')],
+      [btn('✅ 登録','entry:register'),btn('❌ キャンセル','edit:cancel')]
+    ]}};
 }
 
 export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {}) {
