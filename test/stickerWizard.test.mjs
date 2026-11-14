@@ -812,3 +812,49 @@ test('deferred registration recovery preserves unrelated DM editor screen',async
  assert.equal(state.draft.paidVideo.id,'keep');
  assert.equal(screens,0);
 });
+
+test('stale pre-mutation registration is unlocked only after confirmed DB release',async()=>{
+ let state={revision:6,screen:'sticker_reconcile',screenMessageId:301,
+  stickerPending:{status:'in_progress',kind:'regular',nonce:'oldnonce',
+   phase:'uploaded',fileId:'source',fileUniqueId:'unique',format:'static',
+   packName:'oldpack',title:'Pack'},stickerDraft:{kind:'regular',
+   title:'Pack',nonce:'oldnonce',fileId:'source'},stickerSets:{}};
+ let releases=0,writes=0;
+ const wizard=createStickerWizard({
+  api:async()=>true,
+  sessionStore:{read:async()=>structuredClone(state),
+   write:async(_owner,revision,next)=>{assert.equal(revision,state.revision);state=structuredClone(next);},
+   setScreen:async()=>{}},
+  screenTransport:{show:async()=>({messageId:301})},
+  publishSticker:async()=>{writes++;throw Error('no replay');},
+  reconcileSticker:async()=>({status:'unknown',verified:false}),
+  releasePendingSticker:async({pending})=>{
+   releases++;assert.equal(pending.phase,'uploaded');return {released:true};
+  }
+ });
+ const result=await wizard.recoverPending(42);
+ assert.equal(result.status,'pre_mutation_released');
+ assert.equal(state.screen,'sticker_ready');
+ assert.equal(state.stickerPending,null);
+ assert.notEqual(state.stickerDraft.nonce,'oldnonce');
+ assert.equal(state.stickerDraft.fileId,'source');
+ assert.equal(releases,1);assert.equal(writes,0);
+});
+
+test('a submitted Telegram operation is never unlocked by pre-mutation recovery',async()=>{
+ let state={revision:7,screen:'sticker_reconcile',screenMessageId:301,
+  stickerPending:{status:'needs_reconcile',kind:'regular',nonce:'n',
+   phase:'submission_started',fileUniqueId:'unique',format:'static',
+   title:'Pack'},stickerDraft:{kind:'regular',title:'Pack'},stickerSets:{}};
+ const wizard=createStickerWizard({
+  api:async()=>true,
+  sessionStore:{read:async()=>structuredClone(state),
+   write:async()=>{throw Error('must preserve receipt');},setScreen:async()=>{}},
+  screenTransport:{show:async()=>({messageId:301})},
+  publishSticker:async()=>{throw Error('never replay');},
+  releasePendingSticker:async()=>{throw Error('must not release submitted record');},
+  reconcileSticker:async()=>({status:'not_observed',verified:false})
+ });
+ assert.equal((await wizard.recoverPending(42)).status,'retry_readback');
+ assert.equal(state.stickerPending.phase,'submission_started');
+});
