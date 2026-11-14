@@ -21,6 +21,13 @@ export function assertSubscriptionTargets(targets) {
     throw Error('SUBSCRIPTION_TARGETS_NOT_VERIFIED');
   targetId(targets.subscription.chatId);
   targetId(targets.topic.chatId);
+  // Master-selected sample destination. The t.me URL's final segment is
+  // a message reference, NOT proof of Telegram's message_thread_id.
+  if(targets.topic.chatId!==-1002373696859 ||
+     targets.topic.referenceUrl!=='https://t.me/c/2373696859/4672' ||
+     targets.topic.referenceMessageId!==4672 ||
+     targets.topic.threadIdVerified!==true)
+    throw Error('SUBSCRIPTION_MASTER_SAMPLE_TOPIC_NOT_VERIFIED');
   if(!Number.isSafeInteger(targets.topic.threadId)||targets.topic.threadId<=0||
      !Number.isSafeInteger(targets.subscription.priceStars)||
      targets.subscription.priceStars<1||targets.subscription.priceStars>10000||
