@@ -106,10 +106,10 @@ test('new/edit and review all disclose 30 percent management fee without adding 
  const editor=creatorEditorPanel(d,2);
  assert.match(editor.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.match(editor.text,/30%/);
- assert.equal(editor.reply_markup.inline_keyboard.length,4);
+ assert.equal(editor.reply_markup.inline_keyboard.length,3);
  assert.equal(editor.reply_markup.inline_keyboard[0][0].text,'🎬 本編を登録');
- assert.equal(editor.reply_markup.inline_keyboard[2][0].text,'⭐ 価格を設定');
- assert.equal(editor.reply_markup.inline_keyboard[2][0].callback_data,'edit:price|r2');
+ assert.equal(editor.reply_markup.inline_keyboard.flat().some(x=>x.text==='⭐ 価格を設定'),false,
+   'the test already assigned price; do not re-offer registration');
  assert.ok(editor.reply_markup.inline_keyboard.flat().every(b=>!b.text.includes('編集')),
    'unpublished video cannot display edit controls');
  const review=creatorReviewPanel(d,3);
