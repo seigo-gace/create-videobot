@@ -69,10 +69,11 @@ function panel(session,revision){
   if(session.screen==='sticker_packs') {
     const rows=Array.isArray(session.stickerPackRows)?session.stickerPackRows:[];
     const page=session.stickerPackPage??0;
-    const keys=rows.flatMap((r,i)=>[
-      [btn(String(r.title).slice(0,52),'sticker:pick:'+i)],
-      [btn('➕ 追加','sticker:add_pack:'+i),btn('✏️ 編集','sticker:edit_pack:'+i)]
+    const keys=rows.map((r,i)=>[
+      btn(String(r.title).slice(0,18),'sticker:pick:'+i),
+      btn('➕ 追加','sticker:add_pack:'+i),btn('✏️ 編集','sticker:edit_pack:'+i)
     ]);
+    keys.push([btn('🆕 新しいパックを作成','sticker:new_pack')]);
     keys.push([
       btn('🔙 戻る','sticker:pack_kinds'),
       btn('キャンセル','sticker:cancel'),
@@ -437,6 +438,13 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
         if(old.screen!=='sticker_packs')return {handled:true,staleButton:true};
         const page=(old.stickerPackPage??0)+(action==='sticker:next'?1:-1);
         return packsPage(id,old,Math.max(0,page));
+      }
+      if(action==='sticker:new_pack'&&old.screen==='sticker_packs'){
+        if(!['regular','custom_emoji'].includes(old.stickerPackKind))
+          return {handled:true,staleButton:true};
+        return persist(id,old,{screen:'sticker_title',stickerDraft:{
+          kind:old.stickerPackKind,title:null,setName:null,
+          nonce:randomBytes(8).toString('hex'),fileId:null},stickerHelp:null});
       }
       if(action.startsWith('sticker:pick:')||action.startsWith('sticker:edit_pack:')||
          action.startsWith('sticker:add_pack:'))
