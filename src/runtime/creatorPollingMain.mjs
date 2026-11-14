@@ -116,6 +116,30 @@ export async function createCreatorPollingRuntime({
    async close(){await outbound.close();await pool.end();}};
  }catch(err){await outbound.close();await pool.end();throw err;}
 }
+// Bounded, read-only registration reconciliation runs inside the ONE
+// existing polling process. It never replays Telegram pack mutations.
+export async function sweepStickerRegistrations({source,afterOwnerId=0,limit=10}={}){
+ const store=source?.sessionStore,wizard=source?.stickerWizard;
+ if(typeof store?.listPendingStickerRegistrations!=='function'||
+    typeof wizard?.recoverPending!=='function')
+   return {afterOwnerId:0,processed:0,unavailable:true};
+ const rows=await store.listPendingStickerRegistrations({afterOwnerId,limit});
+ if(!rows.length)return {afterOwnerId:0,processed:0};
+ let recovered=0,checked=0;
+ for(const row of rows){
+   try{
+     const result=await wizard.recoverPending(row.ownerId);
+     checked++;
+     if(result?.status==='registered'||result?.status==='recovered_silently')
+       recovered++;
+   }catch(error){
+     // Concurrent CAS changes and transient Telegram failures are retried
+     // on the next scan. Do not stop DM polling or create a second poller.
+     checked++;
+   }
+ }
+ return {afterOwnerId:rows.at(-1).ownerId,processed:checked,recovered};
+}
 export async function runCreatorPollingMain({
  createRuntime=createCreatorPollingRuntime,signal=undefined,onStatus=()=>{}
 }={}){
@@ -143,9 +167,21 @@ export async function runCreatorPollingMain({
   }
   onStatus('CREATOR_DM_POLL_READY=PASS');
   onStatus('CREATOR_GATE_PUBLIC_RELEASE='+(rt.gateConnected?'CONNECTED':'NOT_VERIFIED'));
+  let recoveryCursor=0;
   while(!signal?.aborted){
    const outcome=await rt.poller.pollBatch({timeout:8});
    if(outcome.accepted>0)onStatus('CREATOR_DM_UPDATES_HANDLED='+outcome.accepted);
+   try{
+     const result=await sweepStickerRegistrations({source:rt.source,
+       afterOwnerId:recoveryCursor,limit:10});
+     recoveryCursor=result.afterOwnerId;
+     if(result.recovered>0)
+       onStatus('STICKER_REGISTRATION_AUTO_RECOVERED='+result.recovered);
+   }catch{
+     // The next batch continues the same recovery scan, with the same
+     // owner cursor. This must never interrupt the Telegram DM consumer.
+     onStatus('STICKER_REGISTRATION_RECOVERY_RETRY=YES');
+   }
   }
  }finally{
   if(shopServer?.listening)await new Promise(resolve=>shopServer.close(()=>resolve()));
