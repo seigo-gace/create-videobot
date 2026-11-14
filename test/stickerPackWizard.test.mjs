@@ -84,7 +84,7 @@ function fixture({timeoutOnMove=false}={}) {
     message_id:302,text}});
   const click=async action=>wizard.handle(cb(action+'|r'+state.revision));
   const enter=async()=>{await wizard.handle(cb('menu:stickers'));await click('sticker:packs');
-    await click('sticker:pick:0');};
+    await click('sticker:kind:regular');await click('sticker:edit_pack:0');};
   return {wizard,cb,msg,click,enter,panels,state:()=>state,pack,
     items:()=>items,counts:()=>({mutations,readbacks})};
 }
@@ -95,18 +95,17 @@ test('STK-02 title edit uses one DM screen, owner inventory and preserves video 
   await f.click('sticker:rename');
   assert.equal(f.state().screen,'sticker_pack_title');
   await f.wizard.handle(f.msg('New title'));
-  assert.equal(f.state().screen,'sticker_pack');
+  assert.equal(f.state().screen,'sticker_pack_items');
   assert.equal(f.pack.title,'New title');
   assert.equal(f.state().stickerEditPending,null);
   assert.equal(f.state().draft.paidVideo.fileId,'must-preserve');
   assert.equal(f.counts().mutations,1);
   const keyboard=f.panels.at(-1).reply_markup.inline_keyboard;
-  assert.ok(keyboard.flat().some(b=>b.text.includes('素材を管理')));
+  assert.ok(keyboard.flat().some(b=>b.text.includes('番目を編集')));
 });
 test('STK-02 edit timeout survives as a locked receipt; readback never repeats mutation',async()=>{
   const f=fixture({timeoutOnMove:true});
   await f.enter();
-  await f.click('sticker:items');
   await f.click('sticker:item:1');
   await f.click('sticker:move_up');
   assert.equal(f.state().screen,'sticker_edit_reconcile');
@@ -123,7 +122,6 @@ test('STK-02 edit timeout survives as a locked receipt; readback never repeats m
 test('STK-02 deletion requires explicit confirmation and updates item inventory',async()=>{
   const f=fixture();
   await f.enter();
-  await f.click('sticker:items');
   await f.click('sticker:item:0');
   await f.click('sticker:delete');
   assert.equal(f.counts().mutations,0);
@@ -147,7 +145,6 @@ test('STK-02 stale callbacks cannot edit a pack twice',async()=>{
 test('STK-02 item replacement uses durable upload checkpoint before Telegram mutation',async()=>{
   const f=fixture();
   await f.enter();
-  await f.click('sticker:items');
   await f.click('sticker:item:0');
   await f.click('sticker:replace_item');
   assert.equal(f.state().screen,'sticker_replace_input');
@@ -167,7 +164,7 @@ test('STK-02 selected pack exposes native Telegram contents preview with correct
  const f=fixture();
  await f.enter();
  const panel=f.panels.at(-1);
- assert.equal(panel.text.includes('2個'),true);
+ assert.equal(panel.text.includes('素材一覧'),true);
  const links=panel.reply_markup.inline_keyboard.flat().filter(b=>b.url);
  assert.deepEqual(links,[{text:'👀 パックの中身を見る',
    url:'https://t.me/addstickers/s42_112233aabb_by_CreateVdobot'}]);
