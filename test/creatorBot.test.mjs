@@ -18,18 +18,16 @@ test('native Telegram start opens existing main menu; callback enters reuse-base
  });
  await handler({message:{from:{id:33},chat:{id:33,type:'private'},message_id:5,text:'/start'}});
  assert.equal(calls[0].m,'screen');
- assert.equal(calls[0].p.reply_markup.inline_keyboard[0][0].callback_data,'menu:video');
+ assert.equal(calls[0].p.reply_markup.inline_keyboard[0][0].callback_data,'menu:listing');
  assert.equal(calls[0].p.reply_markup.inline_keyboard[0][1].callback_data,'menu:stickers');
  assert.equal(states.get(33).screenMessageId,11);
  await handler({message:{from:{id:33},chat:{id:33,type:'private'},message_id:6,text:'/start'}});
  assert.equal(calls.filter(c=>c.m==='screen').length,2,
   'repeated /start edits the existing Bot DM screen, not sendMessage');
  await handler({callback_query:{id:'cq_video',from:{id:33},
-   data:'menu:video',message:{chat:{id:33,type:'private'},message_id:11}}});
- assert.equal(calls.at(-1).p.reply_markup.inline_keyboard[0][0].callback_data,'menu:listing');
- assert.equal(calls.filter(c=>c.m==='sendMessage').length,0);
- await handler({callback_query:{id:'cq1',from:{id:33},
    data:'menu:listing',message:{chat:{id:33,type:'private'},message_id:11}}});
+ assert.match(calls.at(-1).p.text,/タイトル/);
+ assert.equal(calls.filter(c=>c.m==='sendMessage').length,0);
  assert.equal(states.get(33).draft.mode,'create');
  assert.equal(states.get(33).screenMessageId,11);
  const ignored=await handler({message:{from:{id:33},chat:{id:-99,type:'supergroup'},text:'/start',message_id:9}});
@@ -88,4 +86,33 @@ test('GayBBS handoff uses existing video and sticker owner without a duplicate m
  await handler({message:{chat:{id:39,type:'private'},from:{id:39},text:'/start video',message_id:2}});
  assert.equal(calls.filter(c=>c.method==='screen').length,1);
  assert.match(calls.at(-1).payload.text,/動画/);
+});
+
+
+test('creator home opens sticker/emoji editor through existing sticker handler instead of video wizard',async()=>{
+ const states=new Map(),events=[];
+ const sessionStore={
+  async read(id){return states.get(id)??null;},
+  async write(id,revision,next){assert.equal(states.get(id)?.revision??0,revision);states.set(id,next);},
+  async setScreen(id,revision,messageId){states.set(id,{...states.get(id),screenMessageId:messageId})}
+ };
+ const bot=createCreatorBotUpdateHandler({
+  api:async(method,params)=>{events.push({method,params});return true;},
+  sessionStore,
+  screenTransport:{show:async(_,oldId,panel)=>{events.push({method:'screen',panel});return {messageId:oldId||27}}},
+  listingStore:{listByOwner:async()=>[],getOwned:async()=>null},
+  stickerHandler:async update=>{
+   if(update.callback_query?.data==='menu:stickers'){
+    events.push({method:'existingStickerEditor',owner:update.callback_query.from.id});
+    return {handled:true,screen:'sticker_choose'};
+   }
+   return {handled:false};
+  }
+ });
+ await bot({message:{chat:{id:33,type:'private'},from:{id:33},message_id:1,text:'/start creator'}});
+ assert.equal(events.find(x=>x.method==='screen').panel.reply_markup.inline_keyboard[0][1].callback_data,'menu:stickers');
+ const selected=await bot({callback_query:{id:'stk',from:{id:33},data:'menu:stickers',message:{chat:{id:33,type:'private'},message_id:27}}});
+ assert.deepEqual(selected,{handled:true,screen:'sticker_choose'});
+ assert.equal(events.filter(x=>x.method==='existingStickerEditor').length,1);
+ assert.equal(events.filter(x=>x.method==='screen').length,1,'video wizard must not replace sticker screen');
 });
