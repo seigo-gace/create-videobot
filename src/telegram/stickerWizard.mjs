@@ -216,11 +216,12 @@ function mediaFileId(message){
  * session and shared screen transport; preserves video draft and sales state.
  * Conversion/Telegram API mutations are passed as a bounded port.
  */
-export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker,packInventory,editPack,beginStickerSale}={}){
+export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker,releasePendingSticker,packInventory,editPack,beginStickerSale}={}){
   if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
     typeof screenTransport?.show!=='function'||typeof publishSticker!=='function'||
     (reconcileSticker!==undefined&&typeof reconcileSticker!=='function')||
+    (releasePendingSticker!==undefined&&typeof releasePendingSticker!=='function')||
     (editPack!==undefined&&typeof editPack!=='function')||
     (beginStickerSale!==undefined&&typeof beginStickerSale!=='function')||
     (packInventory!==undefined&&(
@@ -362,6 +363,33 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     const pending=old?.stickerPending;
     if(!pending||!['needs_reconcile','in_progress'].includes(pending.status))
       return {status:'already_resolved'};
+    if(['preparing','uploaded'].includes(pending.phase)&&
+       typeof releasePendingSticker==='function'){
+      // The owner session is stale and pack mutation was not started.
+      // The inventory must independently confirm its pre-write phase.
+      const released=await releasePendingSticker({owner:ownerId,pending})
+        .catch(()=>({released:false}));
+      if(released?.released===true){
+        const current=await sessionStore.read(ownerId);
+        if(current?.stickerPending?.nonce!==pending.nonce||
+           current.stickerPending.phase!==pending.phase)
+          return {status:'concurrent_change'};
+        const draft={...current.stickerDraft,
+          nonce:randomBytes(8).toString('hex')};
+        const patch={stickerPending:null,stickerDeferred:false,
+          stickerDraft:draft,stickerHelp:'前回の登録処理が完了しませんでした。素材を確認して再登録できます。'};
+        if(current.stickerDeferred===true||
+           !['sticker_reconcile','sticker_registering','sticker_choose'].includes(current.screen)){
+          await sessionStore.write(ownerId,current.revision,{
+            ...current,...patch,revision:current.revision+1
+          });
+          return {status:'pre_mutation_released_silently'};
+        }
+        await persist(ownerId,current,{...patch,
+          screen:draft.fileId?'sticker_ready':'sticker_input'});
+        return {status:'pre_mutation_released'};
+      }
+    }
     if(!pending.fileUniqueId||!pending.format)
       return {status:'missing_receipt'};
     const outcome=await reconcileSticker({owner:ownerId,pending})
@@ -648,6 +676,11 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
             stickerDraft:{...draft,setName:result.name,link,fileId:null},stickerHelp:null});
         }catch(error){
           const current=await sessionStore.read(id);
+          // A stale upload that was safely released by the poller cannot
+          // reopen the old receipt or overwrite a newer creator session.
+          if(!current?.stickerPending||
+             current.stickerPending.nonce!==draft.nonce)
+            return {handled:true,registrationRecovered:true};
           // The only pack-writing APIs run AFTER submission_started is
           // durably recorded. Failures before that phase cannot have written
           // a pack, so allow the user to correct/retry the same media safely.
