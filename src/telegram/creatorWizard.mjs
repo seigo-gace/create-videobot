@@ -71,6 +71,36 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       ...old,screen:'video_home',waiting:null
     },menuPage('video'));
   }
+  /** Telegram deep links from the inline [編集] text, owner/revision scoped.
+   * No pre-registration edit link exists. Old/forwarded links cannot mutate
+   * another owner, a replaced screen, or a completed publication.
+   */
+  async function openTextEdit(update,field,linkRevision) {
+    const {ownerId,messageId}=privateUser(update);
+    const old=await sessionStore.read(ownerId);
+    const fields=['title','paidVideo','thumbnail','sample','price'];
+    if(!fields.includes(field) || !Number.isSafeInteger(linkRevision) ||
+      linkRevision<1 || old?.revision!==linkRevision ||
+      !['editor','price'].includes(old?.screen) || !old?.draft ||
+      !Number.isSafeInteger(old.screenMessageId) || old.screenMessageId<=0)
+      return {handled:true,staleTextLink:true};
+    const draft=old.draft;
+    const registered=field==='price'?draft.paidVideo&&draft.priceStars!=null:
+      field==='title'?draft.paidVideo&&!!draft.title:!!draft[field];
+    if(!registered)return {handled:true,staleTextLink:true};
+    const patch={...old,screen:field==='price'?'price':'editor',
+      waiting:field==='price'?null:field};
+    const note=field==='title'?'タイトルを1行で送信してください。':
+      field==='paidVideo'?'動画とタイトル（キャプション）を一緒に送信してください。':
+      field==='thumbnail'?'新しいサムネ画像を送信してください。':
+      field==='sample'?'新しいサンプル動画を送信してください。':'';
+    const result=await persistAndRender(ownerId,old,patch,
+      rev=>statusPanel(draft,rev,note,field==='price'?'price':'editor'));
+    // Telegram deep link generates a /start message; remove only that message.
+    await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
+    return result;
+  }
+
   async function handleCallback(update) {
     const {ownerId,messageId}=privateUser(update);
     const cb=update.callback_query;
@@ -361,6 +391,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   return {
     openHome,
     openVideoMenu,
+    openTextEdit,
     async handle(update){
       if(update?.callback_query)return handleCallback(update);
       if(update?.message && (update.message.text||update.message.photo||update.message.video))return handleInput(update);
