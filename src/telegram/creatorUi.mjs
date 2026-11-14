@@ -102,16 +102,33 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   expectDraft(draft);
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('invalid screen revision');
   const btn=(label,action)=>({text:label,callback_data:action+(revision?'|r'+revision:'')});
-  const lines=[
-    draft.mode==='edit'?'🎬 動画の登録内容':'🎬 動画を投稿',
-    '',
-    '📝 タイトル：'+(draft.title||'未入力'),
-    '🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録'),
-    '🖼 サムネ：'+(draft.thumbnail?'登録済み':'未登録（本編から自動生成）'),
-    '🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒）':'未登録（本編から先頭30秒を自動生成）'),
-    '⭐ 価格：'+(draft.priceStars==null?'未設定':draft.priceStars+' Stars'),
-    managementFeeDisclosure(draft.priceStars)
-  ];
+  const lines=[draft.mode==='edit'?'🎬 動画の登録内容':'🎬 動画を投稿',''];
+  const editLinks=[];
+  // Text links invoke the existing Bot DM field editor. They are not keyboard
+  // buttons; do not show them before a field has actually been registered.
+  function line(field,value,registered) {
+    const prefix=registered?'［編集］ ':'';
+    const lineIndex=lines.length;
+    lines.push(prefix+value);
+    if(registered)editLinks.push({field,lineIndex});
+  }
+  line('title','📝 タイトル：'+(draft.title||'未入力'),!!draft.paidVideo&&!!draft.title);
+  line('paidVideo','🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録'),!!draft.paidVideo);
+  line('thumbnail','🖼 サムネ：'+(draft.thumbnail?'登録済み':'未登録（本編から自動生成）'),!!draft.thumbnail);
+  line('sample','🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒）':'未登録（本編から先頭30秒を自動生成）'),!!draft.sample);
+  line('price','⭐ 価格：'+(draft.priceStars==null?'未設定':draft.priceStars+' Stars'),draft.priceStars!=null&&!!draft.paidVideo);
+  lines.push(managementFeeDisclosure(draft.priceStars));
+  const linkEntities=()=> {
+    const entities=[];
+    let offset=0;
+    for(let i=0;i<lines.length;i++){
+      for(const link of editLinks.filter(x=>x.lineIndex===i))
+        entities.push({type:'text_link',offset,length:'［編集］'.length,
+          url:'https://t.me/CreateVdobot?start=ved_'+link.field+'_r'+revision});
+      offset+=lines[i].length+1;
+    }
+    return entities;
+  };
   if(screen==='price'){
     lines.push('','価格を選択してください。自由入力では1〜25000 Starsの整数を送信してください。');
     const prices=[
@@ -127,13 +144,17 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   // This is a registration screen, never the post-publication editor.
   // Keep callback identifiers for existing persisted sessions; only user-visible
   // controls change. Telegram cannot make ordinary plain-text [編集] tappable.
-  const keyboard=[
-    [btn('🎬 本編を登録','edit:paidVideo')],
-    [btn('🖼 サムネを登録','edit:thumbnail'),btn('🎞 サンプルを登録','edit:sample')],
-    [btn('⭐ 価格を設定','edit:price')],
-    [btn('👁 プレビュー','edit:preview'),btn('❌ キャンセル','edit:cancel')]
-  ];
-  return {text:lines.join('\n'),reply_markup:{inline_keyboard:keyboard}};
+  const keyboard=[];
+  if(!draft.paidVideo)keyboard.push([btn('🎬 本編を登録','edit:paidVideo')]);
+  const mediaRegister=[];
+  if(!draft.thumbnail)mediaRegister.push(btn('🖼 サムネを登録','edit:thumbnail'));
+  if(!draft.sample)mediaRegister.push(btn('🎞 サンプルを登録','edit:sample'));
+  if(mediaRegister.length)keyboard.push(mediaRegister);
+  if(draft.priceStars==null)keyboard.push([btn('⭐ 価格を設定','edit:price')]);
+  keyboard.push([btn('👁 プレビュー','edit:preview'),btn('❌ キャンセル','edit:cancel')]);
+  const entities=linkEntities();
+  return {text:lines.join('\n'),...(entities.length?{entities}:{}),
+    reply_markup:{inline_keyboard:keyboard}};
 }
 
 export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {}) {
