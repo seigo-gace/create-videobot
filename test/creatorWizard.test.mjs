@@ -254,3 +254,22 @@ test('my videos new-listing shortcut returns to existing editor',async()=>{
  assert.equal(x.states.get(33).screen,'editor');
  assert.equal(x.states.get(33).waiting,'paidVideo');
 });
+
+test('replacing a video keeps price but clears previews derived from older video',async()=>{
+ const x=setup();
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'first001'},caption:'一作目'},451);
+ await x.callback('edit:price|r2');
+ await x.callback('edit:price:500|r3');
+ await x.callback('edit:preview|r4');
+ assert.equal(x.states.get(33).draft.thumbnail.fileId,'photo_auto_1');
+ await x.callback('review:edit|r5');
+ await x.callback('edit:paidVideo|r6');
+ await x.send({video:{file_id:'second002'},caption:'二作目'},452);
+ const draft=x.states.get(33).draft;
+ assert.equal(draft.title,'二作目');
+ assert.equal(draft.paidVideo.fileId,'second002');
+ assert.equal(draft.priceStars,500);
+ assert.equal(draft.thumbnail,null);
+ assert.equal(draft.sample,null);
+});
