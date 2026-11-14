@@ -40,6 +40,10 @@ function stickerHelp(error){
   return '内部処理を完了できませんでした。時間をおいてもう一度お試しください。解決しない場合は管理者にお知らせください。';
 }
 const stickerHint=session=>session?.stickerHelp?'\n\n⚠️ '+session.stickerHelp:'';
+const MAX_STICKER_AUTO_RECOVERY_ATTEMPTS=5;
+const stickerManualRecoveryReady=session=>
+  session?.stickerPending?.status==='needs_reconcile'&&
+  (session.stickerPending.recoveryAttempts??0)>=MAX_STICKER_AUTO_RECOVERY_ATTEMPTS;
 function panel(session,revision){
   const d=session?.stickerDraft??{};
   const btn=(text,action)=>button(text,action,revision);
@@ -47,6 +51,8 @@ function panel(session,revision){
     text:'🎨 ステッカー・絵文字\n\n⏳ 前回の素材登録をBotが自動確認しています。'+
       '通信回復後に登録済みと確認できれば自動で処理を完了します。作成済み素材は保持しています。',
     reply_markup:{inline_keyboard:[
+      ...(stickerManualRecoveryReady(session)
+        ?[[btn('🔄 手動で登録状態を回収','sticker:manual_recover')]]:[]),
       [btn('📦 マイパックを見る','sticker:packs')]
     ]}
   };
@@ -185,9 +191,13 @@ function panel(session,revision){
   };
   if(session.screen==='sticker_registering'||session.screen==='sticker_reconcile')return {
     text:session.screen==='sticker_registering'?'⏳ 素材を変換・登録中です。':
-      '⏳ Telegramへの登録状態をBotが自動確認しています。完了すると結果を表示します。ほかの操作中も記録は保持されます。'+stickerHint(session),
+      (stickerManualRecoveryReady(session)
+        ?'⚠️ 自動確認を5回試しましたが、Telegramへの登録結果を確認できませんでした。通信が回復してから［手動で登録状態を回収］を押してください。素材は保持しています。'
+        :'⏳ Telegramへの登録状態をBotが自動確認しています。完了すると結果を表示します。ほかの操作中も記録は保持されます。')+stickerHint(session),
     reply_markup:{inline_keyboard:session.screen==='sticker_reconcile'
-      ?[[btn('📦 マイパックを見る','sticker:defer')]]
+      ?[...(stickerManualRecoveryReady(session)
+          ?[[btn('🔄 手動で登録状態を回収','sticker:manual_recover')]]:[]),
+        [btn('📦 マイパックを見る','sticker:defer')]]
       :[]}
   };
   if(session.screen==='sticker_done')return {
@@ -356,13 +366,15 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
   }
   // Called only by the existing poller's bounded recovery sweep.
   // Never replays createNewStickerSet/addStickerToSet.
-  async function recoverPending(ownerId){
+  async function recoverPending(ownerId,{manual=false}={}){
     if(!Number.isSafeInteger(ownerId)||ownerId<=0||
        typeof reconcileSticker!=='function')return {status:'unavailable'};
     const old=await sessionStore.read(ownerId);
     const pending=old?.stickerPending;
     if(!pending||!['needs_reconcile','in_progress'].includes(pending.status))
       return {status:'already_resolved'};
+    if(!manual&&(pending.recoveryAttempts??0)>=MAX_STICKER_AUTO_RECOVERY_ATTEMPTS)
+      return {status:'manual_required'};
     if(['preparing','uploaded','submission_started'].includes(pending.phase)&&
        typeof releasePendingSticker==='function'){
       // The owner session is stale and pack mutation was not started.
@@ -390,12 +402,42 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
         return {status:'pre_mutation_released'};
       }
     }
-    if(!pending.fileUniqueId||!pending.format)
-      return {status:'missing_receipt'};
-    const outcome=await reconcileSticker({owner:ownerId,pending})
-      .catch(()=>({verified:false,status:'unavailable'}));
-    if(outcome?.verified!==true||outcome.status!=='registered'||!outcome.name)
+    // Only count actual readback attempts. Store each attempt durably so
+    // restart cannot restart the five-attempt allowance.
+    const currentBeforeAttempt=await sessionStore.read(ownerId);
+    if(currentBeforeAttempt?.stickerPending?.nonce!==pending.nonce||
+       currentBeforeAttempt.stickerPending.fileUniqueId!==pending.fileUniqueId)
+      return {status:'concurrent_change'};
+    const nextCount=Math.min(MAX_STICKER_AUTO_RECOVERY_ATTEMPTS,
+      (pending.recoveryAttempts??0)+1);
+    await sessionStore.write(ownerId,currentBeforeAttempt.revision,{
+      ...currentBeforeAttempt,revision:currentBeforeAttempt.revision+1,
+      stickerPending:{...currentBeforeAttempt.stickerPending,
+        recoveryAttempts:nextCount,
+        recoveryLastAttemptAt:new Date().toISOString()}
+    });
+    const outcome=pending.fileUniqueId&&pending.format
+      ?await reconcileSticker({owner:ownerId,pending})
+        .catch(()=>({verified:false,status:'unavailable'}))
+      :{verified:false,status:'missing_receipt'};
+    if(outcome?.verified!==true||outcome.status!=='registered'||!outcome.name){
+      if(nextCount>=MAX_STICKER_AUTO_RECOVERY_ATTEMPTS){
+        const retryState=await sessionStore.read(ownerId);
+        if(retryState?.stickerPending?.nonce!==pending.nonce)
+          return {status:'concurrent_change'};
+        if(!retryState.stickerDeferred&&
+           ['sticker_reconcile','sticker_registering','sticker_choose'].includes(retryState.screen))
+          await persist(ownerId,retryState,{screen:'sticker_reconcile',
+            stickerPending:{...retryState.stickerPending,status:'needs_reconcile'}});
+        else if(retryState.stickerPending.status==='in_progress')
+          await sessionStore.write(ownerId,retryState.revision,{
+            ...retryState,revision:retryState.revision+1,
+            stickerPending:{...retryState.stickerPending,status:'needs_reconcile'}
+          });
+        return {status:'manual_required'};
+      }
       return {status:'retry_readback'};
+    }
     const current=await sessionStore.read(ownerId);
     if(current?.stickerPending?.nonce!==pending.nonce||
        current.stickerPending.fileUniqueId!==pending.fileUniqueId||
@@ -430,6 +472,21 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       const {id,messageId}=privateActor(update);
       await api('answerCallbackQuery',{callback_query_id:cb.id});
       const old=await sessionStore.read(id);
+      if(data==='sticker:manual_recover|r'+old?.revision&&
+         messageId===old?.screenMessageId&&
+         stickerManualRecoveryReady(old)){
+        // Final-resort readback only: no create/add API retry.
+        const result=await recoverPending(id,{manual:true});
+        if(result.status==='registered'||result.status==='recovered_silently'||
+           result.status==='pre_mutation_released'||
+           result.status==='pre_mutation_released_silently')
+          return {handled:true,manualRecovered:true};
+        const latest=await sessionStore.read(id);
+        if(!latest?.stickerPending)return {handled:true,manualRecovered:true};
+        return persist(id,latest,{screen:'sticker_reconcile',
+          stickerPending:{...latest.stickerPending,status:'needs_reconcile'},
+          stickerHelp:'Telegram側で登録結果を確認できませんでした。通信の回復後にもう一度回収できます。'});
+      }
       if(old?.stickerEditPending){
         const pending=old.stickerEditPending;
         if(pending.status!=='needs_reconcile'||
