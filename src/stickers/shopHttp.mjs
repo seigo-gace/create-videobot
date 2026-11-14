@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {verifyStickerShopInitData,createStickerShopPreviewToken,
  verifyStickerShopPreviewToken} from './shopAuth.mjs';
 import {STICKER_MANAGEMENT_FEE_POLICY_ID} from '../sales/managementFee.mjs';
+import {createStickerOwnerGallery} from './shopOwnerGallery.mjs';
 
 const productId=id=>typeof id==='string'&&/^sp_[a-f0-9]{24}$/.test(id);
 const unpack=r=>typeof r.items==='string'?JSON.parse(r.items):r.items;
@@ -47,7 +48,7 @@ function validateDependencies({pool,salesStore,telegramApi,botToken,preview}){
   throw Error('STICKER_SHOP_DEPENDENCIES_NOT_VERIFIED');
 }
 export function createStickerShopHandler({pool,salesStore,telegramApi,botToken,preview,
- now=()=>Date.now()}={}){
+ ownerGallery=null,now=()=>Date.now()}={}){
  validateDependencies({pool,salesStore,telegramApi,botToken,preview});
  async function purchased(buyerId,id){
   const p=await pool.query("SELECT 1 FROM videobot_sticker_orders WHERE buyer_user_id=$1 AND product_id=$2 AND invoice_state='paid' LIMIT 1",
@@ -65,6 +66,7 @@ export function createStickerShopHandler({pool,salesStore,telegramApi,botToken,p
  }
  const staticPaths=Object.freeze({
   '/shop':{name:'index.html',type:'text/html; charset=utf-8'},
+  '/shop/my-pack':{name:'index.html',type:'text/html; charset=utf-8'},
   '/shop/app.js':{name:'app.js',type:'application/javascript; charset=utf-8'},
   '/shop/style.css':{name:'style.css',type:'text/css; charset=utf-8'}
  });
@@ -84,6 +86,12 @@ export function createStickerShopHandler({pool,salesStore,telegramApi,botToken,p
    const url=new URL(req.url,'http://127.0.0.1');
    if(req.method==='GET'&&staticPaths[url.pathname]){
     await sendStatic(url.pathname,res);return;
+   }
+   if(url.pathname.startsWith('/api/my-pack/')){
+    if(!ownerGallery)return respond(res,409,{error:'gallery_not_connected'});
+    const body=req.method==='POST'?await readBody(req):null;
+    await ownerGallery({req,res,url,body});
+    return;
    }
    if(req.method==='GET'&&url.pathname.startsWith('/api/preview/')){
     const matched=url.pathname.match(/^\/api\/preview\/(sp_[a-f0-9]{24})\/(\d{1,3})$/);
@@ -157,5 +165,9 @@ export function createStickerShopHandler({pool,salesStore,telegramApi,botToken,p
  };
 }
 export function createStickerShopServer(options){
- return createServer(createStickerShopHandler(options));
+ const gallery=options?.inventory&&options?.sessionStore&&options?.selectItem?
+  createStickerOwnerGallery({inventory:options.inventory,sessionStore:options.sessionStore,
+   selectItem:options.selectItem,preview:options.preview,
+   botToken:options.botToken,now:options.now}):null;
+ return createServer(createStickerShopHandler({...options,ownerGallery:gallery}));
 }
