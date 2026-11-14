@@ -59,7 +59,7 @@ export function createTelegramPrivateMediaUploader({
 export function createCreatorDmPreviewUploader({
  token,fetchImpl=globalThis.fetch,telegramApi,maxBytes=20_000_000
 }={}){
- if(typeof token!=='string'||!/^\\d+:[A-Za-z0-9_-]{30,}$/.test(token)||
+ if(typeof token!=='string'||!/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)||
     typeof fetchImpl!=='function'||typeof telegramApi!=='function')
    throw new Error('creator preview upload provider missing');
  return async function saveGenerated({path,type,ownerId}={}){
