@@ -164,6 +164,7 @@ test('TGtumbler shop web app uses hentaigay.org and rejects unrelated domain',as
  const buttons=f.panels.at(-1).reply_markup.inline_keyboard.flat();
  assert.equal(buttons.find(b=>b.web_app)?.web_app.url,
    'https://shop.hentaigay.org/shop?product='+productId);
+ assert.match(f.panels.at(-1).text,/公開パックは購入者だけに限定できず/);
  assert.equal(f.invoiceCount,0);
  assert.equal(buttons.some(x=>x.callback_data?.startsWith('sale:accept|r')),true);
  await f.flow.handle(f.cb(81,'sale:accept'));
