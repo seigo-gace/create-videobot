@@ -6,7 +6,7 @@ import {createOfficialSubscriptionInvite} from '../src/collection/subscriptionIn
 function targets() {
   return {
     verified:true,rightsApproved:true,
-    subscription:{verified:true,type:'channel',chatId:-100333,priceStars:300,
+    subscription:{verified:true,type:'channel',chatId:-1004396338340,priceStars:300,
       periodSeconds:2592000,inviteUrl:'https://t.me/+ValidSubscription1'},
     topic:{verified:true,board:'video_chat',groupTitle:'ビデオChatの掲示板',
       enabled:true,chatId:-1002373696859,threadId:123,
@@ -54,7 +54,7 @@ test('full member video before topic teaser; uses direct official subscription U
   });
   const first=await publisher.publish(video());
   assert.equal(first.published,true);
-  assert.deepEqual(events.map(x=>x.chat_id),[-100333,-1002373696859]);
+  assert.deepEqual(events.map(x=>x.chat_id),[-1004396338340,-1002373696859]);
   assert.equal(events[0].video,'FULL_FILE_ID');
   assert.equal(events[1].video,'SAMPLE_FILE_ID');
   assert.equal(events[1].message_thread_id,123);
@@ -110,7 +110,7 @@ test('channel invite uses official Stars subscription, no individual invoice',as
         subscription_price:400,subscription_period:2592000};
     }
   });
-  const link=await create({channelId:-100333,priceStars:400});
+  const link=await create({channelId:-1004396338340,priceStars:400});
   assert.equal(link.periodSeconds,2592000);
   assert.deepEqual(calls.map(x=>x.method),['createChatSubscriptionInviteLink']);
   assert.equal(calls[0].args.subscription_price,400);
@@ -127,4 +127,13 @@ test('sample topic link must not silently become thread ID',async()=>{
   });
   await assert.rejects(p.publish(video()),/MASTER_SAMPLE_TOPIC_NOT_VERIFIED/);
   assert.equal(sent,0);
+});
+
+test('other private channels cannot become subscription destination',async()=>{
+ const store=memoryStore(),target=targets();target.subscription.chatId=-100333;
+ let count=0;
+ const p=createSubscriptionPublisher({telegramApi:async()=>{count++},
+  verifiedTargets:async()=>target,verifyBotPostingAccess:async()=>true,receipts:store});
+ await assert.rejects(p.publish(video()),/SUBSCRIPTION_MASTER_CHANNEL_MISMATCH/);
+ assert.equal(count,0);
 });
