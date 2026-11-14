@@ -614,6 +614,14 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
             setName:draft.setName??null,nonce:draft.nonce,fileId:draft.fileId,
             title:draft.title,phase:'preparing'}};
         await sessionStore.write(id,old.revision,claimed);
+        // Show actual progress before conversion/upload (not only after it).
+        // A Telegram UI timeout cannot invalidate the durable registration.
+        try{
+          const progress=await screenTransport.show(id,
+            claimed.screenMessageId??null,panel(claimed,claimed.revision));
+          if(progress?.messageId&&progress.messageId!==claimed.screenMessageId)
+            await sessionStore.setScreen(id,claimed.revision,progress.messageId);
+        }catch{/* The same poller will reconcile the durable receipt. */}
         try{
           const checkpoint=async(stage,receipt)=>{
             const current=await sessionStore.read(id);
