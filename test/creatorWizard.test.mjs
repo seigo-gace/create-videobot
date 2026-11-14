@@ -95,7 +95,7 @@ test('invalid input stays on same screen with preserved previously selected pric
   await x.callback('edit:price:custom|r4');
   await x.send({text:'wrong title line only'},214);
   assert.equal(x.states.get(33).draft.priceStars,100);
-  assert.equal(x.states.get(33).waiting,'title');
+  assert.equal(x.states.get(33).waiting,'customPrice');
   assert.match(x.screens.at(-1).panel.text,/⚠️/);
   await x.send({text:'Title\n250'},215);
   assert.equal(x.states.get(33).waiting,null);
@@ -272,4 +272,18 @@ test('replacing a video keeps price but clears previews derived from older video
  assert.equal(draft.priceStars,500);
  assert.equal(draft.thumbnail,null);
  assert.equal(draft.sample,null);
+});
+
+test('one-line title edit retains custom Stars price without demanding two-line input',async()=>{
+ const x=setup();
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'main001'},caption:'旧題名'},501);
+ await x.callback('edit:price|r2');
+ await x.callback('edit:price:custom|r3');
+ await x.send({text:'旧題名\\n250'},502);
+ assert.equal(x.states.get(33).draft.priceStars,250);
+ await x.callback('edit:title|r5');
+ await x.send({text:'新題名'},503);
+ assert.equal(x.states.get(33).draft.title,'新題名');
+ assert.equal(x.states.get(33).draft.priceStars,250);
 });
