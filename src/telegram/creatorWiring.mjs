@@ -203,6 +203,22 @@ export function createVideoBotSourceModule({
       await rm(scratch,{recursive:true,force:true});
     }
   };
+  // A crashed pre-mutation conversion/upload may leave only a receipt.
+  // Release it ONLY when both the session and DB prove Telegram pack writes
+  // were not started. Never unlock a submission_started operation.
+  const releasePendingSticker=async({owner,pending})=>{
+    if(!Number.isSafeInteger(owner)||owner<=0||
+       typeof pending?.nonce!=='string'||
+       !['preparing','uploaded'].includes(pending.phase))
+      return {released:false};
+    const operationId='s'+String(owner)+'_'+pending.nonce;
+    const receipt=await stickerInventory.getRegistration({operationId,ownerId:owner});
+    if(!receipt)return {released:true};
+    if(!['preparing','uploaded'].includes(receipt.phase))
+      return {released:false};
+    const result=await stickerInventory.abandonBeforeMutation({operationId,ownerId:owner});
+    return {released:result.abandoned===true};
+  };
   const stickerReconcile=async({owner,pending})=>{
     const identity=await telegramApi('getMe',{});
     if(typeof identity?.username!=='string'||identity.is_bot!==true)
@@ -316,7 +332,7 @@ export function createVideoBotSourceModule({
   const stickerWizard=createStickerWizard({
     api:telegramApi,sessionStore,screenTransport:screen,
     publishSticker:stickerPublisher,reconcileSticker:stickerReconcile,
-    packInventory:stickerInventory,editPack:stickerPackEditor,
+    releasePendingSticker,packInventory:stickerInventory,editPack:stickerPackEditor,
     beginStickerSale:stickerSales.beginSell,stickerShopBaseUrl
   });
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
