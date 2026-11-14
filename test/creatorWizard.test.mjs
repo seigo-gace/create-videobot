@@ -251,27 +251,34 @@ test('my videos new-listing shortcut returns to existing editor',async()=>{
  const x=setup();
  await x.callback('menu:manage');
  await x.callback('menu:listing|r1');
- assert.equal(x.states.get(33).screen,'editor');
+ assert.equal(x.states.get(33).screen,'await_video');
  assert.equal(x.states.get(33).waiting,'paidVideo');
 });
 
-test('replacing a video keeps price but clears previews derived from older video',async()=>{
+test('changing a registered video regenerates album preview while preserving Stars and description',async()=>{
  const x=setup();
  await x.callback('menu:listing');
+ assert.equal(x.screens.at(-1).panel.text.includes('タイトルと動画を投稿してください'),true);
  await x.send({video:{file_id:'first001'},caption:'一作目'},451);
- await x.callback('edit:price|r2');
- await x.callback('edit:price:500|r3');
- await x.callback('edit:preview|r4');
+ assert.equal(x.states.get(33).screen,'description');
+ assert.equal(x.states.get(33).draft.sample.durationSeconds,30);
  assert.equal(x.states.get(33).draft.thumbnail.fileId,'photo_auto_1');
- await x.callback('review:edit|r5');
- await x.callback('edit:paidVideo|r6');
- await x.send({video:{file_id:'second002'},caption:'二作目'},452);
+ assert.ok(x.calls.some(c=>c.method==='sendMediaGroup'&&c.params.media.length===3));
+ await x.send({text:'追加説明'},452);
+ assert.equal(x.states.get(33).screen,'editor');
+ assert.equal(x.states.get(33).draft.description,'追加説明');
+ await x.callback('edit:price|r3');
+ await x.callback('edit:price:500|r4');
+ await x.callback('edit:paidVideo|r5');
+ await x.send({video:{file_id:'second002'},caption:'二作目'},453);
  const draft=x.states.get(33).draft;
  assert.equal(draft.title,'二作目');
  assert.equal(draft.paidVideo.fileId,'second002');
  assert.equal(draft.priceStars,500);
- assert.equal(draft.thumbnail,null);
- assert.equal(draft.sample,null);
+ assert.equal(draft.description,'追加説明');
+ assert.equal(draft.thumbnail.fileId,'photo_auto_1');
+ assert.equal(draft.sample.fileId,'sample_auto_1');
+ assert.equal(x.calls.filter(c=>c.method==='sendMediaGroup').length,2);
 });
 
 test('one-line title edit retains custom Stars price without demanding two-line input',async()=>{
