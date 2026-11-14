@@ -3,6 +3,13 @@ const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const USER_ID = /^[A-Za-z0-9_-]{1,128}$/;
 export const PRICE_PRESETS = Object.freeze([50, 100, 300, 500, 1000]);
 const MAX_PRICE = 25000;
+/** Same strict custom-price input rule as the verified sticker sales wizard. */
+export function parseCreatorStarsPrice(text) {
+  if (typeof text !== 'string') throw new Error('Stars price must be an integer from 1 to 25000');
+  const value=text.trim();
+  if(!/^[1-9][0-9]{0,4}$/.test(value)) throw new Error('Stars price must be an integer from 1 to 25000');
+  return price(Number(value));
+}
 
 function price(stars) {
   if (!Number.isSafeInteger(stars) || stars < 1 || stars > MAX_PRICE) throw new Error('Stars price must be an integer from 1 to 25000');
@@ -78,16 +85,13 @@ export function editCreatorDraft(draft, action) {
       return { ...draft, priceMode: 'custom' };
     case 'captionTitle':
       field = 'title'; value = title(action.text); break;
-    case 'titleInput': {
-      if (draft.priceMode === 'custom') {
-        if (typeof action.text !== 'string') throw new Error('enter title on first line and Stars on second line');
-        const lines = action.text.replace(/\r\n/g, '\n').split('\n');
-        if (lines.length !== 2 || !/^[0-9]+$/.test(lines[1].trim())) throw new Error('enter title on first line and numeric Stars on second line: 夏の思い出動画\\n250');
-        const stars = price(Number(lines[1].trim()));
-        return { ...draft, title: title(lines[0]), priceStars: stars, feeTermsAccepted:false, dirtyFields: [...new Set([...draft.dirtyFields, 'title','priceStars'])] };
-      }
-      field = 'title'; value = title(action.text); break;
+    case 'customPriceInput': {
+      const stars = parseCreatorStarsPrice(action.text);
+      return { ...draft, priceStars:stars, priceMode:'custom', feeTermsAccepted:false,
+        dirtyFields:[...new Set([...draft.dirtyFields,'priceStars'])] };
     }
+    case 'titleInput':
+      field = 'title'; value = title(action.text); break;
     default: throw new Error('unknown editor action');
   }
   return { ...draft, [field]: value, dirtyFields: [...new Set([...draft.dirtyFields, field])] };
@@ -109,7 +113,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     managementFeeDisclosure(draft.priceStars)
   ];
   if(screen==='price'){
-    lines.push('','価格を選択してください。自由入力の場合はタイトルとStars金額を2行で送信してください。');
+    lines.push('','価格を選択してください。自由入力では1〜25000 Starsの整数を送信してください。');
     const prices=[
       PRICE_PRESETS.slice(0,3).map(n=>btn(String(n)+' ⭐'+(draft.priceStars===n?' ✓':''),'edit:price:'+n)),
       [...PRICE_PRESETS.slice(3).map(n=>btn(String(n)+' ⭐'+(draft.priceStars===n?' ✓':''),'edit:price:'+n)),
@@ -119,7 +123,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     return {text:lines.join('\n'),reply_markup:{inline_keyboard:prices}};
   }
   if(!draft.paidVideo)lines.push('','📎 販売動画を送信し、キャプションにタイトルを1行で入力してください。');
-  else if(draft.priceMode==='custom')lines.push('','自由入力中：タイトルを1行目、Stars数を2行目に入力してください。');
+  else if(draft.priceMode==='custom')lines.push('','自由入力中：Stars価格の数字だけを送信してください。');
   const keyboard=[
     [btn('［編集］📝 タイトル','edit:title'),btn('［編集］🎬 本編','edit:paidVideo')],
     [btn('［編集］🖼 サムネ','edit:thumbnail'),btn('［編集］🎞 サンプル','edit:sample')],
