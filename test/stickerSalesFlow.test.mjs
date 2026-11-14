@@ -5,7 +5,7 @@ import {PRICE_PRESETS} from '../src/telegram/creatorUi.mjs';
 
 const productId='sp_'+'a'.repeat(24);
 const orderId='so_'+'b'.repeat(24);
-function fixture(stickerShopBaseUrl=null){
+function fixture(stickerShopBaseUrl=null,{failInvoice=false}={}){
  const states=new Map();
  const calls=[];
  const panels=[];
@@ -114,7 +114,7 @@ function fixture(stickerShopBaseUrl=null){
  };
  const api=async(method,args)=>{
    calls.push({method,args});
-   if(method==='sendInvoice'){invoiceCount++;return {message_id:500};}
+   if(method==='sendInvoice'){invoiceCount++;if(failInvoice)throw Error('TEST_SIMULATED_TELEGRAM_TIMEOUT');return {message_id:500};}
    if(method==='sendSticker')return {message_id:600+calls.length};
    if(method==='getMe')return {is_bot:true,username:'CreateVdobot'};
    return true;
@@ -352,4 +352,63 @@ test('sales cannot erase unresolved sticker registration by exiting',async()=>{
  assert.equal(denied.locked,true);
  assert.equal(f.state(81).screen,'sticker_sale_offer');
  assert.deepEqual(f.state(81).stickerPending,pending);
+});
+
+test('zero-Stars payment simulation: Telegram invoice timeout cannot trigger a second invoice',async()=>{
+ const f=fixture(null,{failInvoice:true});
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ await f.flow.handle(f.cb(81,'sale:accept'));
+ assert.equal(f.invoiceCount,0);
+ await f.flow.handle(f.cb(81,'sale:pay'));
+ assert.equal(f.state(81).screen,'sticker_sale_invoice_unknown');
+ assert.equal(f.phase,'unknown');
+ assert.equal(f.invoiceCount,1);
+ // Only Telegram reconciliation can resolve an ambiguous invoice; this
+ // state must not offer a second charge from a stale pay button.
+ const second=await f.flow.handle(f.cb(81,'sale:pay'));
+ assert.equal(second.staleButton,true);
+ assert.equal(f.invoiceCount,1);
+ assert.equal(f.calls.filter(x=>x.method==='sendSticker').length,0);
+});
+
+test('zero-Stars payment simulation: pre-checkout rejects buyer, price, and currency mismatch',async()=>{
+ const f=fixture();
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ await f.flow.handle(f.cb(81,'sale:accept'));
+ await f.flow.handle(f.cb(81,'sale:pay'));
+ const cases=[
+  {id:'wrong-buyer',from:{id:82},currency:'XTR',total_amount:50},
+  {id:'wrong-price',from:{id:81},currency:'XTR',total_amount:51},
+  {id:'wrong-currency',from:{id:81},currency:'USD',total_amount:50}
+ ];
+ for(const query of cases){
+  const result=await f.flow.payments({pre_checkout_query:query});
+  assert.equal(result.preCheckoutApproved,false);
+  const reply=f.calls.find(x=>x.method==='answerPreCheckoutQuery'&&x.args.pre_checkout_query_id===query.id);
+  assert.equal(reply.args.ok,false);
+  assert.match(reply.args.error_message,/注文内容を確認できません/);
+ }
+ assert.equal(f.calls.filter(x=>x.method==='sendSticker').length,0);
+ assert.equal(f.invoiceCount,1);
+});
+
+test('zero-Stars payment simulation: paid entitlement redelivery never raises a second invoice',async()=>{
+ const f=fixture();
+ await f.flow.handle(f.msg(81,'/start buy_'+productId));
+ await f.flow.handle(f.cb(81,'sale:accept'));
+ await f.flow.handle(f.cb(81,'sale:pay'));
+ const payment={invoice_payload:'stk:'+orderId,currency:'XTR',
+  total_amount:50,telegram_payment_charge_id:'test-xtr-one-charge'};
+ await f.flow.payments({update_id:509,message:{
+  chat:{id:81,type:'private'},from:{id:81},message_id:401,successful_payment:payment}});
+ assert.equal(f.state(81).screen,'sticker_sale_delivery');
+ assert.equal(f.invoiceCount,1);
+ const first=f.calls.filter(x=>x.method==='sendSticker').length;
+ assert.equal(first,2);
+ await f.flow.handle(f.cb(81,'sale:redeliver'));
+ assert.equal(f.state(81).screen,'sticker_sale_delivery');
+ // This fixture returns a durable second delivery attempt and no additional
+ // charge; a real PostgreSQL test verifies the attempt rows separately.
+ assert.equal(f.invoiceCount,1);
+ assert.equal(f.calls.filter(x=>x.method==='sendInvoice').length,1);
 });
