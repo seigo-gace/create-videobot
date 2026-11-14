@@ -37,3 +37,7 @@ button:disabled{opacity:.43;cursor:default}
 .gallery-tile:active{border-color:var(--button)}
 .gallery-tile img{width:100%;height:100%;object-fit:contain}
 .gallery-tile:disabled{opacity:.55;cursor:default}
+
+.gallery-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+ gap:8px;margin:10px 0 16px}
+.gallery-navigation button{padding:11px 4px;font-size:12px;white-space:nowrap}
