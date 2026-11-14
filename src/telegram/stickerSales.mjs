@@ -5,6 +5,12 @@ import {splitStarsExact,formatTenths,STICKER_MANAGEMENT_FEE_POLICY_ID} from '../
 import {createStickerPaidPhotoFlow} from './stickerPaidPhotoFlow.mjs';
 
 const button=(text,action,rev)=>({text,callback_data:action+'|r'+rev});
+// External Telegram-recognized Stars top-up routes. These are outbound links only:
+// no resale, mark-up, affiliate attribution or payment claim is performed by this Bot.
+const STAR_TOPUP_LINKS=Object.freeze([
+  [{text:'🔗 Starsを購入（Telegram）',url:'https://t.me/PremiumBot'}],
+  [{text:'🔗 暗号資産で購入（Fragment）',url:'https://fragment.com/stars'}]
+]);
 const MONEY_TERMS='Telegramの公開パックは購入者だけに限定できず、第三者への再共有も防止できません。購入対象は現時点の素材版です。素材はBotのDMへ送ります。購入済みの再取得に追加Starsは請求しませんが、Telegramのファイル保持が失効した素材の再送は保証できません。通常の自己都合返金メニューはありません。公式の決済異議は /paysupport で受け付けます。';
 function stickerFeeDisclosure(stars=null){
  const rows=['運営管理費：売上の30%／投稿者分：70%'];
@@ -108,19 +114,20 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
           web_app:{url:shopUrl+'/shop?product='+d.productId}}]]:
           preview?[[{text:'📦 パックの中身を見る',url:preview}]]:[]),
         [b('同意して購入へ','sale:accept')],
+        ...STAR_TOPUP_LINKS,
         [b('↩ 戻る','sale:cancel')]
       ];break;
     }
     case 'sticker_sale_agreed':
       text='購入内容：'+d.title+'\n価格：'+d.price+
         ' Stars\n購入条件を承諾しました。次にTelegram公式のStars請求へ進みます。';
-      keyboard=[[b('⭐ Starsで購入','sale:pay')],[b('↩ 戻る','sale:offer')]];break;
+      keyboard=[[b('⭐ Starsで購入','sale:pay')],...STAR_TOPUP_LINKS,[b('↩ 戻る','sale:offer')]];break;
     case 'sticker_sale_invoice':
       text='⭐ Telegramの請求書を送信しました。お支払い完了後に素材を受け取れます。';
-      keyboard=[[b('📦 購入済み商品','sale:purchases'),b('決済サポート','sale:support')]];break;
+      keyboard=[[b('📦 購入済み商品','sale:purchases'),b('決済サポート','sale:support')],...STAR_TOPUP_LINKS];break;
     case 'sticker_sale_invoice_unknown':
       text='⚠️ 請求書送信結果を確認できません。二重請求防止のため再発行しません。届いた請求書で決済するか、決済状況を確認してください。';
-      keyboard=[[b('📦 購入済み商品','sale:purchases')]];break;
+      keyboard=[[b('📦 購入済み商品','sale:purchases')],...STAR_TOPUP_LINKS];break;
     case 'sticker_sale_support':
       text='🆘 Stars購入・納品に関する問題を1〜1000文字で送信してください（5文字以上）。\n決済番号などの個人情報は必要最小限にしてください。'+
         (d.supportError?'\n⚠️ 入力は5〜1000文字にしてください。':'');
@@ -164,7 +171,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
     case 'sticker_sale_paid_unpaid':
       text='⭐ このアカウントでは対象ステッカーパックのStars購入をまだ確認できません。'+
         '\n専用TopicのStars付き写真から購入後、もう一度確認してください。ここで再請求はしません。';
-      keyboard=[[b('🔄 購入状態を確認','sale:paid_check')],[b('↩ メニューへ','sale:cancel')]];break;
+      keyboard=[[b('🔄 購入状態を確認','sale:paid_check')],...STAR_TOPUP_LINKS,[b('↩ メニューへ','sale:cancel')]];break;
     case 'sticker_sale_paid_delivery':
       text='✅ Stars購入済みのステッカーパックです。素材をこのDMで受け取れます。'+
         '\n続きと再取得は追加Stars不要です。'+
