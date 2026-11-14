@@ -47,8 +47,7 @@ function panel(session,revision){
     text:'🎨 ステッカー・絵文字\n\n⏳ 前回の素材登録をBotが自動確認しています。'+
       '通信回復後に登録済みと確認できれば自動で処理を完了します。作成済み素材は保持しています。',
     reply_markup:{inline_keyboard:[
-      [btn('📦 マイパックを見る','sticker:packs')],
-      [btn('↩ 戻る','sticker:cancel')]
+      [btn('📦 マイパックを見る','sticker:packs')]
     ]}
   };
   if(session.screen==='sticker_choose')return {
