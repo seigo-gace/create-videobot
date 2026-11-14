@@ -18,11 +18,15 @@ test('native Telegram start opens existing main menu; callback enters reuse-base
  });
  await handler({message:{from:{id:33},chat:{id:33,type:'private'},message_id:5,text:'/start'}});
  assert.equal(calls[0].m,'screen');
- assert.ok(calls[0].p.reply_markup.inline_keyboard[0][0].text.includes('動画を投稿'));
+ assert.equal(calls[0].p.reply_markup.inline_keyboard[0][0].callback_data,'menu:video');
+ assert.equal(calls[0].p.reply_markup.inline_keyboard[0][1].callback_data,'menu:stickers');
  assert.equal(states.get(33).screenMessageId,11);
  await handler({message:{from:{id:33},chat:{id:33,type:'private'},message_id:6,text:'/start'}});
  assert.equal(calls.filter(c=>c.m==='screen').length,2,
   'repeated /start edits the existing Bot DM screen, not sendMessage');
+ await handler({callback_query:{id:'cq_video',from:{id:33},
+   data:'menu:video',message:{chat:{id:33,type:'private'},message_id:11}}});
+ assert.equal(calls.at(-1).p.reply_markup.inline_keyboard[0][0].callback_data,'menu:listing');
  assert.equal(calls.filter(c=>c.m==='sendMessage').length,0);
  await handler({callback_query:{id:'cq1',from:{id:33},
    data:'menu:listing',message:{chat:{id:33,type:'private'},message_id:11}}});
