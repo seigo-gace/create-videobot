@@ -124,10 +124,13 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   }
   if(!draft.paidVideo)lines.push('','📎 販売動画を送信し、キャプションにタイトルを1行で入力してください。');
   else if(draft.priceMode==='custom')lines.push('','自由入力中：Stars価格の数字だけを送信してください。');
+  // This is a registration screen, never the post-publication editor.
+  // Keep callback identifiers for existing persisted sessions; only user-visible
+  // controls change. Telegram cannot make ordinary plain-text [編集] tappable.
   const keyboard=[
-    [btn('［編集］📝 タイトル','edit:title'),btn('［編集］🎬 本編','edit:paidVideo')],
-    [btn('［編集］🖼 サムネ','edit:thumbnail'),btn('［編集］🎞 サンプル','edit:sample')],
-    [btn('［編集］⭐ 価格','edit:price')],
+    [btn('🎬 本編を登録','edit:paidVideo')],
+    [btn('🖼 サムネを登録','edit:thumbnail'),btn('🎞 サンプルを登録','edit:sample')],
+    [btn('⭐ 価格を設定','edit:price')],
     [btn('👁 プレビュー','edit:preview'),btn('❌ キャンセル','edit:cancel')]
   ];
   return {text:lines.join('\n'),reply_markup:{inline_keyboard:keyboard}};
