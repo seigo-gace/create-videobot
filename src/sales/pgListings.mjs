@@ -23,7 +23,7 @@ function recordToListing(row) {
   if(!row)return null;
   return {
     id:row.listing_id,sellerId:String(row.seller_user_id),revision:Number(row.revision),
-    title:row.title,priceStars:row.price_stars==null?null:Number(row.price_stars),
+    title:row.title,description:row.description??'',priceStars:row.price_stars==null?null:Number(row.price_stars),
     priceMode:row.price_mode,
     thumbnail:row.thumbnail_file_id?{fileId:row.thumbnail_file_id}:null,
     sample:row.sample_file_id?{fileId:row.sample_file_id,
@@ -39,6 +39,8 @@ function recordToListing(row) {
 function validatedDraft(draft) {
   if(!draft || typeof draft!=='object')throw new Error('listing draft missing');
   if(typeof draft.title!=='string'||draft.title.length>128)throw new Error('invalid title');
+  if(typeof (draft.description??'')!=='string'||(draft.description??'').length>800)
+    throw new Error('invalid video description');
   if(draft.priceStars!==null && draft.priceStars!==undefined &&
      (!Number.isSafeInteger(draft.priceStars)||draft.priceStars<1||draft.priceStars>25000))
     throw new Error('invalid Stars price');
@@ -57,7 +59,7 @@ function validatedDraft(draft) {
     draft.thumbnail?.fileId??null,draft.sample?.fileId??null,
     draft.sample?.durationSeconds??null,draft.paidVideo?.fileId??null,
     draft.rightsVerified===true,draft.adultConsentVerified===true,
-    draft.feeTermsAccepted===true
+    draft.feeTermsAccepted===true,draft.description??''
   ];
 }
 export function createPostgresListingStore(pool) {
@@ -84,7 +86,7 @@ export function createPostgresListingStore(pool) {
       ownerId(owner);listingId(id);
       const cols=validatedDraft(draft);
       const r=await pool.query(
-        "INSERT INTO videobot_listings (listing_id,seller_user_id,revision,title,price_stars,price_mode,thumbnail_file_id,sample_file_id,sample_duration_seconds,paid_video_file_id,rights_verified,adult_consent_verified,fee_terms_accepted_at,status) VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $12 THEN NOW() ELSE NULL END,'draft') ON CONFLICT(listing_id) DO NOTHING RETURNING *",
+        "INSERT INTO videobot_listings (listing_id,seller_user_id,revision,title,price_stars,price_mode,thumbnail_file_id,sample_file_id,sample_duration_seconds,paid_video_file_id,rights_verified,adult_consent_verified,fee_terms_accepted_at,description,status) VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $12 THEN NOW() ELSE NULL END,$13,'draft') ON CONFLICT(listing_id) DO NOTHING RETURNING *",
         [id,owner,...cols]
       );
       if(r?.rowCount!==1)throw new Error('LISTING_ALREADY_EXISTS');
@@ -99,7 +101,7 @@ export function createPostgresListingStore(pool) {
       if(expectedRevision<1)throw new Error('existing revision required');
       const cols=validatedDraft(draft);
       const r=await pool.query(
-        "UPDATE videobot_listings SET title=$4,price_stars=$5,price_mode=$6,thumbnail_file_id=$7,sample_file_id=$8,sample_duration_seconds=$9,paid_video_file_id=$10,rights_verified=$11,adult_consent_verified=$12,fee_terms_accepted_at=CASE WHEN $13 THEN NOW() ELSE NULL END,revision=revision+1,updated_at=NOW() WHERE seller_user_id=$1 AND listing_id=$2 AND revision=$3 AND status IN ('draft','ready') RETURNING *",
+        "UPDATE videobot_listings SET title=$4,price_stars=$5,price_mode=$6,thumbnail_file_id=$7,sample_file_id=$8,sample_duration_seconds=$9,paid_video_file_id=$10,rights_verified=$11,adult_consent_verified=$12,fee_terms_accepted_at=CASE WHEN $13 THEN NOW() ELSE NULL END,description=$14,revision=revision+1,updated_at=NOW() WHERE seller_user_id=$1 AND listing_id=$2 AND revision=$3 AND status IN ('draft','ready') RETURNING *",
         [owner,id,expectedRevision,...cols]
       );
       if(r?.rowCount!==1)throw new Error('LISTING_STALE_OR_PUBLISHED');
