@@ -103,7 +103,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('invalid screen revision');
   const btn=(label,action)=>({text:label,callback_data:action+(revision?'|r'+revision:'')});
   const lines=[
-    draft.mode==='edit'?'✏️ 動画を編集':'🎬 動画を投稿',
+    draft.mode==='edit'?'🎬 動画の登録内容':'🎬 動画を投稿',
     '',
     '📝 タイトル：'+(draft.title||'未入力'),
     '🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録'),
@@ -118,7 +118,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
       PRICE_PRESETS.slice(0,3).map(n=>btn(String(n)+' ⭐'+(draft.priceStars===n?' ✓':''),'edit:price:'+n)),
       [...PRICE_PRESETS.slice(3).map(n=>btn(String(n)+' ⭐'+(draft.priceStars===n?' ✓':''),'edit:price:'+n)),
         btn('自分で決める','edit:price:custom')],
-      [btn('🔙 編集画面へ戻る','edit:back')]
+      [btn('🔙 登録画面へ戻る','edit:back')]
     ];
     return {text:lines.join('\n'),reply_markup:{inline_keyboard:prices}};
   }
@@ -229,7 +229,7 @@ export function creatorReviewPanel(draft, revision = 0, note = '') {
   const keys=[
     [{text:draft.rightsVerified&&draft.adultConsentVerified?'✅ 権利・出演者確認済み':'📜 権利・出演者を確認',callback_data:'review:rights|r'+revision}],
     [{text:'✅ 投稿する',callback_data:'review:publish|r'+revision},
-     {text:'✏️ 修正',callback_data:'review:edit|r'+revision},
+     {text:'↩ 登録画面へ',callback_data:'review:edit|r'+revision},
      {text:'❌ 中止',callback_data:'review:cancel|r'+revision}]
   ];
   const text=['👁 動画販売プレビュー','',
