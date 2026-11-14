@@ -315,7 +315,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(old.waiting==='title') {
         draft=editCreatorDraft(draft,{type:'captionTitle',text:update.message.text});
       } else if(old.waiting==='customPrice') {
-        draft=editCreatorDraft(draft,{type:'titleInput',text:update.message.text});
+        draft=editCreatorDraft(draft,{type:'customPriceInput',text:update.message.text});
       } else if(old.waiting==='thumbnail') {
         const p=update.message.photo?.at(-1);
         if(!p?.file_id)throw new Error('サムネイル画像を送信してください。');
