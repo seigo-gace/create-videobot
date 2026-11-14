@@ -226,15 +226,22 @@ export function createPostgresStickerInventory(pool){
         throw error;
       }finally{client.release();}
     },
-    async listPacks(ownerId,{limit=10,offset=0}={}){
+    async listPacks(ownerId,{limit=10,offset=0,packKind=null}={}){
       if(!Number.isSafeInteger(limit)||limit<1||limit>10||
          !Number.isSafeInteger(offset)||offset<0)
         throw new Error('STICKER_PACK_PAGE_INVALID');
-      const q=await pool.query(
-        "SELECT pack_name,owner_user_id,kind,title,format,is_default,status"+
-        " FROM videobot_sticker_packs WHERE owner_user_id=$1 AND status='active'"+
-        " ORDER BY created_at DESC,pack_name LIMIT $2 OFFSET $3",
-        [owner(ownerId),limit,offset]);
+      if(packKind!==null)kind(packKind);
+      const q=packKind===null?
+        await pool.query(
+          "SELECT pack_name,owner_user_id,kind,title,format,is_default,status"+
+          " FROM videobot_sticker_packs WHERE owner_user_id=$1 AND status='active'"+
+          " ORDER BY created_at DESC,pack_name LIMIT $2 OFFSET $3",
+          [owner(ownerId),limit,offset]):
+        await pool.query(
+          "SELECT pack_name,owner_user_id,kind,title,format,is_default,status"+
+          " FROM videobot_sticker_packs WHERE owner_user_id=$1 AND status='active' AND kind=$2"+
+          " ORDER BY created_at DESC,pack_name LIMIT $3 OFFSET $4",
+          [owner(ownerId),packKind,limit,offset]);
       return q.rows??[];
     }
   };
