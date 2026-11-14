@@ -136,3 +136,22 @@ test('old inline keyboard cannot mutate a selected pack',async()=>{
   assert.equal(old.staleButton,true);
   assert.equal(f.state().screen,'sticker_packs');
 });
+
+test('one tap on the pack Edit Web App chooses its image without a numbered DM button',async()=>{
+  const f=setup();
+  await f.tap('menu:stickers');await f.tap('sticker:packs');
+  await f.tap('sticker:kind:regular');
+  assert.equal(f.state().screen,'sticker_packs');
+  const edit=f.panels.at(-1).reply_markup.inline_keyboard[0][2];
+  assert.deepEqual(edit,{text:'✏️ 編集',web_app:{
+    url:'https://shop.hentaigay.org/shop/my-pack?pack=regular_0'
+  }});
+  await f.selectGalleryItem({ownerId:42,packName:'regular_0',index:1,page:1});
+  assert.equal(f.state().screen,'sticker_item');
+  assert.equal(f.state().stickerSelectedItem.file_unique_id,'unique_11');
+  assert.equal(f.state().stickerItemPage,1);
+  assert.equal(f.state().draft.paidVideo.id,'keep');
+  await assert.rejects(()=>f.selectGalleryItem({
+    ownerId:42,packName:'emoji_0',index:0,page:0
+  }),/STICKER_GALLERY_SESSION_STALE/);
+});
