@@ -22,9 +22,12 @@ export function createStickerOwnerGallery({inventory,sessionStore,selectItem,pre
  async function current(ownerId,packName){
   if(!validName(packName))throw Error('STICKER_GALLERY_PACK_INVALID');
   const session=await sessionStore.read(ownerId);
-  if(session?.screen!=='sticker_pack_items'||
-     session.stickerSelectedPack?.pack_name!==packName||
-     session.stickerPending||session.stickerEditPending)
+  const editing=session?.screen==='sticker_pack_items'&&
+    session.stickerSelectedPack?.pack_name===packName;
+  const listing=session?.screen==='sticker_packs'&&
+    session.stickerPackRows?.some(row=>row.pack_name===packName&&
+      row.kind===session.stickerPackKind);
+  if((!editing&&!listing)||session.stickerPending||session.stickerEditPending)
    throw Error('STICKER_GALLERY_SESSION_STALE');
   const pack=await inventory.getOwnedPack(ownerId,packName);
   if(!pack)throw Error('STICKER_GALLERY_PACK_MISSING');
@@ -54,10 +57,15 @@ export function createStickerOwnerGallery({inventory,sessionStore,selectItem,pre
   const {buyerId:ownerId}=verifyStickerShopInitData(body?.initData,botToken,{now:now()});
   const packName=body?.packName;
   const {session,pack}=await current(ownerId,packName);
-  const page=session.stickerItemPage??0;
+  const page=body?.page??0;
+  if(!Number.isSafeInteger(page)||page<0||page>=20)
+   throw Error('STICKER_GALLERY_PAGE_INVALID');
   if(url.pathname==='/api/my-pack/catalog'){
    const rows=await inventory.listOwnedItems({ownerId,packName,limit:10,offset:page*10});
+   const ahead=rows.length===10?await inventory.listOwnedItems({
+     ownerId,packName,limit:1,offset:(page+1)*10}):[];
    return reply(res,200,{title:pack.title,kind:pack.kind,page:page+1,
+    hasNext:ahead.length>0,hasPrevious:page>0,
     items:rows.map((item,index)=>{
      const offset=page*10+index;
      const t=createStickerShopPreviewToken({
@@ -70,7 +78,7 @@ export function createStickerOwnerGallery({inventory,sessionStore,selectItem,pre
   const index=body?.index;
   if(!Number.isSafeInteger(index)||index<0||index>=10)
    throw Error('STICKER_GALLERY_SELECTION_INVALID');
-  await selectItem({ownerId,packName,index});
+  await selectItem({ownerId,packName,index,page});
   reply(res,200,{selected:true});
  };
 }
