@@ -139,6 +139,7 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {
       { text: '🗑 削除', callback_data: 'video:delete:' + item.id }
     ]);
   }
+  keyboard.push([{text:'🆕 新しい動画を投稿',callback_data:'menu:listing'}]);
   const nav = [];
   if (page > 0) nav.push({ text: '◀ 前へ', callback_data: 'video:page:' + (page - 1) });
   if (page + 1 < pages) nav.push({ text: '次へ ▶', callback_data: 'video:page:' + (page + 1) });
