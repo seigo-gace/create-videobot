@@ -9,7 +9,7 @@ function fakeDb(){
       price_mode:d[2],thumbnail_file_id:d[3],sample_file_id:d[4],
       sample_duration_seconds:d[5],paid_video_file_id:d[6],
       rights_verified:d[7],adult_consent_verified:d[8],fee_terms_accepted_at:d[9]?'CI-consented':null,
-      management_fee_bps:3000,status:'draft'};
+      management_fee_bps:3000,description:d[10]??'',status:'draft'};
   }
   const query=async(sql,params)=>{
     queries.push({sql,params});
@@ -66,6 +66,7 @@ test('private video listing create/read/update retains other properties and sell
   const db=fakeDb(),store=createPostgresListingStore(db);
   const first=await store.createDraft(33,'vid001',example());
   assert.equal(first.revision,1);
+  assert.equal(first.description,'');
   assert.equal(first.sample.durationSeconds,30);
   assert.equal((await store.listByOwner(33)).length,1);
   assert.equal((await store.getOwned(44,'vid001')),null);
@@ -138,4 +139,14 @@ test('published listing requires explicit 30 percent fee acceptance snapshot',as
  assert.equal(accepted.feeTermsAccepted,true);
  assert.equal(approved.status,'published');
  assert.equal(approved.managementFeeBps,3000);
+});
+
+test('optional video description persists with the existing owner listing and is length limited',async()=>{
+ const db=fakeDb(),store=createPostgresListingStore(db);
+ const first=await store.createDraft(33,'description_video',example({description:'最初の説明'}));
+ assert.equal(first.description,'最初の説明');
+ const changed=await store.updateDraft(33,'description_video',1,example({description:'差し替え説明'}));
+ assert.equal(changed.description,'差し替え説明');
+ assert.equal((await store.getOwned(33,'description_video')).description,'差し替え説明');
+ await assert.rejects(()=>store.createDraft(33,'overlong',example({description:'a'.repeat(801)})),/description/);
 });
