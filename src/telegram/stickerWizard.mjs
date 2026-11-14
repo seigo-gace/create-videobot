@@ -754,23 +754,33 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     }
     return {handled:false};
   }
-  async function selectGalleryItem({ownerId,packName,index}={}){
+  async function selectGalleryItem({ownerId,packName,index,page=null}={}){
     if(!Number.isSafeInteger(ownerId)||ownerId<=0||
-       typeof packName!=='string'||!Number.isSafeInteger(index)||index<0||index>=10)
+       typeof packName!=='string'||!Number.isSafeInteger(index)||index<0||index>=10||
+       (page!==null&&(!Number.isSafeInteger(page)||page<0||page>=20)))
       throw Error('STICKER_GALLERY_SELECTION_INVALID');
     const current=await sessionStore.read(ownerId);
-    if(current?.screen!=='sticker_pack_items'||
-       current.stickerPending||current.stickerEditPending||
-       current.stickerSelectedPack?.pack_name!==packName)
+    const fromContents=current?.screen==='sticker_pack_items'&&
+      current.stickerSelectedPack?.pack_name===packName;
+    const fromList=current?.screen==='sticker_packs'&&
+      current.stickerPackRows?.some(row=>row.pack_name===packName&&
+        row.kind===current.stickerPackKind);
+    if((!fromContents&&!fromList)||current.stickerPending||current.stickerEditPending)
       throw Error('STICKER_GALLERY_SESSION_STALE');
-    const selected=current.stickerItemRows?.[index];
+    const effectivePage=page??(fromContents?(current.stickerItemPage??0):0);
+    const pack=await packInventory.getOwnedPack(ownerId,packName);
+    if(!pack||fromList&&pack.kind!==current.stickerPackKind)
+      throw Error('STICKER_GALLERY_PACK_MISSING');
+    const rows=await packInventory.listOwnedItems({
+      ownerId,packName,limit:10,offset:effectivePage*10});
+    const selected=rows[index];
     if(!selected?.file_unique_id)throw Error('STICKER_GALLERY_ITEM_MISSING');
-    const checked=await packInventory.listOwnedItems({
-      ownerId,packName,limit:1,offset:(current.stickerItemPage??0)*10+index});
-    if(checked.length!==1||checked[0].file_unique_id!==selected.file_unique_id)
+    if(fromContents&&effectivePage===(current.stickerItemPage??0)&&
+       current.stickerItemRows?.[index]?.file_unique_id!==selected.file_unique_id)
       throw Error('STICKER_GALLERY_ITEM_STALE');
     return persist(ownerId,current,{screen:'sticker_item',
-      stickerSelectedItem:checked[0],stickerHelp:null});
+      stickerSelectedPack:pack,stickerItemPage:effectivePage,stickerItemRows:rows,
+      stickerSelectedItem:selected,stickerHelp:null});
   }
   return {handle,selectGalleryItem};
 }
