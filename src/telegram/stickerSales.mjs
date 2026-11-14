@@ -102,8 +102,7 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
     case 'sticker_sale_offer': {
       const preview=nativePackPreview(d);
       text='📦 '+d.title+'（版'+d.version+'）\n価格：'+d.price+' Stars'+
-        '\n\nパックの中身を確認してから購入してください。'+
-        (shopUrl?'':'\n\n'+MONEY_TERMS);
+        '\n\nパックの中身を確認してから購入してください。\n\n'+MONEY_TERMS;
       keyboard=[
         ...(shopUrl?[[{text:'🎨 パックの中身を見る',
           web_app:{url:shopUrl+'/shop?product='+d.productId}}]]:
