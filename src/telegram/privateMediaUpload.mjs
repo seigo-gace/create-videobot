@@ -49,3 +49,47 @@ export function createTelegramPrivateMediaUploader({
     return {fileId,messageId:result.message_id};
   };
 }
+
+/**
+ * Upload auto-generated creator preview assets to the creator's own existing
+ * private Bot DM. No new storage chat, group, provider, Bot or session is made.
+ * The temporary upload messages are removed after obtaining reusable Telegram
+ * file IDs. The final three-item DM album is sent by the existing wizard.
+ */
+export function createCreatorDmPreviewUploader({
+ token,fetchImpl=globalThis.fetch,telegramApi,maxBytes=20_000_000
+}={}){
+ if(typeof token!=='string'||!/^\\d+:[A-Za-z0-9_-]{30,}$/.test(token)||
+    typeof fetchImpl!=='function'||typeof telegramApi!=='function')
+   throw new Error('creator preview upload provider missing');
+ return async function saveGenerated({path,type,ownerId}={}){
+   if(!Number.isSafeInteger(ownerId)||ownerId<=0||
+      typeof path!=='string'||!path.startsWith('/')||
+      !['photo','video'].includes(type))throw new Error('invalid creator DM media owner');
+   const stat=await lstat(path);
+   if(!stat.isFile()||stat.isSymbolicLink()||stat.size<1||stat.size>maxBytes)
+     throw new Error('generated creator preview upload size invalid');
+   const bytes=await readFile(path);
+   const form=new FormData();
+   form.set('chat_id',String(ownerId));
+   form.set('disable_notification','true');
+   form.set('protect_content','true');
+   form.set(type,new Blob([bytes],{type:type==='photo'?'image/jpeg':'video/mp4'}),
+     type==='photo'?'creator-preview.jpg':'creator-sample.mp4');
+   const method=type==='photo'?'sendPhoto':'sendVideo';
+   const response=await fetchImpl('https://api.telegram.org/bot'+token+'/'+method,{
+     method:'POST',body:form,redirect:'error',signal:AbortSignal.timeout(60000)
+   });
+   if(response?.ok!==true)throw new Error('creator preview Telegram upload failed');
+   const json=await response.json();
+   if(json?.ok!==true)throw new Error('creator preview Telegram upload rejected');
+   const receipt=json.result;
+   const fileId=type==='photo'?receipt?.photo?.at(-1)?.file_id:receipt?.video?.file_id;
+   if(typeof fileId!=='string'||!fileId.trim()||
+      !Number.isSafeInteger(receipt?.message_id)||receipt.message_id<1)
+      throw new Error('creator preview upload result unknown');
+   // Deletion is best-effort; do not send a duplicate upload if it fails.
+   await telegramApi('deleteMessage',{chat_id:ownerId,message_id:receipt.message_id}).catch(()=>{});
+   return {fileId};
+ };
+}
