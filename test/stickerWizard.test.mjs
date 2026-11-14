@@ -145,11 +145,8 @@ test('readback reconciliation can unlock a successful but timed-out Telegram pac
    }
  });
  await wizard.handle(f.cb('sticker:register|r5'));
- assert.equal(f.state().screen,'sticker_reconcile');
- assert.equal(f.state().stickerPending.status,'needs_reconcile');
- const recovered=await wizard.handle(f.cb('sticker:check|r'+f.state().revision));
- assert.equal(recovered.handled,true);
- assert.equal(f.state().screen,'sticker_done');
+ assert.equal(f.state().screen,'sticker_done',
+   'automatic readback must finish without a confirmation button');
  assert.equal(f.state().stickerPending,null);
  assert.equal(f.state().stickerSets.regular.title,'Recovered pack');
  assert.equal(writeCount,1);
