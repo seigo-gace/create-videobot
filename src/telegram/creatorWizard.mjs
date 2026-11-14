@@ -362,6 +362,41 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     return {handled:false};
   }
 
+  async function autoPreview(ownerId,draft) {
+    let prepared=draft,warning='';
+    if(!draft.paidVideo)return {draft:prepared,warning};
+    if((!draft.thumbnail||!draft.sample)&&typeof mediaProcessor?.prepareMissingPreviews==='function'){
+      try{
+        const refs=await mediaProcessor.prepareMissingPreviews(draft);
+        if(!prepared.thumbnail&&refs?.thumbnail)
+          prepared=editCreatorDraft(prepared,{type:'thumbnail',media:refs.thumbnail});
+        if(!prepared.sample&&refs?.sample)
+          prepared=editCreatorDraft(prepared,{type:'sample',media:refs.sample});
+      }catch(e){
+        warning='⚠️ 自動サムネ・サンプル生成に失敗しました。素材変更から登録してください。';
+      }
+    }
+    if(prepared.thumbnail&&prepared.sample){
+      // Only the owner receives this three-item preview. No paid-media
+      // publication/charge is triggered until the final registration.
+      try{
+        const response=await api('sendMediaGroup',{chat_id:ownerId,
+          protect_content:true,disable_notification:true,
+          media:[
+            {type:'photo',media:prepared.thumbnail.fileId,caption:'🖼 サムネ'},
+            {type:'video',media:prepared.sample.fileId,caption:'🎞 30秒サンプル'},
+            {type:'video',media:prepared.paidVideo.fileId,caption:'🎬 本動画（作成者向けプレビュー）'}
+          ]});
+        if(!Array.isArray(response)||response.length!==3||
+          response.some(m=>!Number.isSafeInteger(m?.message_id)||m.message_id<1))
+          warning+='\n⚠️ アルバム表示の応答を確認できません。重複送信は行いません。';
+      }catch{
+        warning+='\n⚠️ プレビューアルバムの表示を確認できません。重複送信は行いません。';
+      }
+    }
+    return {draft:prepared,warning};
+  }
+
   async function handleInput(update) {
     const {ownerId,messageId}=privateUser(update);
     const old=await sessionStore.read(ownerId);
@@ -371,10 +406,12 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       old.waiting='paidVideo';
     }
     if(!old.waiting)return {handled:false};
-    let draft=old.draft,error=null;
+    let draft=old.draft,error=null,previewWarning='';
     try {
       if(old.waiting==='title') {
         draft=editCreatorDraft(draft,{type:'captionTitle',text:update.message.text});
+      } else if(old.waiting==='description') {
+        draft=editCreatorDraft(draft,{type:'descriptionInput',text:update.message.text});
       } else if(old.waiting==='customPrice') {
         draft=editCreatorDraft(draft,{type:'customPriceInput',text:update.message.text});
       } else if(old.waiting==='thumbnail') {
@@ -391,6 +428,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         if(old.draft.paidVideo?.fileId!==update.message.video.file_id){
           draft=editCreatorDraft(editCreatorDraft(draft,{type:'removeThumbnail'}),{type:'removeSample'});
         }
+        const preview=await autoPreview(ownerId,draft);
+        draft=preview.draft;
+        previewWarning=preview.warning;
       } else if(old.waiting==='sample') {
         if(!update.message.video?.file_id)throw new Error('サンプル動画を送信してください。');
         if(typeof mediaProcessor?.prepareUserSample!=='function')throw new Error('サンプル生成サービスは未接続です。');
@@ -402,10 +442,16 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     let inputDeleteFailed=false;
     try{await api('deleteMessage',{chat_id:ownerId,message_id:messageId});}
     catch{inputDeleteFailed=true;}
-    const next={...old,draft,waiting:error?old.waiting:null,screen:'editor'};
-    const note=(error?'⚠️ '+error:'✅ 反映しました。')+
+    const firstVideo=old.waiting==='paidVideo' && old.screen==='await_video';
+    const nextScreen=error?old.screen:firstVideo?'description':'editor';
+    const next={...old,draft,waiting:error?old.waiting:nextScreen==='description'?'description':null,
+      screen:nextScreen,
+      ...(nextScreen==='editor'&&old.waiting==='description'?{descriptionEntered:true}:{})};
+    const note=(error?'⚠️ '+error:firstVideo?'': '✅ 反映しました。')+
+      (previewWarning?'\n'+previewWarning:'')+
       (inputDeleteFailed?'\n入力メッセージを自動削除できませんでした。手動で削除してください。':'');
-    return persistAndRender(ownerId,old,next,rev=>statusPanel(draft,rev,note));
+    return persistAndRender(ownerId,old,next,
+      rev=>statusPanel(draft,rev,note,nextScreen));
   }
   return {
     openHome,
