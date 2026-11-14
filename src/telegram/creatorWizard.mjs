@@ -22,8 +22,8 @@ function validateRevision(action,session) {
 function expectSession(session,screenMessageId) {
   if(!session?.draft || session.screenMessageId!==screenMessageId)throw new Error('CREATOR_SCREEN_STALE');
 }
-function statusPanel(draft,rev,extra='') {
-  const p=creatorEditorPanel(draft,rev);
+function statusPanel(draft,rev,extra='',screen='editor') {
+  const p=creatorEditorPanel(draft,rev,screen);
   return {...p,text:p.text+(extra?'\n\n'+extra:'')};
 }
 /**
@@ -71,10 +71,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     await api('answerCallbackQuery',{callback_query_id:cb.id});
     const code=cb.data??'';
     const old=await sessionStore.read(ownerId);
-    if(code==='menu:listing') {
+    if(/^menu:listing(?:\|r[1-9][0-9]*)?$/.test(code)) {
+      if(code!=='menu:listing')validateRevision(code,old);
       const draft=old?.draft??openCreatorEditor({sellerId:String(ownerId)});
       return persistAndRender(ownerId,old,{
-        screenMessageId:messageId,draft,waiting:null
+        ...old,screenMessageId:messageId,screen:'editor',draft,waiting:draft.paidVideo?null:'paidVideo'
       },rev=>statusPanel(draft,rev));
     }
     if(code==='menu:manage') {
@@ -128,19 +129,23 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(value==='cancel') {
         return persistAndRender(ownerId,old,{...old,draft:null,waiting:null},menuPage('home'));
       }
+      if(value==='back')return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},
+        rev=>statusPanel(draft,rev));
+      if(value==='price')return persistAndRender(ownerId,old,{...old,screen:'price',waiting:null},
+        rev=>statusPanel(draft,rev,'','price'));
       if(['thumbnail','sample','paidVideo','title'].includes(value)) {
-        return persistAndRender(ownerId,old,{...old,waiting:value},
+        return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:value},
           rev=>statusPanel(draft,rev,'Telegramの通常入力欄へ'+
             (value==='thumbnail'?'サムネ画像':value==='sample'?'サンプル動画':value==='paidVideo'?'販売用本編動画':'タイトル')+'を送信してください。'));
       }
       if(value==='price:custom') {
         const changed=editCreatorDraft(draft,{type:'custom'});
         return persistAndRender(ownerId,old,{...old,draft:changed,waiting:'title'},
-          rev=>statusPanel(changed,rev));
+          rev=>statusPanel(changed,rev,'','price'));
       }
       if(/^price:(50|100|300|500|1000)$/.test(value)) {
         const changed=editCreatorDraft(draft,{type:'preset',stars:Number(value.slice(6))});
-        return persistAndRender(ownerId,old,{...old,draft:changed,waiting:null},
+        return persistAndRender(ownerId,old,{...old,draft:changed,screen:'editor',waiting:null},
           rev=>statusPanel(changed,rev));
       }
       if(value==='preview') {
@@ -299,7 +304,12 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   async function handleInput(update) {
     const {ownerId,messageId}=privateUser(update);
     const old=await sessionStore.read(ownerId);
-    if(!old?.waiting||!old.draft)return {handled:false};
+    if(!old?.draft)return {handled:false};
+    if(!old.waiting && !old.draft.paidVideo && update.message.video?.file_id){
+      // Incoming captioned video on the new-listing screen, without extra title step.
+      old.waiting='paidVideo';
+    }
+    if(!old.waiting)return {handled:false};
     let draft=old.draft,error=null;
     try {
       if(old.waiting==='title') {
@@ -310,7 +320,14 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:p.file_id}});
       } else if(old.waiting==='paidVideo') {
         if(!update.message.video?.file_id)throw new Error('本編動画を送信してください。');
-        draft=editCreatorDraft(draft,{type:'paidVideo',media:{fileId:update.message.video.file_id}});
+        // Only accept video + valid one-line caption as one atomic input.
+        const caption=update.message.caption;
+        const withTitle=editCreatorDraft(draft,{type:'captionTitle',text:caption});
+        draft=editCreatorDraft(withTitle,{type:'paidVideo',media:{fileId:update.message.video.file_id}});
+        // A replacement invalidates automatically-derived previews from the previous source video.
+        if(old.draft.paidVideo?.fileId!==update.message.video.file_id){
+          draft=editCreatorDraft(editCreatorDraft(draft,{type:'removeThumbnail'}),{type:'removeSample'});
+        }
       } else if(old.waiting==='sample') {
         if(!update.message.video?.file_id)throw new Error('サンプル動画を送信してください。');
         if(typeof mediaProcessor?.prepareUserSample!=='function')throw new Error('サンプル生成サービスは未接続です。');
@@ -322,7 +339,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     let inputDeleteFailed=false;
     try{await api('deleteMessage',{chat_id:ownerId,message_id:messageId});}
     catch{inputDeleteFailed=true;}
-    const next={...old,draft,waiting:error?old.waiting:null};
+    const next={...old,draft,waiting:error?old.waiting:null,screen:'editor'};
     const note=(error?'⚠️ '+error:'✅ 反映しました。')+
       (inputDeleteFailed?'\n入力メッセージを自動削除できませんでした。手動で削除してください。':'');
     return persistAndRender(ownerId,old,next,rev=>statusPanel(draft,rev,note));
