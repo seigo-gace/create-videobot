@@ -295,3 +295,67 @@ test('one-line title edit retains custom Stars price without demanding two-line 
  assert.equal(x.states.get(33).draft.title,'新題名');
  assert.equal(x.states.get(33).draft.priceStars,250);
 });
+
+test('creator video first: automatic 3-item private preview, optional description, Stars, then one 登録 publishes once',async()=>{
+ const saved=[],published=[],receipts=[];
+ const x=setup({
+  listingStoreOverride:{
+   async createDraft(owner,id,draft){saved.push(draft);return {id,revision:1,sellerId:String(owner),managementFeeBps:3000,...draft};},
+   async updateDraft(){throw Error('unneeded update');},
+   async markPublished(owner,id,rev,proof){receipts.push(proof);return {status:'published'};}
+  },
+  publishListing:async listing=>{
+   published.push(listing);
+   return {posted:true,freeMessageIds:[901,902],paidMessageId:903};
+  }
+ });
+ await x.callback('menu:listing');
+ const first=x.screens.at(-1).panel;
+ assert.match(first.text,/タイトルと動画を投稿してください/);
+ assert.equal(first.reply_markup.inline_keyboard.flat().some(b=>/編集|Stars設定|サムネ変更/.test(b.text)),false);
+ await x.send({video:{file_id:'original_001'},caption:'旅の動画'},1001);
+ let state=x.states.get(33);
+ assert.equal(state.screen,'description');
+ assert.equal(state.waiting,'description');
+ assert.equal(state.draft.thumbnail.fileId,'photo_auto_1');
+ assert.equal(state.draft.sample.durationSeconds,30);
+ const gallery=x.calls.filter(c=>c.method==='sendMediaGroup');
+ assert.equal(gallery.length,1);
+ assert.deepEqual(gallery[0].params.media.map(v=>v.type),['photo','video','video']);
+ assert.equal(gallery[0].params.chat_id,33);
+ assert.equal(x.calls.filter(c=>c.method==='sendPaidMedia').length,0);
+ await x.send({text:'この動画の説明です'},1002);
+ state=x.states.get(33);
+ assert.equal(state.screen,'editor');
+ assert.equal(state.draft.description,'この動画の説明です');
+ assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.map(row=>row.map(b=>b.text)),[
+   ['🎬 動画変更','🖼 サムネ変更','🎞 サンプル変更'],
+   ['⭐ Stars設定'],['✅ 登録','❌ キャンセル']
+ ]);
+ await x.callback('edit:price|r3');
+ await x.callback('edit:price:300|r4');
+ await x.callback('entry:register|r5');
+ assert.equal(saved.length,1);
+ assert.equal(saved[0].description,'この動画の説明です');
+ assert.equal(saved[0].rightsVerified,true);
+ assert.equal(saved[0].adultConsentVerified,true);
+ assert.equal(saved[0].feeTermsAccepted,true);
+ assert.equal(published.length,1);
+ assert.equal(receipts[0].paidMessageId,903);
+ assert.equal(x.states.get(33).draft,null);
+ await assert.rejects(()=>x.callback('entry:register|r5'),/CREATOR_SCREEN_STALE/);
+ assert.equal(published.length,1);
+});
+
+test('creator may skip description and still have editable text description before registration',async()=>{
+ const x=setup();
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'original_001'},caption:'タイトル'},1101);
+ assert.equal(x.states.get(33).screen,'description');
+ await x.callback('entry:skip|r2');
+ assert.equal(x.states.get(33).screen,'editor');
+ assert.equal(x.states.get(33).draft.description,'');
+ const panel=x.screens.at(-1).panel;
+ assert.match(panel.text,/［編集］ 説明：なし/);
+ assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r3')));
+});
