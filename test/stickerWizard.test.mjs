@@ -886,3 +886,69 @@ test('submitted session can safely recover only when DB confirms no Telegram mut
  assert.notEqual(state.stickerDraft.nonce,'n4');
  assert.equal(releases,1);
 });
+
+test('five failed automatic checks reveal final-resort button without pack replay',async()=>{
+ let state={revision:8,screen:'sticker_reconcile',screenMessageId:301,
+  stickerPending:{status:'needs_reconcile',kind:'regular',nonce:'failedcheck',
+   phase:'submission_started',fileId:'source',fileUniqueId:'unique',
+   format:'static',packName:'pack',title:'Pack'},
+  stickerDraft:{kind:'regular',title:'Pack',nonce:'failedcheck',fileId:'source'},
+  stickerSets:{}};
+ let checks=0,publishes=0,lastPanel;
+ const store={read:async()=>structuredClone(state),
+  write:async(_id,rev,next)=>{assert.equal(rev,state.revision);state=structuredClone(next);},
+  setScreen:async()=>{}};
+ const wizard=createStickerWizard({
+  api:async()=>true,sessionStore:store,
+  screenTransport:{show:async(_id,_old,panel)=>{lastPanel=panel;return {messageId:301};}},
+  publishSticker:async()=>{publishes++;throw Error('should never resubmit');},
+  reconcileSticker:async()=>{checks++;return {verified:false,status:'not_observed'};}
+ });
+ for(let n=1;n<=4;n++){
+  assert.equal((await wizard.recoverPending(42)).status,'retry_readback');
+  assert.equal(state.stickerPending.recoveryAttempts,n);
+ }
+ assert.equal((await wizard.recoverPending(42)).status,'manual_required');
+ assert.equal(state.stickerPending.recoveryAttempts,5);
+ assert.match(lastPanel.text,/5回/);
+ assert.ok(lastPanel.reply_markup.inline_keyboard.flat().some(
+  b=>b.text==='🔄 手動で登録状態を回収'));
+ const before=state.revision;
+ assert.equal((await wizard.recoverPending(42)).status,'manual_required');
+ assert.equal(state.revision,before);
+ assert.equal(checks,5);
+ assert.equal(publishes,0);
+ const callback={callback_query:{id:'manual1',data:'sticker:manual_recover|r'+state.revision,
+   from:{id:42},message:{chat:{id:42,type:'private'},message_id:301}}};
+ const result=await wizard.handle(callback);
+ assert.equal(result.handled,true);
+ assert.equal(checks,6);
+ assert.equal(state.stickerPending.recoveryAttempts,5);
+ assert.ok(lastPanel.reply_markup.inline_keyboard.flat().some(
+  b=>b.callback_data?.startsWith('sticker:manual_recover|r')));
+});
+
+test('final-resort button only exists after five attempts',async()=>{
+ let shown;
+ let state={revision:8,screen:'sticker_reconcile',screenMessageId:301,
+  stickerPending:{status:'needs_reconcile',kind:'regular',nonce:'n',phase:'submission_started',
+   fileUniqueId:'unique',format:'static',packName:'pack',title:'Pack',recoveryAttempts:4},
+  stickerDraft:{kind:'regular',title:'Pack'},stickerSets:{}};
+ const wizard=createStickerWizard({
+  api:async()=>true,
+  sessionStore:{read:async()=>structuredClone(state),
+   write:async(_id,rev,next)=>{assert.equal(rev,state.revision);state=structuredClone(next);},
+   setScreen:async()=>{}},
+  screenTransport:{show:async(_id,_msg,panel)=>{shown=panel;return {messageId:301};}},
+  publishSticker:async()=>{throw Error('unexpected write');},
+  reconcileSticker:async()=>({verified:true,status:'registered',name:'pack'})
+ });
+ const blocked=await wizard.handle({callback_query:{id:'premature',
+  data:'sticker:manual_recover|r8',from:{id:42},
+  message:{chat:{id:42,type:'private'},message_id:301}}});
+ assert.equal(blocked.registrationLocked,true);
+ await wizard.recoverPending(42);
+ assert.equal(state.screen,'sticker_done');
+ assert.equal(state.stickerPending,null);
+ assert.doesNotMatch(shown.text,/手動で登録状態を回収/);
+});
