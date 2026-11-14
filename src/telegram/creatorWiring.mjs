@@ -317,7 +317,7 @@ export function createVideoBotSourceModule({
     api:telegramApi,sessionStore,screenTransport:screen,
     publishSticker:stickerPublisher,reconcileSticker:stickerReconcile,
     packInventory:stickerInventory,editPack:stickerPackEditor,
-    beginStickerSale:stickerSales.beginSell
+    beginStickerSale:stickerSales.beginSell,stickerShopBaseUrl
   });
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
     api:telegramApi,sessionStore,listingStore,
@@ -335,6 +335,6 @@ export function createVideoBotSourceModule({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
     listingStore,sessionStore,receiptStore,starsLedger,updateStore,
-    stickerInventory,stickerSalesStore,stickerPaidPhoto,stickerGifts,stickerTopicPosts,ensureStickerEntryPin,publishListing,handleCreatorUpdate
+    stickerInventory,stickerSalesStore,stickerPaidPhoto,stickerGifts,stickerTopicPosts,stickerWizard,ensureStickerEntryPin,publishListing,handleCreatorUpdate
   });
 }
