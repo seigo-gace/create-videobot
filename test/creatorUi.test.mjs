@@ -28,9 +28,9 @@ test('preset price requires one line title and custom uses one Telegram message 
   assert.equal(d.title,'夏の思い出動画');
   assert.equal(d.priceStars,300);
   d = editCreatorDraft(d, { type:'custom' });
-  const view = creatorEditorPanel(d);
-  assert.match(view.text, /改行して2行目/);
-  assert.equal(view.reply_markup.inline_keyboard[3].length,3);
+  const view = creatorEditorPanel(d,1,'price');
+  assert.match(view.text, /2行で送信/);
+  assert.equal(view.reply_markup.inline_keyboard[1].length,3);
   d = editCreatorDraft(d, { type:'titleInput', text:'新しい動画\n250' });
   assert.equal(d.priceStars,250);
   assert.equal(d.title,'新しい動画');
@@ -103,7 +103,9 @@ test('new/edit and review all disclose 30 percent management fee without adding 
  const editor=creatorEditorPanel(d,2);
  assert.match(editor.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.match(editor.text,/30%/);
- assert.equal(editor.reply_markup.inline_keyboard.length,5);
+ assert.equal(editor.reply_markup.inline_keyboard.length,4);
+ assert.match(editor.reply_markup.inline_keyboard[0][0].text,/［編集］/);
+ assert.equal(editor.reply_markup.inline_keyboard[2][0].callback_data,'edit:price|r2');
  const review=creatorReviewPanel(d,3);
  assert.match(review.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.match(review.text,/投稿する.*30%を運営管理費/);
@@ -116,4 +118,14 @@ test('new/edit and review all disclose 30 percent management fee without adding 
  }});
  assert.match(creatorEditorPanel(existing).text,/30.3 Stars／投稿者分70.7 Stars/);
  assert.equal(editCreatorDraft(existing,{type:'preset',stars:100}).feeTermsAccepted,false);
+});
+
+test('video-caption title is accepted atomically without custom-price title parsing',()=>{
+ let d=openCreatorEditor({sellerId:'seller1'});
+ d=editCreatorDraft(d,{type:'custom'});
+ d=editCreatorDraft(d,{type:'captionTitle',text:'キャプション題名'});
+ assert.equal(d.title,'キャプション題名');
+ assert.throws(()=>editCreatorDraft(d,{type:'captionTitle',text:'複数\\n行'}),/one line/);
+ const pricePanel=creatorEditorPanel(d,5,'price');
+ assert.deepEqual(pricePanel.reply_markup.inline_keyboard[2].map(b=>b.text),['🔙 編集画面へ戻る']);
 });
