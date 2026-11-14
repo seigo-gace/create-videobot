@@ -104,20 +104,24 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           !!draft.title&&Number.isSafeInteger(draft.priceStars)&&
           draft.rightsVerified===true&&draft.adultConsentVerified===true;
         if(!valid)return persistAndRender(ownerId,old,{...old},
-          rev=>creatorReviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。'));
+          rev=>old.screen==='review'
+            ?creatorReviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。')
+            :statusPanel(draft,rev,'⚠️ 本編・サムネ・サンプル・Stars価格を登録してから［登録］してください。'));
         if(typeof publishListing!=='function' ||
           typeof listingStore?.createDraft!=='function' ||
           typeof listingStore?.updateDraft!=='function' ||
           typeof listingStore?.markPublished!=='function')
           return persistAndRender(ownerId,old,{...old},
-            rev=>creatorReviewPanel(draft,rev,'公開用の既存GATE・Topic・売上DB接続はまだ検証されていません。投稿は行われません。'));
+            rev=>old.screen==='review'
+              ?creatorReviewPanel(draft,rev,'公開用の既存GATE・Topic・売上DB接続はまだ検証されていません。投稿は行われません。')
+              :statusPanel(draft,rev,'⚠️ 公開先と売上DBの接続が未確認です。投稿は行われていません。'));
         const reservation={...old,revision:old.revision+1,publishing:'in_progress'};
         // Reserve callback revision *before* any paid-media send; rejects races.
         await sessionStore.write(ownerId,old.revision,reservation);
         let stored=null;
         try {
-          // The price and 30% deduction are shown on the same review screen.
-          // Explicit tapping of the existing "投稿する" button records fee
+          // The price and 30% deduction are shown beside the final 登録 button.
+          // Explicit tapping of 登録 records fee
           // acceptance; no extra button or user command is introduced.
           const acceptedDraft={...draft,feeTermsAccepted:true};
           stored=draft.mode==='edit'
