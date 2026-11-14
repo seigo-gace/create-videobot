@@ -51,13 +51,16 @@ export async function publishVideoListing({
     throw new Error('video sale release not verified');
 
   const base={chatId:topic.chatId,messageThreadId:topic.threadId};
+  // Both free previews and locked video carry the same optional description.
+  const caption=listing.title+(listing.description?'\n'+listing.description:'');
+  if(caption.length>1024)throw new Error('video caption too long');
   const free=buildFreeAlbumRequest({ ...base, thumbnailFileId:listing.thumbnail.fileId,
-    sampleFileId:listing.sample.fileId,caption:listing.title });
+    sampleFileId:listing.sample.fileId,caption });
   const key=listing.id + ':' + listing.revision;
   // Telegram's purchased_paid_media update identifies the sale by payload.
   // No payload means no useful paid-media purchase notification.
   const paid=buildPaidMediaRequest({ ...base,mediaFileId:listing.paidVideo.fileId,
-    priceStars:listing.priceStars,caption:listing.title,payload:key });
+    priceStars:listing.priceStars,caption,payload:key });
   const claim=await store.claim({key,listingId:listing.id,revision:listing.revision,topicId:topic.id});
   if (!claim || claim.claimed !== true) {
     const prior=await store.read(key);
