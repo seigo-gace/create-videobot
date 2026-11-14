@@ -71,7 +71,10 @@ function panel(session,revision,shopUrl=null){
     const page=session.stickerPackPage??0;
     const keys=rows.map((r,i)=>[
       btn(String(r.title).slice(0,18),'sticker:pick:'+i),
-      btn('➕ 追加','sticker:add_pack:'+i),btn('✏️ 編集','sticker:edit_pack:'+i)
+      btn('➕ 追加','sticker:add_pack:'+i),
+      shopUrl&&r.pack_name?{text:'✏️ 編集',web_app:{
+        url:shopUrl+'/shop/my-pack?pack='+encodeURIComponent(r.pack_name)
+      }}:btn('✏️ 編集','sticker:edit_pack:'+i)
     ]);
     keys.push([btn('🆕 新しいパックを作成','sticker:new_pack')]);
     keys.push([
