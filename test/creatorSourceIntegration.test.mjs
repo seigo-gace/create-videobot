@@ -83,7 +83,7 @@ test('source-composed offline Telegram webhook drives real wizard route with dur
   chat:{id:33,type:'private'},text:'/start'}});
  assert.equal(r.accepted,true);
  assert.ok(x.calls[0].params.text.includes('クリエーター投稿'));
- assert.ok(x.calls[0].params.reply_markup.inline_keyboard[0].some(x=>x.callback_data==='menu:video'));
+ assert.ok(x.calls[0].params.reply_markup.inline_keyboard[0].some(x=>x.callback_data==='menu:listing'));
  assert.ok(x.calls[0].params.reply_markup.inline_keyboard[0].some(x=>x.callback_data==='menu:stickers'));
  r=await x.send(callback(2,'menu:listing'));
  assert.equal(r.handled,true);
@@ -100,13 +100,15 @@ test('source-composed offline Telegram webhook drives real wizard route with dur
  assert.equal(r.handled,true);
  assert.equal(state().payload.draft.title,'夏の思い出');
  assert.ok(x.calls.some(y=>y.method==='deleteMessage'&&y.params.message_id===11));
- await x.send(callback(5,'edit:price:300|r4'));
- assert.equal(state().payload.draft.priceStars,300);
+ await x.send(callback(5,'edit:price|r4'));
  assert.equal(state().revision,5);
+ await x.send(callback(6,'edit:price:300|r5'));
+ assert.equal(state().payload.draft.priceStars,300);
+ assert.equal(state().revision,6);
  const screen=x.calls.filter(y=>y.method==='editMessageText').at(-1);
  assert.match(screen.params.text,/管理費90 Stars／投稿者分210 Stars/);
- const replay=await x.send(callback(5,'edit:price:300|r4'));
+ const replay=await x.send(callback(6,'edit:price:300|r5'));
  assert.equal(replay.duplicate,true);
- assert.equal(state().revision,5);
+ assert.equal(state().revision,6);
  assert.ok(!x.calls.some(y=>y.method==='sendPaidMedia'||y.method==='sendMediaGroup'));
 });
