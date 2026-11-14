@@ -54,8 +54,59 @@
    progress('購入画面を開けません。二重決済を防ぐため、CreateVdobotのDMで状態をご確認ください。');
   }finally{loading=false;$('buy').disabled=invoicePending||purchased||!$('consent').checked;}
  }
+ async function ownerGallery(){
+  const packName=new URLSearchParams(location.search).get('pack');
+  if(!/^[A-Za-z][A-Za-z0-9_]{1,63}$/.test(packName??'')||
+     typeof initData!=='string'||!initData){invalid();return;}
+  $('title').textContent='パックを読み込み中…';
+  const requestOwner=async(path,extra={})=>{
+    const res=await fetch(path,{method:'POST',
+      headers:{'content-type':'application/json'},credentials:'same-origin',cache:'no-store',
+      body:JSON.stringify({initData,packName,...extra})});
+    const result=await res.json();
+    if(!res.ok)throw Error(result.error||'gallery_failed');
+    return result;
+  };
+  try{
+    const list=await requestOwner('/api/my-pack/catalog');
+    $('title').textContent=list.title;
+    $('summary').textContent=(list.kind==='custom_emoji'?'絵文字':'ステッカー')+
+      ' · '+list.page+'ページ · '+list.items.length+'個';
+    notice('編集する画像をタップしてください。選択後はBotのDMに戻ります。');
+    if(!list.items.length){notice('このページには素材がありません。',true);return;}
+    const grid=$('grid');
+    for(const item of list.items){
+      const tile=document.createElement('button');
+      tile.type='button';tile.className='gallery-tile';
+      tile.setAttribute('aria-label','素材 '+(item.index+1)+'を編集');
+      const img=document.createElement('img');
+      img.src=item.preview;img.alt='素材 '+(item.index+1);img.loading='lazy';
+      img.addEventListener('error',()=>{
+        tile.disabled=true;
+        tile.textContent='画像を取得できません';
+      });
+      tile.appendChild(img);
+      tile.addEventListener('click',async()=>{
+        if(loading)return;
+        loading=true;
+        [...grid.querySelectorAll('button')].forEach(b=>{b.disabled=true;});
+        notice('選んだ素材をBotの編集画面で開いています…');
+        try{
+          await requestOwner('/api/my-pack/select',{index:item.index});
+          notice('BotのDMに編集メニューを表示しました。');
+          app?.close?.();
+        }catch{
+          notice('選択を確認できません。BotのDMに戻って開き直してください。',true);
+          [...grid.querySelectorAll('button')].forEach(b=>{b.disabled=false;});
+        }finally{loading=false;}
+      });
+      grid.appendChild(tile);
+    }
+  }catch{notice('パックの画像を表示できません。BotのDMから開き直してください。',true);}
+ }
  async function main(){
   app?.ready?.();app?.expand?.();
+  if(location.pathname==='/shop/my-pack'){await ownerGallery();return;}
   if(!/^sp_[a-f0-9]{24}$/.test(pid??'')||typeof initData!=='string'||!initData){
    invalid();return;
   }
