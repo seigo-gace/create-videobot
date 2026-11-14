@@ -733,3 +733,82 @@ test('ambiguous Telegram acknowledgement is automatically reconciled before aski
   assert.equal(registrations,1);
   assert.equal(readbacks,1);
 });
+
+test('restarted Bot automatically resolves durable registration without another write',async()=>{
+ let state={revision:12,screen:'sticker_reconcile',screenMessageId:301,
+  stickerPending:{status:'needs_reconcile',kind:'regular',nonce:'n1',
+   fileId:'upload1',fileUniqueId:'unique1',format:'static',
+   packName:'owned_one',title:'My pack',phase:'submission_started'},
+  stickerDraft:{kind:'regular',title:'My pack',fileId:'upload1'},
+  stickerSets:{},draft:{paidVideo:{id:'keep'}}};
+ const shown=[];
+ const wizard=createStickerWizard({
+  api:async()=>true,
+  sessionStore:{read:async()=>structuredClone(state),
+   write:async(_id,rev,next)=>{assert.equal(rev,state.revision);state=structuredClone(next);},
+   setScreen:async()=>{}},
+  screenTransport:{show:async(_id,_old,panel)=>{shown.push(panel);return {messageId:301};}},
+  publishSticker:async()=>{throw Error('second registration forbidden');},
+  reconcileSticker:async({owner,pending})=>{
+   assert.equal(owner,42);assert.equal(pending.fileUniqueId,'unique1');
+   return {verified:true,status:'registered',name:'owned_one'};
+  }
+ });
+ const result=await wizard.recoverPending(42);
+ assert.equal(result.status,'registered');
+ assert.equal(state.screen,'sticker_done');
+ assert.equal(state.stickerPending,null);
+ assert.equal(state.draft.paidVideo.id,'keep');
+ assert.match(shown.at(-1).text,/登録できました/);
+ assert.equal((await wizard.recoverPending(42)).status,'already_resolved');
+});
+
+test('automatic unknown readback remains safe and later recovery succeeds',async()=>{
+ let state={revision:4,screen:'sticker_reconcile',screenMessageId:301,
+  stickerPending:{status:'needs_reconcile',kind:'custom_emoji',nonce:'n2',
+   fileUniqueId:'unique2',format:'static',packName:'my_emoji',title:'Emoji pack'},
+  stickerDraft:{kind:'custom_emoji',title:'Emoji pack'},stickerSets:{}};
+ let available=false,checks=0,mutations=0;
+ const wizard=createStickerWizard({
+  api:async()=>true,
+  sessionStore:{read:async()=>structuredClone(state),
+   write:async(_id,rev,next)=>{assert.equal(rev,state.revision);state=structuredClone(next);},
+   setScreen:async()=>{}},
+  screenTransport:{show:async()=>({messageId:301})},
+  publishSticker:async()=>{mutations++;throw Error('no replay');},
+  reconcileSticker:async()=>{checks++;return available?
+   {verified:true,status:'registered',name:'my_emoji'}:
+   {verified:false,status:'unknown'};}
+ });
+ assert.equal((await wizard.recoverPending(42)).status,'retry_readback');
+ assert.equal(state.stickerPending.status,'needs_reconcile');
+ available=true;
+ assert.equal((await wizard.recoverPending(42)).status,'registered');
+ assert.equal(state.screen,'sticker_done');
+ assert.equal(state.stickerDraft.link,'https://t.me/addemoji/my_emoji');
+ assert.equal(mutations,0);
+ assert.equal(checks,2);
+});
+
+test('deferred registration recovery preserves unrelated DM editor screen',async()=>{
+ let state={revision:7,screen:'paid_video_editor',screenMessageId:301,
+  stickerDeferred:true,
+  stickerPending:{status:'needs_reconcile',kind:'regular',nonce:'n3',
+   fileUniqueId:'unique3',format:'static',packName:'owned',title:'Pack'},
+  stickerSets:{},draft:{paidVideo:{id:'keep'}}};
+ let screens=0;
+ const wizard=createStickerWizard({
+  api:async()=>true,
+  sessionStore:{read:async()=>structuredClone(state),
+   write:async(_id,rev,next)=>{assert.equal(rev,state.revision);state=structuredClone(next);},
+   setScreen:async()=>{}},
+  screenTransport:{show:async()=>{screens++;return {messageId:301};}},
+  publishSticker:async()=>{throw Error('unexpected write');},
+  reconcileSticker:async()=>({verified:true,status:'registered',name:'owned'})
+ });
+ assert.equal((await wizard.recoverPending(42)).status,'recovered_silently');
+ assert.equal(state.screen,'paid_video_editor');
+ assert.equal(state.stickerPending,null);
+ assert.equal(state.draft.paidVideo.id,'keep');
+ assert.equal(screens,0);
+});
