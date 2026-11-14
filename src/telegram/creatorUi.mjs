@@ -137,7 +137,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
         btn('自分で決める','edit:price:custom')],
       [btn('🔙 登録画面へ戻る','edit:back')]
     ];
-    return {text:lines.join('\n'),reply_markup:{inline_keyboard:prices}};
+    return {text:lines.join('\n'),...(editLinks.length?{entities:linkEntities()}:{}),reply_markup:{inline_keyboard:prices}};
   }
   if(!draft.paidVideo)lines.push('','📎 販売動画を送信し、キャプションにタイトルを1行で入力してください。');
   else if(draft.priceMode==='custom')lines.push('','自由入力中：Stars価格の数字だけを送信してください。');
