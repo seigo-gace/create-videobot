@@ -58,19 +58,31 @@ function panel(session,revision){
       [btn('📦 マイパック','sticker:packs')]
     ]}
   };
+  if(session.screen==='sticker_pack_kinds')return {
+    text:'📦 マイパック\n表示するパックの種類を選択してください。',
+    reply_markup:{inline_keyboard:[
+      [btn('🎨 ステッカーパック','sticker:kind:regular')],
+      [btn('😀 絵文字パック','sticker:kind:custom_emoji')],
+      [btn('↩ 戻る','sticker:cancel')]
+    ]}
+  };
   if(session.screen==='sticker_packs') {
     const rows=Array.isArray(session.stickerPackRows)?session.stickerPackRows:[];
     const page=session.stickerPackPage??0;
-    const keys=rows.map((r,i)=>[btn(String(r.title).slice(0,48)+
-      (r.kind==='custom_emoji'?' 😀':' 🎨'),'sticker:pick:'+i)]);
-    keys.push([
-      ...(page>0?[btn('◀ 前へ','sticker:prev')]:[]),
-      ...(rows.length===10?[btn('次へ ▶','sticker:next')]:[])
+    const keys=rows.flatMap((r,i)=>[
+      [btn(String(r.title).slice(0,52),'sticker:pick:'+i)],
+      [btn('➕ 追加','sticker:add_pack:'+i),btn('✏️ 編集','sticker:edit_pack:'+i)]
     ]);
-    keys.push([btn('↩ 戻る','sticker:back')]);
-    return {text:'📦 マイパック（'+(page+1)+'ページ）'+
-      (rows.length?'\n編集するパックを選択してください。':'\n登録済みパックはありません。'),
-      reply_markup:{inline_keyboard:keys.filter(x=>x.length>0)}};
+    keys.push([
+      btn('🔙 戻る','sticker:pack_kinds'),
+      btn('キャンセル','sticker:cancel'),
+      ...(rows.length===10?[btn('次 ➔','sticker:next')]:[])
+    ]);
+    if(page>0)keys.push([btn('◀ 前へ','sticker:prev')]);
+    return {text:'📦 '+(session.stickerPackKind==='custom_emoji'?'絵文字パック':'ステッカーパック')+
+      '（'+(page+1)+'ページ）\n'+
+      (rows.length?'各パックの追加・編集を選択してください。':'この種類の登録済みパックはありません。'),
+      reply_markup:{inline_keyboard:keys}};
   }
   if(session.screen==='sticker_pack') {
     const p=session.stickerSelectedPack;
@@ -81,9 +93,9 @@ function panel(session,revision){
       reply_markup:{inline_keyboard:[
         ...(packLink(p.pack_name,p.kind)?[[openPackButton(p.pack_name,p.kind)]]:[]),
         [btn('➕ このパックに追加','sticker:add')],
-        [btn('✏️ タイトル変更','sticker:rename'),btn('🧩 素材を管理','sticker:items')],
+        [btn('✏️ パック名変更','sticker:rename'),btn('🧩 中身を編集','sticker:items')],
         [btn('⭐ このパックを販売','sticker:sell')],
-        [btn('↩ マイパックへ','sticker:packs')]
+        [btn('🔙 戻る','sticker:packs'),btn('キャンセル','sticker:cancel')]
       ]}};
   }
   if(session.screen==='sticker_pack_title')return {
@@ -102,7 +114,7 @@ function panel(session,revision){
     ]);
     if(packLink(session.stickerSelectedPack?.pack_name,session.stickerSelectedPack?.kind))
       keys.push([openPackButton(session.stickerSelectedPack.pack_name,session.stickerSelectedPack.kind)]);
-    keys.push([btn('↩ パックへ','sticker:pack_back')]);
+    keys.push([btn('🔙 戻る','sticker:pack_back'),btn('キャンセル','sticker:cancel')]);
     return {text:'🧩 素材の編集（'+(page+1)+'ページ）'+stickerHint(session),
       reply_markup:{inline_keyboard:keys.filter(x=>x.length>0)}};
   }
@@ -124,9 +136,9 @@ function panel(session,revision){
     return {text:'🧩 '+item.emoji+'｜'+(item.position+1)+'番目'+stickerHint(session),
       reply_markup:{inline_keyboard:[
         [btn('⬆ 上へ','sticker:move_up'),btn('⬇ 下へ','sticker:move_down')],
-        [btn('🔄 素材を置換','sticker:replace_item')],
-        [btn('😀 絵文字変更','sticker:emoji'),btn('🗑 削除','sticker:delete')],
-        [btn('↩ 一覧へ','sticker:items')]
+        [btn('😀 ステッカーの絵文字変更','sticker:emoji'),btn('🔄 素材の変更','sticker:replace_item')],
+        [btn('🗑 削除','sticker:delete')],
+        [btn('🔙 戻る','sticker:items'),btn('キャンセル','sticker:cancel')]
       ]}
     };
   }
@@ -230,6 +242,28 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       if(current.stickerHelp?.includes(guidance))return;
       return persist(id,current,{stickerHelp:[current.stickerHelp,guidance].filter(Boolean).join(' ')});
     }
+  }
+  async function packsPage(id,old,page,packKind=old.stickerPackKind){
+    if(!packInventory||!['regular','custom_emoji'].includes(packKind))
+      throw new Error('STICKER_PACK_KIND_INVALID');
+    const rows=await packInventory.listPacks(id,{limit:10,offset:page*10,packKind});
+    if(page>0&&!rows.length)return {handled:true,staleButton:true};
+    return persist(id,old,{screen:'sticker_packs',stickerPackKind:packKind,
+      stickerPackPage:page,stickerPackRows:rows,stickerSelectedPack:null,
+      stickerHelp:null});
+  }
+  async function selectPack(id,old,index,mode){
+    if(old.screen!=='sticker_packs'||!packInventory)return {handled:true,staleButton:true};
+    const candidate=old.stickerPackRows?.[index];
+    if(!Number.isSafeInteger(index)||index<0||index>=10||!candidate||
+       candidate.kind!==old.stickerPackKind)
+      return {handled:true,staleButton:true};
+    const p=await packInventory.getOwnedPack(id,candidate.pack_name);
+    if(!p||p.kind!==candidate.kind)return {handled:true,staleButton:true};
+    if(mode==='add')return persist(id,old,{screen:'sticker_input',
+      stickerSelectedPack:p,stickerDraft:{kind:p.kind,title:p.title,setName:p.pack_name,
+        nonce:randomBytes(8).toString('hex'),fileId:null},stickerHelp:null});
+    return persist(id,old,{screen:'sticker_pack',stickerSelectedPack:p,stickerHelp:null});
   }
   async function itemsPage(id,old,page){
     if(!old.stickerSelectedPack?.pack_name||!packInventory)
@@ -345,27 +379,21 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       // block read-only inspection of existing packs. No new write is allowed.
       if(old?.stickerPending?.status==='needs_reconcile'&&
          old.stickerDeferred&&messageId===old.screenMessageId&&
-         /^sticker:(?:packs|next|prev|pick:[0-9]+|pack_back|back)\|r[1-9][0-9]*$/.test(data)){
+         /^sticker:(?:packs|next|prev|pick:[0-9]+|edit_pack:[0-9]+|kind:(?:regular|custom_emoji)|pack_kinds|pack_back|back)\|r[1-9][0-9]*$/.test(data)){
         const m=/^(sticker:[a-z_]+(?::[0-9]+)?)\|r([1-9][0-9]*)$/.exec(data);
         if(!m||Number(m[2])!==old.revision)return {handled:true,staleButton:true};
-        if(m[1]==='sticker:back'||m[1]==='sticker:pack_back')
-          return persist(id,old,{screen:'sticker_choose'});
+        if(m[1]==='sticker:back'||m[1]==='sticker:pack_kinds')
+          return persist(id,old,{screen:'sticker_pack_kinds'});
+        if(m[1]==='sticker:pack_back')return persist(id,old,{screen:'sticker_choose'});
         if(!packInventory)return {handled:true,registrationLocked:true};
-        if(m[1].startsWith('sticker:pick:')){
-          if(old.screen!=='sticker_packs')return {handled:true,staleButton:true};
-          const idx=Number(m[1].slice('sticker:pick:'.length));
-          const candidate=old.stickerPackRows?.[idx];
-          if(!candidate)return {handled:true,staleButton:true};
-          const pack=await packInventory.getOwnedPack(id,candidate.pack_name);
-          if(!pack||pack.kind!==candidate.kind)return {handled:true,staleButton:true};
-          return persist(id,old,{screen:'sticker_pack',stickerSelectedPack:pack});
-        }
+        if(m[1]==='sticker:packs')return persist(id,old,{screen:'sticker_pack_kinds'});
+        if(m[1].startsWith('sticker:kind:'))
+          return packsPage(id,old,0,m[1].slice('sticker:kind:'.length));
+        if(m[1].startsWith('sticker:pick:')||m[1].startsWith('sticker:edit_pack:'))
+          return selectPack(id,old,Number(m[1].split(':').at(-1)),'edit');
         const previous=old.screen==='sticker_packs'?(old.stickerPackPage??0):0;
-        const page=m[1]==='sticker:next'?previous+1:
-          m[1]==='sticker:prev'?Math.max(0,previous-1):0;
-        const rows=await packInventory.listPacks(id,{limit:10,offset:page*10});
-        return persist(id,old,{screen:'sticker_packs',stickerPackPage:page,
-          stickerPackRows:rows,stickerSelectedPack:null});
+        return packsPage(id,old,m[1]==='sticker:next'?previous+1:
+          Math.max(0,previous-1));
       }
       // Design v0.6 X10: allow read-only reconciliation, never a fresh write.
       if(old?.stickerPending?.status==='in_progress'||
@@ -401,27 +429,19 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       if(!match||Number(match[2])!==old?.revision||messageId!==old?.screenMessageId)
         return {handled:true,staleButton:true};
       const action=match[1],draft=old.stickerDraft??{};
-      if(action==='sticker:packs'||action==='sticker:next'||action==='sticker:prev') {
-        if(!packInventory)throw new Error('STICKER_PACK_INVENTORY_UNAVAILABLE');
-        const prior=old.screen==='sticker_packs'?(old.stickerPackPage??0):0;
-        const page=action==='sticker:next'?prior+1:
-          action==='sticker:prev'?Math.max(0,prior-1):
-          old.screen==='sticker_pack'?(old.stickerPackPage??0):0;
-        const rows=await packInventory.listPacks(id,{limit:10,offset:page*10});
-        return persist(id,old,{screen:'sticker_packs',stickerPackPage:page,
-          stickerPackRows:rows,stickerSelectedPack:null});
+      if(action==='sticker:packs'||action==='sticker:pack_kinds')
+        return persist(id,old,{screen:'sticker_pack_kinds',stickerHelp:null});
+      if(action.startsWith('sticker:kind:'))
+        return packsPage(id,old,0,action.slice('sticker:kind:'.length));
+      if(action==='sticker:next'||action==='sticker:prev'){
+        if(old.screen!=='sticker_packs')return {handled:true,staleButton:true};
+        const page=(old.stickerPackPage??0)+(action==='sticker:next'?1:-1);
+        return packsPage(id,old,Math.max(0,page));
       }
-      if(action.startsWith('sticker:pick:')){
-        if(old.screen!=='sticker_packs'||!packInventory)
-          return {handled:true,staleButton:true};
-        const idx=Number(action.slice('sticker:pick:'.length));
-        const candidate=old.stickerPackRows?.[idx];
-        if(!Number.isSafeInteger(idx)||idx<0||idx>=10||!candidate)
-          return {handled:true,staleButton:true};
-        const p=await packInventory.getOwnedPack(id,candidate.pack_name);
-        if(!p||p.kind!==candidate.kind)return {handled:true,staleButton:true};
-        return persist(id,old,{screen:'sticker_pack',stickerSelectedPack:p});
-      }
+      if(action.startsWith('sticker:pick:')||action.startsWith('sticker:edit_pack:')||
+         action.startsWith('sticker:add_pack:'))
+        return selectPack(id,old,Number(action.split(':').at(-1)),
+          action.startsWith('sticker:add_pack:')?'add':'edit');
       if(action==='sticker:sell'&&old.screen==='sticker_pack'){
         if(typeof beginStickerSale!=='function')throw Error('STICKER_SALE_UNAVAILABLE');
         return beginStickerSale({ownerId:id,packName:old.stickerSelectedPack?.pack_name});
