@@ -64,6 +64,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       ...old,draft:old?.draft??null,waiting:null,screen:'home'
     },menuPage('home'));
   }
+  async function openVideoMenu(update) {
+    const {ownerId}=privateUser(update);
+    const old=await sessionStore.read(ownerId);
+    return persistAndRender(ownerId,old,{
+      ...old,screen:'video_home',waiting:null
+    },menuPage('video'));
+  }
   async function handleCallback(update) {
     const {ownerId,messageId}=privateUser(update);
     const cb=update.callback_query;
@@ -353,6 +360,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   }
   return {
     openHome,
+    openVideoMenu,
     async handle(update){
       if(update?.callback_query)return handleCallback(update);
       if(update?.message && (update.message.text||update.message.photo||update.message.video))return handleInput(update);
