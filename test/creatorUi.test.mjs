@@ -125,7 +125,7 @@ test('video-caption title is accepted atomically without custom-price title pars
  d=editCreatorDraft(d,{type:'custom'});
  d=editCreatorDraft(d,{type:'captionTitle',text:'キャプション題名'});
  assert.equal(d.title,'キャプション題名');
- assert.throws(()=>editCreatorDraft(d,{type:'captionTitle',text:'複数\\n行'}),/one line/);
+ assert.throws(()=>editCreatorDraft(d,{type:'captionTitle',text:'複数\n行'}),/one line/);
  const pricePanel=creatorEditorPanel(d,5,'price');
  assert.deepEqual(pricePanel.reply_markup.inline_keyboard[2].map(b=>b.text),['🔙 編集画面へ戻る']);
 });
