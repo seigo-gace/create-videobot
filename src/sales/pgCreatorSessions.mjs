@@ -38,6 +38,23 @@ export function createPostgresCreatorSessionStore(pool) {
       const r=await pool.query(sql,params);
       if(r?.rowCount!==1)throw new Error('CREATOR_SESSION_REVISION_STALE');
     },
+    // Recovery is owned by the existing Bot poller, not a second worker.
+    // Cursor pagination prevents older unresolved owners from starving.
+    async listPendingStickerRegistrations({afterOwnerId=0,limit=10}={}) {
+      if(!Number.isSafeInteger(afterOwnerId)||afterOwnerId<0||
+         !Number.isInteger(limit)||limit<1||limit>20)
+        throw new Error('STICKER_RECOVERY_PAGE_INVALID');
+      const r=await pool.query(
+        "SELECT owner_user_id,updated_at FROM videobot_creator_sessions"+
+        " WHERE owner_user_id>$1"+
+        " AND state ? 'stickerPending'"+
+        " AND (state->'stickerPending'->>'status'='needs_reconcile'"+
+        " OR (state->'stickerPending'->>'status'='in_progress'"+
+        " AND updated_at < NOW()-INTERVAL '2 minutes'))"+
+        " ORDER BY owner_user_id ASC LIMIT $2",[afterOwnerId,limit]);
+      return (r.rows??[]).map(row=>({ownerId:Number(row.owner_user_id),
+        updatedAt:row.updated_at}));
+    },
     async setScreen(ownerId,revision,messageId) {
       validOwner(ownerId);validRevision(revision);
       if(!Number.isSafeInteger(messageId)||messageId<=0)throw new Error('invalid screen message');
