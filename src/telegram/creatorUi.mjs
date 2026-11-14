@@ -76,6 +76,8 @@ export function editCreatorDraft(draft, action) {
       return { ...draft, priceStars: action.stars, priceMode: 'preset', feeTermsAccepted:false, dirtyFields: [...new Set([...draft.dirtyFields, 'priceStars'])] };
     case 'custom':
       return { ...draft, priceMode: 'custom' };
+    case 'captionTitle':
+      field = 'title'; value = title(action.text); break;
     case 'titleInput': {
       if (draft.priceMode === 'custom') {
         if (typeof action.text !== 'string') throw new Error('enter title on first line and Stars on second line');
@@ -91,31 +93,40 @@ export function editCreatorDraft(draft, action) {
   return { ...draft, [field]: value, dirtyFields: [...new Set([...draft.dirtyFields, field])] };
 }
 
-/** Telegram has one ordinary chat input; it does not provide inline numeric fields. */
-export function creatorEditorPanel(draft, revision = 0) {
+/** One shared DM editor for new and owned unpublished videos. */
+export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   expectDraft(draft);
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('invalid screen revision');
-  const row = items => items.map(([text, callback_data]) => ({ text, callback_data }));
-  const text = [
-    draft.mode === 'edit' ? '✏️ 動画を編集' : '🎬 新しい動画を投稿',
-    '', '🖼 サムネ：' + (draft.thumbnail ? '登録済み' : '未登録'),
-    '🎞 サンプル：' + (draft.sample ? '登録済み（' + draft.sample.durationSeconds + '秒）' : '未登録'),
-    '🎬 本編：' + (draft.paidVideo ? '登録済み' : '未登録'),
-    '📝 タイトル：' + (draft.title || '未入力'),
-    '⭐ 価格：' + (draft.priceStars == null ? '未設定' : draft.priceStars + ' Stars'),
-    managementFeeDisclosure(draft.priceStars),
-    '', draft.priceMode === 'custom'
-      ? 'タイトルを1行目に入力し、改行して2行目に希望するStars数を数字で入力してください。\n例：夏の思い出動画\n250'
-      : 'タイトルはTelegramの通常のメッセージ入力欄から送信してください。'
-  ].join('\n');
-  const keyboard = [
-    row([['🖼 サムネ登録・変更','edit:thumbnail'],['🎞 サンプル登録・変更','edit:sample']]),
-    row([['🎬 本編登録・変更','edit:paidVideo'],['📝 タイトル入力','edit:title']]),
-    row(PRICE_PRESETS.slice(0, 3).map(n => [String(n) + (draft.priceStars === n && draft.priceMode === 'preset' ? ' ✓' : ''), 'edit:price:' + n])),
-    row([...PRICE_PRESETS.slice(3).map(n => [String(n) + (draft.priceStars === n && draft.priceMode === 'preset' ? ' ✓' : ''), 'edit:price:' + n]),['自分で決める','edit:price:custom']]),
-    row([['👁 プレビュー','edit:preview'],['❌ キャンセル','edit:cancel']])
+  const btn=(label,action)=>({text:label,callback_data:action+(revision?'|r'+revision:'')});
+  const lines=[
+    draft.mode==='edit'?'✏️ 動画を編集':'🎬 動画を投稿',
+    '',
+    '📝 タイトル：'+(draft.title||'未入力'),
+    '🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録'),
+    '🖼 サムネ：'+(draft.thumbnail?'登録済み':'未登録（本編から自動生成）'),
+    '🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒）':'未登録（本編から先頭30秒を自動生成）'),
+    '⭐ 価格：'+(draft.priceStars==null?'未設定':draft.priceStars+' Stars'),
+    managementFeeDisclosure(draft.priceStars)
   ];
-  return { text, reply_markup: { inline_keyboard: keyboard.map(row => row.map(button => ({...button, callback_data: revision ? button.callback_data + '|r' + revision : button.callback_data}))) } };
+  if(screen==='price'){
+    lines.push('','価格を選択してください。自由入力の場合はタイトルとStars金額を2行で送信してください。');
+    const prices=[
+      PRICE_PRESETS.slice(0,3).map(n=>btn(String(n)+' ⭐'+(draft.priceStars===n?' ✓':''),'edit:price:'+n)),
+      [...PRICE_PRESETS.slice(3).map(n=>btn(String(n)+' ⭐'+(draft.priceStars===n?' ✓':''),'edit:price:'+n)),
+        btn('自分で決める','edit:price:custom')],
+      [btn('🔙 編集画面へ戻る','edit:back')]
+    ];
+    return {text:lines.join('\n'),reply_markup:{inline_keyboard:prices}};
+  }
+  if(!draft.paidVideo)lines.push('','📎 販売動画を送信し、キャプションにタイトルを1行で入力してください。');
+  else if(draft.priceMode==='custom')lines.push('','自由入力中：タイトルを1行目、Stars数を2行目に入力してください。');
+  const keyboard=[
+    [btn('［編集］📝 タイトル','edit:title'),btn('［編集］🎬 本編','edit:paidVideo')],
+    [btn('［編集］🖼 サムネ','edit:thumbnail'),btn('［編集］🎞 サンプル','edit:sample')],
+    [btn('［編集］⭐ 価格','edit:price')],
+    [btn('👁 プレビュー','edit:preview'),btn('❌ キャンセル','edit:cancel')]
+  ];
+  return {text:lines.join('\n'),reply_markup:{inline_keyboard:keyboard}};
 }
 
 export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {}) {
