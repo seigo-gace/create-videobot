@@ -27,7 +27,7 @@ test('sticker and video use numeric-only custom Stars price without changing tit
   d = editCreatorDraft(d,{type:'captionTitle',text:'夏の思い出動画'});
   d = editCreatorDraft(d,{type:'custom'});
   const view=creatorEditorPanel(d,1,'price');
-  assert.match(view.text,/1〜25000 Starsの整数/);
+  assert.match(view.text,/数字のみ（1〜25000）/);
   assert.equal(view.reply_markup.inline_keyboard[1].length,3);
   d=editCreatorDraft(d,{type:'customPriceInput',text:'250'});
   assert.equal(d.title,'夏の思い出動画');
@@ -103,13 +103,15 @@ test('rights confirmation is per-video; replacement invalidates previous consent
 test('new/edit and review all disclose 30 percent management fee without adding buttons',()=>{
  let d=openCreatorEditor({sellerId:'seller1'});
  d=editCreatorDraft(d,{type:'preset',stars:300});
+ d=editCreatorDraft(d,{type:'captionTitle',text:'テストタイトル'});
+ d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'vid001'}});
  const editor=creatorEditorPanel(d,2);
  assert.match(editor.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.match(editor.text,/30%/);
  assert.equal(editor.reply_markup.inline_keyboard.length,3);
- assert.equal(editor.reply_markup.inline_keyboard[0][0].text,'🎬 本編を登録');
- assert.equal(editor.reply_markup.inline_keyboard.flat().some(x=>x.text==='⭐ 価格を設定'),false,
-   'the test already assigned price; do not re-offer registration');
+ assert.equal(editor.reply_markup.inline_keyboard[0][0].text,'🎬 動画変更');
+ assert.equal(editor.reply_markup.inline_keyboard[1][0].text,'⭐ Stars設定');
+ assert.equal(editor.reply_markup.inline_keyboard[2][0].text,'✅ 登録');
  assert.ok(editor.reply_markup.inline_keyboard.flat().every(b=>!b.text.includes('編集')),
    'unpublished video cannot display edit controls');
  const review=creatorReviewPanel(d,3);
@@ -133,28 +135,35 @@ test('video-caption title is accepted atomically without custom-price title pars
  assert.equal(d.title,'キャプション題名');
  assert.throws(()=>editCreatorDraft(d,{type:'captionTitle',text:'複数\n行'}),/one line/);
  const pricePanel=creatorEditorPanel(d,5,'price');
- assert.deepEqual(pricePanel.reply_markup.inline_keyboard[2].map(b=>b.text),['🔙 登録画面へ戻る']);
+ assert.deepEqual(pricePanel.reply_markup.inline_keyboard[2].map(b=>b.text),['↩ 戻る']);
 });
 
-test('new registration has no edit action; registered fields use working Telegram text links instead of buttons',()=>{
+test('creator first shows only upload prompt, then title and description text edits plus exact final controls',()=>{
  let d=openCreatorEditor({sellerId:'seller1'});
- const before=creatorEditorPanel(d,3);
- assert.doesNotMatch(before.text,/［編集］/);
- assert.equal(before.entities,undefined);
- assert.ok(before.reply_markup.inline_keyboard.flat().some(b=>b.text==='🎬 本編を登録'));
- d=editCreatorDraft(d,{type:'captionTitle',text:'サンプル'});
+ const initial=creatorEditorPanel(d,1,'await_video');
+ assert.match(initial.text,/タイトルと動画を投稿してください/);
+ assert.equal(initial.reply_markup.inline_keyboard.flat().some(b=>b.text.includes('編集')),false);
+ assert.equal(initial.reply_markup.inline_keyboard.flat().some(b=>b.text.includes('サムネ')),false);
+ d=editCreatorDraft(d,{type:'captionTitle',text:'作品タイトル'});
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'file_123'}});
- d=editCreatorDraft(d,{type:'preset',stars:300});
- const after=creatorEditorPanel(d,4);
- assert.match(after.text,/［編集］ 📝 タイトル/);
- assert.match(after.text,/［編集］ 🎬 有料本編/);
- assert.match(after.text,/［編集］ ⭐ 価格/);
- assert.ok(after.reply_markup.inline_keyboard.flat().every(b=>!/編集/.test(b.text)));
- assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='🎬 本編を登録'),false);
- assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='⭐ 価格を設定'),false);
- assert.equal(after.entities.length,3);
- for(const e of after.entities) {
-   assert.equal(after.text.slice(e.offset,e.offset+e.length),'［編集］');
-   assert.match(e.url,/^https:\/\/t\.me\/CreateVdobot\?start=ved_(title|paidVideo|price)_r4$/);
- }
+ d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb123'}});
+ d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample123',durationSeconds:30}});
+ const desc=creatorEditorPanel(d,2,'description');
+ assert.match(desc.text,/次は動画の説明を入力してください/);
+ assert.equal(desc.reply_markup.inline_keyboard[0][0].callback_data,'entry:skip|r2');
+ const final=creatorEditorPanel(d,3,'editor');
+ assert.match(final.text,/［編集］ タイトル/);
+ assert.match(final.text,/［編集］ 説明：なし/);
+ assert.doesNotMatch(final.text,/［編集］ サムネ|［編集］ 本動画|［編集］ Stars/);
+ assert.deepEqual(final.reply_markup.inline_keyboard.map(row=>row.map(b=>b.text)),[
+   ['🎬 動画変更','🖼 サムネ変更','🎞 サンプル変更'],
+   ['⭐ Stars設定'],['✅ 登録','❌ キャンセル']
+ ]);
+ assert.equal(final.entities.length,2);
+ assert.ok(final.entities.some(e=>e.url.endsWith('ved_title_r3')));
+ assert.ok(final.entities.some(e=>e.url.endsWith('ved_description_r3')));
+ for(const e of final.entities)assert.equal(final.text.slice(e.offset,e.offset+e.length),'［編集］');
+ d=editCreatorDraft(d,{type:'descriptionInput',text:'説明本文'});
+ assert.match(creatorEditorPanel(d,4).text,/説明：説明本文/);
+ assert.throws(()=>editCreatorDraft(d,{type:'descriptionInput',text:'x'.repeat(801)}),/description/);
 });
