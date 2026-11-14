@@ -40,7 +40,7 @@ function stickerHelp(error){
   return '内部処理を完了できませんでした。時間をおいてもう一度お試しください。解決しない場合は管理者にお知らせください。';
 }
 const stickerHint=session=>session?.stickerHelp?'\n\n⚠️ '+session.stickerHelp:'';
-function panel(session,revision){
+function panel(session,revision,shopUrl=null){
   const d=session?.stickerDraft??{};
   const btn=(text,action)=>button(text,action,revision);
   if(session.screen==='sticker_choose'&&session.stickerPending)return {
@@ -110,8 +110,12 @@ function panel(session,revision){
     if(packLink(session.stickerSelectedPack?.pack_name,session.stickerSelectedPack?.kind))
       keys.push([openPackButton(session.stickerSelectedPack.pack_name,session.stickerSelectedPack.kind)]);
     keys.push([btn('✏️ パック名の変更','sticker:rename')]);
-    for(const [index,item] of rows.entries())
-      keys.push([btn(String(item.emoji).slice(0,12)+' '+String(item.position+1)+'番目を編集','sticker:item:'+index)]);
+    if(shopUrl&&session.stickerSelectedPack?.pack_name){
+      const url=shopUrl+'/shop/my-pack?pack='+encodeURIComponent(session.stickerSelectedPack.pack_name);
+      keys.push([{text:'🖼 画像一覧から素材を選ぶ',web_app:{url}}]);
+    }else{
+      keys.push([btn('🖼 画像一覧（Web App未接続）','sticker:gallery_unavailable')]);
+    }
     if(page>0)keys.push([btn('◀ 前へ','sticker:items_prev')]);
     keys.push([btn('🔙 戻る','sticker:pack_back'),btn('キャンセル','sticker:cancel'),
       ...(session.stickerItemHasNext?[btn('次 ➔','sticker:items_next')]:[])]);
@@ -210,7 +214,7 @@ function mediaFileId(message){
  * session and shared screen transport; preserves video draft and sales state.
  * Conversion/Telegram API mutations are passed as a bounded port.
  */
-export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker,packInventory,editPack,beginStickerSale}={}){
+export function createStickerWizard({api,sessionStore,screenTransport,publishSticker,reconcileSticker,packInventory,editPack,beginStickerSale,stickerShopBaseUrl=null}={}){
   if(typeof api!=='function'||typeof sessionStore?.read!=='function'||
     typeof sessionStore?.write!=='function'||typeof sessionStore?.setScreen!=='function'||
     typeof screenTransport?.show!=='function'||typeof publishSticker!=='function'||
@@ -223,11 +227,19 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       typeof packInventory?.listOwnedItems!=='function')))
     throw new Error('STICKER_WIZARD_DEPENDENCIES_MISSING');
 
+  let galleryOrigin=null;
+  if(stickerShopBaseUrl){
+    const u=new URL(stickerShopBaseUrl);
+    if(u.protocol!=='https:'||u.username||u.password||u.port||u.search||u.hash||
+       u.pathname!=='/'||!/(^|\\.)hentaigay\\.org$/.test(u.hostname))
+      throw Error('STICKER_GALLERY_ORIGIN_INVALID');
+    galleryOrigin=u.origin;
+  }
   async function persist(id,old,patch){
     const prev=old?.revision??0,revision=prev+1;
     const next={...old,...patch,revision};
     await sessionStore.write(id,prev,next);
-    const screen=next.screen==='home'?menuPage('home'):panel(next,revision);
+    const screen=next.screen==='home'?menuPage('home'):panel(next,revision,galleryOrigin);
     const result=await screenTransport.show(id,next.screenMessageId??null,screen);
     if(result?.messageId!==next.screenMessageId)
       await sessionStore.setScreen(id,revision,result.messageId);
@@ -439,6 +451,8 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       if(!match||Number(match[2])!==old?.revision||messageId!==old?.screenMessageId)
         return {handled:true,staleButton:true};
       const action=match[1],draft=old.stickerDraft??{};
+      if(action==='sticker:gallery_unavailable'&&old.screen==='sticker_pack_items')
+        return persist(id,old,{stickerHelp:'画像の選択画面の公開URLが未接続です。'});
       if(action==='sticker:packs'||action==='sticker:pack_kinds')
         return persist(id,old,{screen:'sticker_pack_kinds',stickerHelp:null});
       if(action.startsWith('sticker:kind:'))
@@ -737,5 +751,23 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     }
     return {handled:false};
   }
-  return {handle};
+  async function selectGalleryItem({ownerId,packName,index}={}){
+    if(!Number.isSafeInteger(ownerId)||ownerId<=0||
+       typeof packName!=='string'||!Number.isSafeInteger(index)||index<0||index>=10)
+      throw Error('STICKER_GALLERY_SELECTION_INVALID');
+    const current=await sessionStore.read(ownerId);
+    if(current?.screen!=='sticker_pack_items'||
+       current.stickerPending||current.stickerEditPending||
+       current.stickerSelectedPack?.pack_name!==packName)
+      throw Error('STICKER_GALLERY_SESSION_STALE');
+    const selected=current.stickerItemRows?.[index];
+    if(!selected?.file_unique_id)throw Error('STICKER_GALLERY_ITEM_MISSING');
+    const checked=await packInventory.listOwnedItems({
+      ownerId,packName,limit:1,offset:(current.stickerItemPage??0)*10+index});
+    if(checked.length!==1||checked[0].file_unique_id!==selected.file_unique_id)
+      throw Error('STICKER_GALLERY_ITEM_STALE');
+    return persist(ownerId,current,{screen:'sticker_item',
+      stickerSelectedItem:checked[0],stickerHelp:null});
+  }
+  return {handle,selectGalleryItem};
 }
