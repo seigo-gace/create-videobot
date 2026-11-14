@@ -128,9 +128,13 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {
   if (page >= pages) throw new Error('page outside listing range');
   const keyboard = [];
   for (const item of owned.slice(page * 10, page * 10 + 10)) {
-    keyboard.push([{ text: item.title, callback_data: 'video:open:' + item.id }]);
+    // Sticker My Packs layout: one compact row per owned product.
+    // Keep item details reachable and avoid splitting edit/delete into
+    // detached rows that are easy to associate with the wrong product.
+    const amount = item.priceStars == null ? '未設定' : price(item.priceStars) + ' Stars';
     keyboard.push([
-      { text: item.priceStars==null?'⭐ 未設定':'⭐ ' + price(item.priceStars) + ' Stars', callback_data: 'video:price:' + item.id },
+      { text: (item.title.length > 18 ? item.title.slice(0, 17) + '…' : item.title) + '｜⭐' + amount,
+        callback_data: 'video:open:' + item.id },
       { text: '✏️ 編集', callback_data: 'video:edit:' + item.id },
       { text: '🗑 削除', callback_data: 'video:delete:' + item.id }
     ]);
