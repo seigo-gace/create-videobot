@@ -99,3 +99,17 @@ test('reject missing seller 30-percent consent before any free or paid Telegram 
    assert.equal(d.store.map.size,0);
  }
 });
+
+test('optional video description appears on both free gallery and official tap-to-unlock Stars video',async()=>{
+ const d=deps();
+ d.listing.description='30秒の無料見本。全編はStarsで視聴できます。';
+ await publishVideoListing(d);
+ assert.equal(d.calls[0].method,'sendMediaGroup');
+ assert.equal(d.calls[0].params.media.length,2);
+ assert.equal(d.calls[1].method,'sendPaidMedia');
+ assert.equal(d.calls[1].params.media[0].type,'video');
+ assert.equal(d.calls[1].params.star_count,300);
+ assert.match(d.calls[0].params.media[0].caption,/30秒の無料見本/);
+ assert.match(d.calls[1].params.caption,/30秒の無料見本/);
+ assert.equal(d.calls[1].params.payload,'sale001:1');
+});
