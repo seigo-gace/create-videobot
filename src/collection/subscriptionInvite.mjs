@@ -7,6 +7,7 @@ export function createOfficialSubscriptionInvite({telegramApi,verifyChannelAdmin
        !Number.isSafeInteger(priceStars)||priceStars<1||priceStars>10000||
        typeof name!=='string'||name.length>32)
       throw Error('SUBSCRIPTION_INVITE_CONFIGURATION_INVALID');
+    if(channelId!==-1004396338340)throw Error('SUBSCRIPTION_MASTER_CHANNEL_MISMATCH');
     if(await verifyChannelAdmin({channelId,requiredRight:'can_invite_users'})!==true)
       throw Error('SUBSCRIPTION_INVITE_ADMIN_NOT_VERIFIED');
     const link=await telegramApi('createChatSubscriptionInviteLink',{
