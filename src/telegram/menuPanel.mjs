@@ -1,9 +1,13 @@
 const PAGES=Object.freeze({
- home:{text:'🎬 クリエータービデオ\n\n動画の投稿・管理・売上確認ができます。\n販売売上から運営管理費30%を控除し、投稿者分は70%です。',buttons:[
+ home:{text:'🎨 クリエーター投稿\n\n作成するコンテンツを選んでください。',buttons:[
+  [['🎬 動画','menu:video'],['🎨 ステッカー/絵文字','menu:stickers']]
+ ]},
+ video:{text:'🎬 クリエータービデオ\n\n動画の投稿・管理・売上確認ができます。\n販売売上から運営管理費30%を控除し、投稿者分は70%です。',buttons:[
   [['🎬 動画を投稿','menu:listing'],['📦 マイ動画','menu:manage']],
   [['⭐ 売上・引き出し','menu:sales']],
    [['🔗 Starsを購入（Telegram）','https://t.me/PremiumBot']],
-   [['🔗 暗号資産で購入（Fragment）','https://fragment.com/stars']]
+   [['🔗 暗号資産で購入（Fragment）','https://fragment.com/stars']],
+   [['↩ 戻る','menu:home']]
  ]},
  listing:{text:'🎬 新しい動画を投稿\n\n管理費は売上の30%、投稿者分は70%です。実Telegram投稿はまだ接続されていません。',buttons:[[['↩ 戻る','menu:home']]]},
  manage:{text:'📦 マイ動画\n\n本人の動画一覧・編集・削除は現在開発中です。実データにはまだ接続されていません。',buttons:[[['↩ 戻る','menu:home']]]},
@@ -14,7 +18,7 @@ export function menuPage(page='home'){
  return {text:p.text,reply_markup:{inline_keyboard:p.buttons.map(row=>row.map(([text,target])=>target.startsWith('https://')?{text,url:target}:{text,callback_data:target}))}};
 }
 export function parseMenuCallback(value){
- if(typeof value!=='string'||!/^menu:(home|listing|manage|sales)$/.test(value))throw new Error('unknown menu action');
+ if(typeof value!=='string'||!/^menu:(home|video|stickers|listing|manage|sales)$/.test(value))throw new Error('unknown menu action');
  return value.slice(5);
 }
 export async function handleMenuUpdate({update,api}){
