@@ -136,12 +136,25 @@ test('video-caption title is accepted atomically without custom-price title pars
  assert.deepEqual(pricePanel.reply_markup.inline_keyboard[2].map(b=>b.text),['🔙 登録画面へ戻る']);
 });
 
-test('new registration remains registration-only after uploading source and selecting price',()=>{
+test('new registration has no edit action; registered fields use working Telegram text links instead of buttons',()=>{
  let d=openCreatorEditor({sellerId:'seller1'});
- for(const phase of [d,editCreatorDraft(d,{type:'paidVideo',media:{fileId:'file_123'}})]){
-   const screen=creatorEditorPanel(phase,3);
-   assert.doesNotMatch(screen.text,/［編集］/);
-   assert.ok(screen.reply_markup.inline_keyboard.flat().every(b=>!/編集/.test(b.text)));
-   assert.ok(screen.reply_markup.inline_keyboard.flat().some(b=>b.text==='🎬 本編を登録'));
+ const before=creatorEditorPanel(d,3);
+ assert.doesNotMatch(before.text,/［編集］/);
+ assert.equal(before.entities,undefined);
+ assert.ok(before.reply_markup.inline_keyboard.flat().some(b=>b.text==='🎬 本編を登録'));
+ d=editCreatorDraft(d,{type:'captionTitle',text:'サンプル'});
+ d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'file_123'}});
+ d=editCreatorDraft(d,{type:'preset',stars:300});
+ const after=creatorEditorPanel(d,4);
+ assert.match(after.text,/［編集］ 📝 タイトル/);
+ assert.match(after.text,/［編集］ 🎬 有料本編/);
+ assert.match(after.text,/［編集］ ⭐ 価格/);
+ assert.ok(after.reply_markup.inline_keyboard.flat().every(b=>!/編集/.test(b.text)));
+ assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='🎬 本編を登録'),false);
+ assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='⭐ 価格を設定'),false);
+ assert.equal(after.entities.length,3);
+ for(const e of after.entities) {
+   assert.equal(after.text.slice(e.offset,e.offset+e.length),'［編集］');
+   assert.match(e.url,/^https:\/\/t\.me\/CreateVdobot\?start=ved_(title|paidVideo|price)_r4$/);
  }
 });
