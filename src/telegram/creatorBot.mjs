@@ -61,6 +61,10 @@ export function createCreatorBotUpdateHandler(options={}) {
         const sales=await options.stickerSalesHandler(update);
         if(sales?.handled)return sales;
       }
+      // Existing video deep links enter the existing video menu directly.
+      // Generic /start now uses the shared video/sticker selector.
+      if(/^\/start(?:@[A-Za-z0-9_]+)?\s+video$/.test(message.text.trim()))
+        return wizard.openVideoMenu(update);
       return wizard.openHome(update);
     }
     // Sticker-specific private updates share the durable DM screen/session but
