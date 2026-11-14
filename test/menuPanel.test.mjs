@@ -5,8 +5,8 @@ test('shared creator home selects existing video and sticker/emoji menus',()=>{
  const p=menuPage();
  assert.equal(p.reply_markup.inline_keyboard.length,1);
  assert.deepEqual(p.reply_markup.inline_keyboard[0],[
-  {text:'🎬 動画',callback_data:'menu:video'},
-  {text:'🎨 ステッカー/絵文字',callback_data:'menu:stickers'}
+  {text:'🎬 ビデオ',callback_data:'menu:listing'},
+  {text:'🎨 ステッカー／絵文字',callback_data:'menu:stickers'}
  ]);
  assert.ok(!p.text.includes('/start'));
  const video=menuPage('video');
