@@ -1,3 +1,11 @@
+import {createSubscriptionMediaPipeline} from '../collection/subscriptionMediaPipeline.mjs';
+import {createSubscriptionPublisher} from '../collection/subscriptionPublisher.mjs';
+import {createPgSubscriptionPublicationStore} from '../collection/pgSubscriptionPublications.mjs';
+import {createSubscriptionPreviewGenerator} from '../collection/subscriptionPreview.mjs';
+import {createOfficialSubscriptionInvite} from '../collection/subscriptionInvite.mjs';
+import {createPublicChannelVideoCollector} from '../collection/publicChannelVideos.mjs';
+import {createPostgresPublicChannelVideoCatalog} from '../collection/pgPublicChannelVideos.mjs';
+import {createVideoEnrichment} from '../collection/videoEnrichment.mjs';
 import {createCreatorBotUpdateHandler} from './creatorBot.mjs';
 import {createCreatorWebhookAdmission} from './creatorWebhookAdmission.mjs';
 import {publishVideoListing} from './paidListingPublisher.mjs';
@@ -38,7 +46,7 @@ import {join} from 'node:path';
 export function createVideoBotSourceModule({
   pool,telegramApi,screenTransport,gateOwner,mediaPorts,webhookSecret,
   mediaRun,storageApproved=false,botToken,verifyPrivateMediaStore,fetchImpl,
-  stickerShopBaseUrl=null
+  stickerShopBaseUrl=null,subscriptionPorts=null
 }={}) {
   if(typeof pool?.query!=='function'||typeof telegramApi!=='function'||
       (screenTransport!=null&&typeof screenTransport?.show!=='function')||!gateOwner||
@@ -350,8 +358,62 @@ export function createVideoBotSourceModule({
   const handleTelegramWebhook=createCreatorWebhookAdmission({
     expectedSecret:webhookSecret,handleCreatorUpdate,updateStore
   });
+  // Subscription video collection/publication is an explicitly optional
+  // feature. Existing single-item Stars/video/sticker flows are untouched.
+  // No session, listener, or subscription link is auto-created here.
+  let subscription=null;
+  if(subscriptionPorts!==null) {
+    const p=subscriptionPorts;
+    if(typeof p?.verifiedTargets!=='function'||
+       typeof p?.verifyBotPostingAccess!=='function'||
+       typeof p?.verifyChannelAdmin!=='function'||
+       typeof p?.residentUserbot!=='object'||
+       typeof p?.translateToJapanese!=='function'||
+       typeof p?.resolveStoredVideo!=='function'||
+       typeof p?.thumbnailDirectory!=='string'||
+       typeof p?.previewDirectory!=='string'||
+       typeof p?.uploadVideo!=='function'||
+       typeof p?.verifyRights!=='function')
+      throw Error('SUBSCRIPTION_PORTS_NOT_CONNECTED');
+    const catalog=createPostgresPublicChannelVideoCatalog(pool);
+    const receipts=createPgSubscriptionPublicationStore(pool);
+    const enrichment=createVideoEnrichment({
+      translateToJapanese:p.translateToJapanese,
+      resolveStoredVideo:p.resolveStoredVideo,
+      thumbnailDirectory:p.thumbnailDirectory,
+      ...(p.run?{run:p.run}:{})
+    });
+    const previews=createSubscriptionPreviewGenerator({
+      resolveStoredVideo:p.resolveStoredVideo,
+      outputRoot:p.previewDirectory,
+      ...(p.run?{run:p.run}:{})
+    });
+    const subscriptionPublisher=createSubscriptionPublisher({
+      telegramApi,verifiedTargets:p.verifiedTargets,
+      verifyBotPostingAccess:p.verifyBotPostingAccess,receipts
+    });
+    const mediaPipeline=createSubscriptionMediaPipeline({
+      catalog,previewGenerator:previews,assetStore:receipts,
+      resolveStoredVideo:p.resolveStoredVideo,
+      uploadVideo:p.uploadVideo,
+      verifyRights:p.verifyRights,
+      publish:subscriptionPublisher.publish
+    });
+    subscription=Object.freeze({
+      collect:createPublicChannelVideoCollector({
+        residentUserbot:p.residentUserbot,catalog,enrichment
+      }).collectOnce,
+      catalog,receipts,
+      createPreview:previews.generate,
+      publish:subscriptionPublisher.publish,
+      publishCollected:mediaPipeline.publishCollected,
+      createInvite:createOfficialSubscriptionInvite({
+        telegramApi,verifyChannelAdmin:p.verifyChannelAdmin
+      })
+    });
+  }
   return Object.freeze({
-    handleTelegramWebhook,
+    handleTelegramWebhook,subscription,
     // Named components for deterministic Source/isolated DB verification.
     listingStore,sessionStore,receiptStore,starsLedger,updateStore,
     stickerInventory,stickerSalesStore,stickerPaidPhoto,stickerGifts,stickerTopicPosts,stickerWizard,ensureStickerEntryPin,publishListing,handleCreatorUpdate
