@@ -381,7 +381,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       if(old?.stickerPending?.status==='needs_reconcile'&&
          old.stickerDeferred&&messageId===old.screenMessageId&&
          /^sticker:(?:packs|next|prev|pick:[0-9]+|edit_pack:[0-9]+|kind:(?:regular|custom_emoji)|pack_kinds|pack_back|back)\|r[1-9][0-9]*$/.test(data)){
-        const m=/^(sticker:[a-z_]+(?::[0-9]+)?)\|r([1-9][0-9]*)$/.exec(data);
+        const m=/^(sticker:[a-z_]+(?::[a-z_0-9]+)?)\|r([1-9][0-9]*)$/.exec(data);
         if(!m||Number(m[2])!==old.revision)return {handled:true,staleButton:true};
         if(m[1]==='sticker:back'||m[1]==='sticker:pack_kinds')
           return persist(id,old,{screen:'sticker_pack_kinds'});
@@ -392,7 +392,9 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
           return packsPage(id,old,0,m[1].slice('sticker:kind:'.length));
         if(m[1].startsWith('sticker:pick:')||m[1].startsWith('sticker:edit_pack:'))
           return selectPack(id,old,Number(m[1].split(':').at(-1)),'edit');
-        const previous=old.screen==='sticker_packs'?(old.stickerPackPage??0):0;
+        if(!['sticker:next','sticker:prev'].includes(m[1])||
+           old.screen!=='sticker_packs')return {handled:true,staleButton:true};
+        const previous=old.stickerPackPage??0;
         return packsPage(id,old,m[1]==='sticker:next'?previous+1:
           Math.max(0,previous-1));
       }
