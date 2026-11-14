@@ -176,6 +176,25 @@ test('TGtumbler shop web app uses hentaigay.org and rejects unrelated domain',as
    /STICKER_SHOP_BASE_URL_INVALID/);
 });
 
+test('Stars top-up links use the Telegram and Fragment official destinations without charging or changing consent',async()=>{
+  const f=fixture();
+  await f.flow.handle(f.msg(81,'/start buy_'+productId));
+  for(const page of ['sticker_sale_offer','sticker_sale_agreed','sticker_sale_invoice']){
+    const buttons=f.panels.at(-1).reply_markup.inline_keyboard.flat();
+    assert.equal(buttons.find(b=>b.text==='🔗 Starsを購入（Telegram）')?.url,'https://t.me/PremiumBot');
+    assert.equal(buttons.find(b=>b.text==='🔗 暗号資産で購入（Fragment）')?.url,'https://fragment.com/stars');
+    assert.equal(f.state(81).screen,page);
+    if(page==='sticker_sale_offer'){
+      assert.equal(f.invoiceCount,0);
+      await f.flow.handle(f.cb(81,'sale:accept'));
+    }else if(page==='sticker_sale_agreed'){
+      assert.equal(f.invoiceCount,0);
+      await f.flow.handle(f.cb(81,'sale:pay'));
+    }
+  }
+  assert.equal(f.invoiceCount,1);
+});
+
 test('catalog fallback displays actual Telegram pack before consent and XTR invoice',async()=>{
  const f=fixture();
  await f.flow.handle(f.msg(81,'/start buy_'+productId));
