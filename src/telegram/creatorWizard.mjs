@@ -71,6 +71,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     await api('answerCallbackQuery',{callback_query_id:cb.id});
     const code=cb.data??'';
     const old=await sessionStore.read(ownerId);
+    if(code==='menu:video') {
+      return persistAndRender(ownerId,old,{
+        ...old,screenMessageId:messageId,screen:'video_home',waiting:null
+      },menuPage('video'));
+    }
     if(/^menu:listing(?:\|r[1-9][0-9]*)?$/.test(code)) {
       if(code!=='menu:listing')validateRevision(code,old);
       const draft=old?.draft??openCreatorEditor({sellerId:String(ownerId)});
