@@ -77,7 +77,7 @@ function panel(session,revision){
     keys.push([
       btn('🔙 戻る','sticker:pack_kinds'),
       btn('キャンセル','sticker:cancel'),
-      ...(rows.length===10?[btn('次 ➔','sticker:next')]:[])
+      ...(session.stickerPackHasNext?[btn('次 ➔','sticker:next')]:[])
     ]);
     if(page>0)keys.push([btn('◀ 前へ','sticker:prev')]);
     return {text:'📦 '+(session.stickerPackKind==='custom_emoji'?'絵文字パック':'ステッカーパック')+
@@ -250,9 +250,11 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
       throw new Error('STICKER_PACK_KIND_INVALID');
     const rows=await packInventory.listPacks(id,{limit:10,offset:page*10,packKind});
     if(page>0&&!rows.length)return {handled:true,staleButton:true};
+    const peek=rows.length===10?await packInventory.listPacks(id,{
+      limit:1,offset:(page+1)*10,packKind}):[];
     return persist(id,old,{screen:'sticker_packs',stickerPackKind:packKind,
-      stickerPackPage:page,stickerPackRows:rows,stickerSelectedPack:null,
-      stickerHelp:null});
+      stickerPackPage:page,stickerPackRows:rows,stickerPackHasNext:peek.length>0,
+      stickerSelectedPack:null,stickerHelp:null});
   }
   async function selectPack(id,old,index,mode){
     if(old.screen!=='sticker_packs'||!packInventory)return {handled:true,staleButton:true};
