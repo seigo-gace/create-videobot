@@ -280,7 +280,7 @@ test('one-line title edit retains custom Stars price without demanding two-line 
  await x.send({video:{file_id:'main001'},caption:'旧題名'},501);
  await x.callback('edit:price|r2');
  await x.callback('edit:price:custom|r3');
- await x.send({text:'旧題名\\n250'},502);
+ await x.send({text:'旧題名\n250'},502);
  assert.equal(x.states.get(33).draft.priceStars,250);
  await x.callback('edit:title|r5');
  await x.send({text:'新題名'},503);
