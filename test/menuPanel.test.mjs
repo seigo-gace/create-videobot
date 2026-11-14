@@ -1,17 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {menuPage,parseMenuCallback,handleMenuUpdate} from '../src/telegram/menuPanel.mjs';
-test('menu buttons and no slash command UI',()=>{
+test('shared creator home selects existing video and sticker/emoji menus',()=>{
  const p=menuPage();
- assert.equal(p.reply_markup.inline_keyboard.length,4);
-  assert.deepEqual(p.reply_markup.inline_keyboard[2],[{text:'🔗 Starsを購入（Telegram）',url:'https://t.me/PremiumBot'}]);
-  assert.deepEqual(p.reply_markup.inline_keyboard[3],[{text:'🔗 暗号資産で購入（Fragment）',url:'https://fragment.com/stars'}]);
+ assert.equal(p.reply_markup.inline_keyboard.length,1);
+ assert.deepEqual(p.reply_markup.inline_keyboard[0],[
+  {text:'🎬 動画',callback_data:'menu:video'},
+  {text:'🎨 ステッカー/絵文字',callback_data:'menu:stickers'}
+ ]);
  assert.ok(!p.text.includes('/start'));
- assert.deepEqual(p.reply_markup.inline_keyboard[0][0],{text:'🎬 動画を投稿',callback_data:'menu:listing'});
- assert.deepEqual(p.reply_markup.inline_keyboard[0][1],{text:'📦 マイ動画',callback_data:'menu:manage'});
- assert.deepEqual(p.reply_markup.inline_keyboard[1][0],{text:'⭐ 売上・引き出し',callback_data:'menu:sales'});
- assert.ok(!p.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='menu:stickers'));
- assert.ok(!p.text.includes('ステッカー'));
+ const video=menuPage('video');
+ assert.deepEqual(video.reply_markup.inline_keyboard[0][0],{text:'🎬 動画を投稿',callback_data:'menu:listing'});
+ assert.deepEqual(video.reply_markup.inline_keyboard[0][1],{text:'📦 マイ動画',callback_data:'menu:manage'});
+ assert.deepEqual(video.reply_markup.inline_keyboard[1][0],{text:'⭐ 売上・引き出し',callback_data:'menu:sales'});
+ assert.deepEqual(video.reply_markup.inline_keyboard[2],[{text:'🔗 Starsを購入（Telegram）',url:'https://t.me/PremiumBot'}]);
+ assert.deepEqual(video.reply_markup.inline_keyboard[3],[{text:'🔗 暗号資産で購入（Fragment）',url:'https://fragment.com/stars'}]);
+ assert.deepEqual(video.reply_markup.inline_keyboard[4],[{text:'↩ 戻る',callback_data:'menu:home'}]);
 });
 test('private start opens menu but public group start is ignored',async()=>{
  const calls=[];const api=async(method,body)=>{calls.push({method,body});return {message_id:4}};
