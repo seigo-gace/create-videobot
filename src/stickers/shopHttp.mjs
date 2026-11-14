@@ -73,8 +73,7 @@ export function createStickerShopHandler({pool,salesStore,telegramApi,botToken,p
   const content=await readFile(new URL('../../web/sticker-shop/'+entry.name,import.meta.url));
   res.writeHead(200,{'content-type':entry.type,'cache-control':'public,max-age=300',
     'x-content-type-options':'nosniff','referrer-policy':'no-referrer',
-    'content-security-policy':"default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors https://web.telegram.org https://*.telegram.org",
-    'x-frame-options':'SAMEORIGIN'});
+    'content-security-policy':"default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors https://web.telegram.org https://*.telegram.org"});
   res.end(content);return true;
  };
  return async function handler(req,res){
