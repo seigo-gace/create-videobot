@@ -858,3 +858,31 @@ test('a submitted Telegram operation is never unlocked by pre-mutation recovery'
  assert.equal((await wizard.recoverPending(42)).status,'retry_readback');
  assert.equal(state.stickerPending.phase,'submission_started');
 });
+
+test('submitted session can safely recover only when DB confirms no Telegram mutation',async()=>{
+ let state={revision:8,screen:'sticker_reconcile',screenMessageId:301,
+   stickerPending:{status:'in_progress',kind:'regular',nonce:'n4',
+    phase:'submission_started',fileId:'source',fileUniqueId:'unique',
+    format:'static',packName:'pack',title:'My pack'},
+   stickerDraft:{kind:'regular',title:'My pack',fileId:'source',nonce:'n4'},
+   stickerSets:{}};
+ let releases=0;
+ const wizard=createStickerWizard({
+  api:async()=>true,
+  sessionStore:{read:async()=>structuredClone(state),
+   write:async(_id,rev,next)=>{assert.equal(rev,state.revision);state=structuredClone(next);},
+   setScreen:async()=>{}},
+  screenTransport:{show:async()=>({messageId:301})},
+  publishSticker:async()=>{throw Error('must not resubmit');},
+  reconcileSticker:async()=>({status:'not_observed',verified:false}),
+  releasePendingSticker:async({pending})=>{
+   assert.equal(pending.phase,'submission_started');releases++;
+   return {released:true}; // Mock: actual DB confirmed phase=uploaded.
+  }
+ });
+ assert.equal((await wizard.recoverPending(42)).status,'pre_mutation_released');
+ assert.equal(state.screen,'sticker_ready');
+ assert.equal(state.stickerPending,null);
+ assert.notEqual(state.stickerDraft.nonce,'n4');
+ assert.equal(releases,1);
+});
