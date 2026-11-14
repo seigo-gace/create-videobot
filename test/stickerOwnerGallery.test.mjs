@@ -67,9 +67,9 @@ test('owner sees 10 animated image thumbnails and tapping selects the exact curr
   assert.equal(image.headers.get('content-type'),'image/gif');
   const picked=await post('/api/my-pack/select',{index:3});
   assert.equal(picked.status,200);
-  assert.deepEqual(f.getSelected(),{ownerId:71,packName,index:3});
+  assert.deepEqual(f.getSelected(),{ownerId:71,packName,index:3,page:0});
   f.setPage(1);
-  const next=await post('/api/my-pack/catalog');
+  const next=await post('/api/my-pack/catalog',{page:1});
   assert.equal(next.body.items.length,2);
   assert.equal(next.body.page,2);
   const image2=await fetch(base+next.body.items[0].preview);
