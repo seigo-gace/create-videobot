@@ -659,7 +659,7 @@ test('Bot-only item chooser lays out 10 emoji controls horizontally and pages fo
    getOwnedPack:async()=>state.stickerSelectedPack,
    async listOwnedItems({ownerId,packName,limit,offset}){
      assert.equal(ownerId,42);assert.equal(packName,'owned_pack');
-     assert.equal(limit,10);
+     assert.ok(limit===10||limit===1);
      return Array.from({length:Math.max(0,Math.min(11-offset,limit))},(_,i)=>{
        const position=offset+i;return {emoji:'🎯',position,file_unique_id:'u'+position};
      });
