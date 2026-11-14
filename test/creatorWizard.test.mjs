@@ -173,12 +173,10 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
    publishListing:async()=>{attempts++;throw new Error('network result unknown');}
  });
  await x.callback('menu:listing');
- await x.callback('edit:paidVideo|r1');
- await x.send({video:{file_id:'main001'}},301);
+ await x.send({video:{file_id:'main001'},caption:'動画タイトル'},301);
+ await x.callback('edit:price|r2');
  await x.callback('edit:price:300|r3');
- await x.callback('edit:title|r4');
- await x.send({text:'動画タイトル'},302);
- await x.callback('edit:preview|r6');
+ await x.callback('edit:preview|r4');
  await x.callback('review:rights|r5');
  await x.callback('review:publish|r6');
  const revision=x.states.get(33).revision;
