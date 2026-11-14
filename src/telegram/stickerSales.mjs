@@ -1,6 +1,6 @@
 import {randomBytes} from 'node:crypto';
 import {stickerLandingPanel} from './stickerWizard.mjs';
-import {PRICE_PRESETS} from './creatorUi.mjs';
+import {PRICE_PRESETS,parseCreatorStarsPrice} from './creatorUi.mjs';
 import {splitStarsExact,formatTenths,STICKER_MANAGEMENT_FEE_POLICY_ID} from '../sales/managementFee.mjs';
 import {createStickerPaidPhotoFlow} from './stickerPaidPhotoFlow.mjs';
 
@@ -481,10 +481,9 @@ export function createStickerSalesFlow({api,sessionStore,screenTransport,salesSt
          const {userId}=actor(update);
          try{
            if(old.screen==='sticker_sale_price')return show(userId,old,{screen:'sticker_sale_price'});
-           const value=String(m.text??'').trim();
-           const stars=Number(value);
-           if(!/^[1-9][0-9]{0,4}$/.test(value)||stars>25000)
-             return show(userId,old,{screen:'sticker_sale_custom_price'});
+           let stars;
+           try { stars=parseCreatorStarsPrice(m.text); }
+           catch { return show(userId,old,{screen:'sticker_sale_custom_price'}); }
            return show(userId,old,{screen:'sticker_sale_confirm',
              stickerSale:{...old.stickerSale,price:stars,priceMode:'custom',feeAccepted:false}});
          }finally{await api('deleteMessage',{chat_id:userId,message_id:m.message_id}).catch(()=>{});}
