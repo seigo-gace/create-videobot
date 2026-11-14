@@ -363,7 +363,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
     const pending=old?.stickerPending;
     if(!pending||!['needs_reconcile','in_progress'].includes(pending.status))
       return {status:'already_resolved'};
-    if(['preparing','uploaded'].includes(pending.phase)&&
+    if(['preparing','uploaded','submission_started'].includes(pending.phase)&&
        typeof releasePendingSticker==='function'){
       // The owner session is stale and pack mutation was not started.
       // The inventory must independently confirm its pre-write phase.
