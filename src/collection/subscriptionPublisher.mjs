@@ -20,6 +20,11 @@ export function assertSubscriptionTargets(targets) {
      targets?.topic?.enabled!==true)
     throw Error('SUBSCRIPTION_TARGETS_NOT_VERIFIED');
   targetId(targets.subscription.chatId);
+  // Master-supplied private-channel post URL: https://t.me/c/4396338340/3.
+  // The numeric chat ID is derived from that URL; live getChat/getChatMember
+  // verification remains mandatory via the verifiedTargets owner.
+  if(targets.subscription.chatId!==-1004396338340)
+    throw Error('SUBSCRIPTION_MASTER_CHANNEL_MISMATCH');
   targetId(targets.topic.chatId);
   // Master-selected sample destination. The t.me URL's final segment is
   // a message reference, NOT proof of Telegram's message_thread_id.
