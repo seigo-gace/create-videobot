@@ -58,3 +58,18 @@ test('photo-backed prior DM cannot be edited as text: send replacement sticker m
   assert.deepEqual(calls.map(call=>call.method),['editMessageText','sendMessage','deleteMessage']);
  }
 });
+
+test('registered-field [編集] text links pass through Telegram entities on the existing DM message',async()=>{
+ const calls=[];
+ const show=createVideoBotScreenTransport(async(method,args)=>{calls.push({method,args});return true;});
+ const body='［編集］ 📝 タイトル：登録済み';
+ const withLink={text:body,
+  entities:[{type:'text_link',offset:0,length:4,url:'https://t.me/CreateVdobot?start=ved_title_r3'}],
+  reply_markup:{inline_keyboard:[[{text:'👁 プレビュー',callback_data:'edit:preview|r3'}]]}};
+ await show.show(33,101,withLink);
+ assert.deepEqual(calls[0].args.entities,withLink.entities);
+ assert.equal(calls[0].args.text.slice(0,4),'［編集］');
+ assert.equal(calls[0].args.reply_markup.inline_keyboard[0][0].text,'👁 プレビュー');
+ await assert.rejects(()=>show.show(33,101,{...withLink,
+  entities:[{type:'text_link',offset:0,length:4,url:'https://evil.example/start'}]}),/invalid creator text links/);
+});
