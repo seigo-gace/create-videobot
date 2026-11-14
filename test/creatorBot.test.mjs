@@ -116,3 +116,44 @@ test('creator home opens sticker/emoji editor through existing sticker handler i
  assert.equal(events.filter(x=>x.method==='existingStickerEditor').length,1);
  assert.equal(events.filter(x=>x.method==='screen').length,1,'video wizard must not replace sticker screen');
 });
+
+test('text-linked field edit works only after video registration and for current owner/revision',async()=>{
+ const states=new Map(),calls=[];
+ const api=async(method,params)=>{calls.push({method,params});return {message_id:41};};
+ const store={
+  async read(id){return states.get(id)??null;},
+  async write(id,prev,next){assert.equal(states.get(id)?.revision??0,prev);states.set(id,next);},
+  async setScreen(id,rev,msg){states.set(id,{...states.get(id),screenMessageId:msg});}
+ };
+ const handler=createCreatorBotUpdateHandler({
+  api,sessionStore:store,
+  screenTransport:{show:async(_,old,panel)=>{calls.push({method:'screen',panel});return {messageId:old||41};}},
+  listingStore:{listByOwner:async()=>[],getOwned:async()=>null}
+ });
+ const priv=(id,text,extra={})=>({message:{chat:{id,type:'private'},from:{id},
+  message_id:calls.length+101,text,...extra}});
+ await handler(priv(33,'/start creator'));
+ await handler({callback_query:{id:'select',from:{id:33},data:'menu:listing',
+  message:{chat:{id:33,type:'private'},message_id:41}}});
+ assert.equal(states.get(33).revision,2);
+ const initial=calls.filter(x=>x.method==='screen').at(-1).panel;
+ assert.equal(initial.entities,undefined);
+ await handler({message:{chat:{id:33,type:'private'},from:{id:33},
+  message_id:150,video:{file_id:'video_001'},caption:'作品タイトル'}});
+ assert.equal(states.get(33).revision,3);
+ const screen=calls.filter(x=>x.method==='screen').at(-1).panel;
+ assert.ok(screen.entities.some(e=>e.url.endsWith('ved_title_r3')));
+ assert.ok(screen.reply_markup.inline_keyboard.flat().every(b=>!b.text.includes('編集')));
+ const result=await handler(priv(33,'/start ved_title_r3'));
+ assert.equal(result.handled,true);
+ assert.equal(states.get(33).waiting,'title');
+ assert.equal(states.get(33).revision,4);
+ assert.ok(calls.some(x=>x.method==='deleteMessage'), 'deep link command is cleaned up');
+ const stale=await handler(priv(33,'/start ved_price_r3'));
+ assert.equal(stale.staleTextLink,true);
+ assert.equal(states.get(33).revision,4);
+ await handler({message:{chat:{id:33,type:'private'},from:{id:33},
+  message_id:151,text:'変更後タイトル'}});
+ assert.equal(states.get(33).draft.title,'変更後タイトル');
+ assert.equal(states.get(33).revision,5);
+});
