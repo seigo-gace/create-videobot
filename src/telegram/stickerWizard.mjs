@@ -231,7 +231,7 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
   if(stickerShopBaseUrl){
     const u=new URL(stickerShopBaseUrl);
     if(u.protocol!=='https:'||u.username||u.password||u.port||u.search||u.hash||
-       u.pathname!=='/'||!/(^|\\.)hentaigay\\.org$/.test(u.hostname))
+       u.pathname!=='/'||!/(^|\.)hentaigay\.org$/.test(u.hostname))
       throw Error('STICKER_GALLERY_ORIGIN_INVALID');
     galleryOrigin=u.origin;
   }
