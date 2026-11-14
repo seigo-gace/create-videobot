@@ -128,6 +128,9 @@ export async function runCreatorPollingMain({
    shopServer=createStickerShopServer({
     pool:rt.pool,salesStore:rt.source.stickerSalesStore,
     telegramApi:rt.api,botToken:rt.botToken,
+    inventory:rt.source.stickerInventory,
+    sessionStore:rt.source.sessionStore,
+    selectItem:rt.source.stickerWizard.selectGalleryItem,
     preview:createStickerShopPreview({fetchSource:rt.fetchSource})
    });
    await new Promise((resolve,reject)=>{
