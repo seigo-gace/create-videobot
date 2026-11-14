@@ -27,12 +27,19 @@ export function createVideoBotScreenTransport(telegramApi) {
     if(!panel||typeof panel.text!=='string'||panel.text.length===0||
        !panel.reply_markup||!Array.isArray(panel.reply_markup.inline_keyboard))
       throw new Error('invalid shared DM screen panel');
+    if(panel.entities!==undefined && (!Array.isArray(panel.entities) ||
+      panel.entities.some(e=>e?.type!=='text_link' ||
+        !Number.isSafeInteger(e.offset)||e.offset<0||
+        !Number.isSafeInteger(e.length)||e.length<1||
+        typeof e.url!=='string'||!e.url.startsWith('https://t.me/CreateVdobot?start=ved_'))))
+      throw new Error('invalid creator text links');
     const id=previousMessageId==null?null:positive(previousMessageId,'MESSAGE');
     if(id!==null) {
       try {
         await telegramApi('editMessageText',{
           chat_id:chatId,message_id:id,text:panel.text,
-          reply_markup:panel.reply_markup
+          reply_markup:panel.reply_markup,
+          ...(panel.entities?{entities:panel.entities}:{})
         });
         return {messageId:id,replaced:true};
       } catch(error) {
@@ -42,7 +49,8 @@ export function createVideoBotScreenTransport(telegramApi) {
       }
     }
     const sent=await telegramApi('sendMessage',{
-      chat_id:chatId,text:panel.text,reply_markup:panel.reply_markup
+      chat_id:chatId,text:panel.text,reply_markup:panel.reply_markup,
+      ...(panel.entities?{entities:panel.entities}:{})
     });
     if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0)
       throw new Error('WIZARD_NEW_SCREEN_UNKNOWN');
