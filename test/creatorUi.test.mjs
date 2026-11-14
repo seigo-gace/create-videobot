@@ -53,13 +53,14 @@ test('my videos: exactly 10 per page, sticker-style compact owner rows', () => {
   const owned = Array.from({length:12},(_,i)=>({ id:'vid'+i, sellerId:'seller1', title:'動画'+i, priceStars:300 }));
   const listings = [{id:'other',sellerId:'seller2',title:'他人',priceStars:500}, ...owned];
   const first = myVideosPanel({sellerId:'seller1',listings,page:0});
-  assert.equal(first.reply_markup.inline_keyboard.length,12);
+  assert.equal(first.reply_markup.inline_keyboard.length,13);
   assert.equal(first.reply_markup.inline_keyboard[0].length,3);
   assert.equal(first.reply_markup.inline_keyboard[1].length,3);
-  assert.deepEqual(first.reply_markup.inline_keyboard[10].map(x=>x.text),['次へ ▶']);
+  assert.equal(first.reply_markup.inline_keyboard[10][0].callback_data,'menu:listing');
+  assert.deepEqual(first.reply_markup.inline_keyboard[11].map(x=>x.text),['次へ ▶']);
   const second = myVideosPanel({sellerId:'seller1',listings,page:1});
-  assert.equal(second.reply_markup.inline_keyboard.length,4);
-  assert.deepEqual(second.reply_markup.inline_keyboard[2].map(x=>x.text),['◀ 前へ']);
+  assert.equal(second.reply_markup.inline_keyboard.length,5);
+  assert.deepEqual(second.reply_markup.inline_keyboard[3].map(x=>x.text),['◀ 前へ']);
   assert.throws(()=>myVideosPanel({sellerId:'seller1',listings,page:2}),/page outside/);
   assert.equal(first.text.includes('他人'),false);
 });
