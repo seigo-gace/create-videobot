@@ -180,15 +180,15 @@ test('acknowledged append to existing pack accepts exactly one normalized Telegr
  try{
   const path=join(dir,'new.png');await writeFile(path,'valid-append');
   const name='s42_1234abcd_by_CreateVdobot';
-  const previous={file_id:'old-file',file_unique_id:'old-unique',is_video:false,is_animated:false};
-  let set={name,title:'Original',sticker_type:'regular',stickers:[previous]};
+  const previous=Array.from({length:4},(_,i)=>({file_id:'old-file-'+i,file_unique_id:'old-unique-'+i,is_video:false,is_animated:false}));
+  let set={name,title:'Original',sticker_type:'regular',stickers:previous};
   let proof,mutations=0;
   const api=async method=>{
    if(method==='uploadStickerFile')return {file_id:'upload-file',file_unique_id:'upload-unique'};
    if(method==='getStickerSet')return structuredClone(set);
    if(method==='addStickerToSet'){
      mutations++;
-     set={...set,stickers:[previous,{file_id:'stored-file',
+     set={...set,stickers:[...previous,{file_id:'stored-file',
        file_unique_id:'stored-unique',is_video:false,is_animated:false,emoji:'🙂'}]};
      return true;
    }
@@ -202,7 +202,7 @@ test('acknowledged append to existing pack accepts exactly one normalized Telegr
   assert.equal(result.verified,true);
   assert.equal(proof.proof,'unique_acknowledged_append');
   assert.equal(proof.item.file_unique_id,'stored-unique');
-  assert.equal(proof.item.position,1);
+  assert.equal(proof.item.position,4);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('unacknowledged append with normalized identity remains unknown without replay',async()=>{
