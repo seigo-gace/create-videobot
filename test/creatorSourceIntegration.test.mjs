@@ -82,7 +82,9 @@ test('source-composed offline Telegram webhook drives real wizard route with dur
  let r=await x.send({update_id:1,message:{message_id:1,from:{id:33},
   chat:{id:33,type:'private'},text:'/start'}});
  assert.equal(r.accepted,true);
- assert.ok(x.calls[0].params.text.includes('管理費30%'));
+ assert.ok(x.calls[0].params.text.includes('クリエーター投稿'));
+ assert.ok(x.calls[0].params.reply_markup.inline_keyboard[0].some(x=>x.callback_data==='menu:video'));
+ assert.ok(x.calls[0].params.reply_markup.inline_keyboard[0].some(x=>x.callback_data==='menu:stickers'));
  r=await x.send(callback(2,'menu:listing'));
  assert.equal(r.handled,true);
  const state=()=>x.sessions.get(33);
