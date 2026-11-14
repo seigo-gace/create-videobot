@@ -110,8 +110,16 @@ function panel(session,revision){
     if(packLink(session.stickerSelectedPack?.pack_name,session.stickerSelectedPack?.kind))
       keys.push([openPackButton(session.stickerSelectedPack.pack_name,session.stickerSelectedPack.kind)]);
     keys.push([btn('✏️ パック名の変更','sticker:rename')]);
-    for(const [index,item] of rows.entries())
-      keys.push([btn(String(item.emoji).slice(0,12)+' '+String(item.position+1)+'番目を編集','sticker:item:'+index)]);
+    // Telegram inline buttons cannot contain arbitrary sticker images.
+    // Show the item's emoji as a compact, directly selectable button;
+    // each row is horizontal (4 / 4 / 2 for ten items).
+    for(let offset=0;offset<rows.length;offset+=4){
+      keys.push(rows.slice(offset,offset+4).map((item,i)=>{
+        const index=offset+i;
+        const emoji=String(item.emoji??'🧩').trim()||'🧩';
+        return btn(emoji+' '+String(item.position+1),'sticker:item:'+index);
+      }));
+    }
     if(page>0)keys.push([btn('◀ 前へ','sticker:items_prev')]);
     keys.push([btn('🔙 戻る','sticker:pack_back'),btn('キャンセル','sticker:cancel'),
       ...(session.stickerItemHasNext?[btn('次 ➔','sticker:items_next')]:[])]);
