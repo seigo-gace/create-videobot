@@ -648,3 +648,53 @@ test('successful creation gives visible pack link and same-pack add and pack ins
  assert.match(f.calls.at(-1)[1],/https:\/\/t.me\/addstickers\//);
  assert.equal(f.state().screen,'sticker_done');
 });
+
+test('Bot-only item chooser lays out 10 emoji controls horizontally and pages forward',async()=>{
+ let state={revision:1,screen:'sticker_pack_items',screenMessageId:301,
+   stickerSelectedPack:{pack_name:'owned_pack',title:'Owned',kind:'regular',item_count:11},
+   stickerItemPage:0,stickerItemHasNext:true,stickerItemRows:[]};
+ const panels=[];
+ const inventory={
+   listPacks:async()=>[],
+   getOwnedPack:async()=>state.stickerSelectedPack,
+   async listOwnedItems({ownerId,packName,limit,offset}){
+     assert.equal(ownerId,42);assert.equal(packName,'owned_pack');
+     assert.equal(limit,10);
+     return Array.from({length:Math.max(0,Math.min(11-offset,limit))},(_,i)=>{
+       const position=offset+i;return {emoji:'🎯',position,file_unique_id:'u'+position};
+     });
+   }
+ };
+ const wizard=createStickerWizard({
+   api:async()=>true,publishSticker:async()=>{throw Error('no publish');},
+   packInventory:inventory,
+   sessionStore:{
+     read:async()=>structuredClone(state),
+     write:async(_id,rev,next)=>{assert.equal(rev,state.revision);state=structuredClone(next);},
+     setScreen:async()=>{}
+   },
+   screenTransport:{show:async(_id,_prev,panel)=>{panels.push(panel);return {messageId:301};}}
+ });
+ const cb=()=>({callback_query:{data:'sticker:items|r'+state.revision,
+   from:{id:42},message:{chat:{id:42,type:'private'},message_id:301}}});
+ await wizard.handle(cb());
+ let keyboard=panels.at(-1).reply_markup.inline_keyboard;
+ const controls=keyboard.filter(row=>row.some(b=>b.callback_data?.startsWith('sticker:item:')));
+ assert.deepEqual(controls.map(row=>row.length),[4,4,2]);
+ assert.equal(controls.flat().length,10);
+ assert.ok(keyboard.flat().some(x=>x.text==='次 ➔'));
+ assert.ok(!keyboard.flat().some(x=>x.web_app));
+ const goNext={callback_query:{data:'sticker:items_next|r'+state.revision,
+   from:{id:42},message:{chat:{id:42,type:'private'},message_id:301}}};
+ await wizard.handle(goNext);
+ assert.equal(state.stickerItemPage,1);
+ keyboard=panels.at(-1).reply_markup.inline_keyboard;
+ const nextControls=keyboard.filter(row=>row.some(b=>b.callback_data?.startsWith('sticker:item:')));
+ assert.deepEqual(nextControls.map(row=>row.length),[1]);
+ assert.ok(!keyboard.flat().some(x=>x.text==='次 ➔'));
+ assert.ok(keyboard.flat().some(x=>x.text==='◀ 前へ'));
+ await wizard.handle({callback_query:{data:'sticker:item:0|r'+state.revision,
+   from:{id:42},message:{chat:{id:42,type:'private'},message_id:301}}});
+ assert.equal(state.screen,'sticker_item');
+ assert.equal(state.stickerSelectedItem.file_unique_id,'u10');
+});
