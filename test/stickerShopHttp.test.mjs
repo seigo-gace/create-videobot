@@ -46,6 +46,8 @@ test('catalog renders every sticker, checks terms and issues one reusable XTR li
  try{
   let page=await fetch(base+'/shop?product='+pid);
   assert.equal(page.status,200);assert.match(await page.text(),/パックを読み込み中/);
+  assert.match(page.headers.get('content-security-policy')??'',/frame-ancestors https:\/\/web\.telegram\.org/);
+  assert.equal(page.headers.has('x-frame-options'),false);
   let catalog=await post('/api/catalog');
   assert.equal(catalog.status,200);
   assert.equal(catalog.data.items.length,2);
