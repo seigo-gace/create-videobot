@@ -29,9 +29,9 @@ export function createVideoMediaProcessor({
       await rm(dir,{recursive:true,force:true});
     }
   }
-  async function uploadPrepared(path,type) {
+  async function uploadPrepared(path,type,ownerId) {
     if(storageApproved!==true)throw new Error('approved private media storage unavailable');
-    const result=await saveGenerated({path,type});
+    const result=await saveGenerated({path,type,ownerId});
     if(typeof result?.fileId!=='string'||!result.fileId.trim())throw new Error('uploaded media has no Telegram file ID');
     return result.fileId;
   }
@@ -41,7 +41,7 @@ export function createVideoMediaProcessor({
       return withSource(video.file_id,async(path,dir)=>{
         const result=await prepareSampleVideo({...options,inputPath:path,outputPath:join(dir,'sample.mp4')});
         const fileId=result.kind==='original'
-          ? video.file_id : await uploadPrepared(result.path,'video');
+          ? video.file_id : await uploadPrepared(result.path,'video',video.ownerId);
         return {fileId,durationSeconds:result.durationSeconds};
       });
     },
@@ -54,9 +54,9 @@ export function createVideoMediaProcessor({
           thumbnailOutputPath:join(dir,'thumb.jpg'),sampleOutputPath:join(dir,'sample.mp4')
         });
         const refs={};
-        if(!draft.thumbnail)refs.thumbnail={fileId:await uploadPrepared(prepared.thumbnail.path,'photo')};
+        if(!draft.thumbnail)refs.thumbnail={fileId:await uploadPrepared(prepared.thumbnail.path,'photo',Number(draft.sellerId))};
         if(!draft.sample)refs.sample={
-          fileId:await uploadPrepared(prepared.sample.path,'video'),
+          fileId:await uploadPrepared(prepared.sample.path,'video',Number(draft.sellerId)),
           durationSeconds:prepared.sample.durationSeconds
         };
         return refs;
