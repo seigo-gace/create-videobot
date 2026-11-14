@@ -97,6 +97,58 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     return result;
   }
 
+  async function registerVideo(ownerId,old,draft) {
+
+        if(old.publishing==='needs_reconcile')throw new Error('PUBLISH_NEEDS_RECONCILE');
+        const valid=!!draft.thumbnail&&!!draft.sample&&!!draft.paidVideo&&
+          !!draft.title&&Number.isSafeInteger(draft.priceStars)&&
+          draft.rightsVerified===true&&draft.adultConsentVerified===true;
+        if(!valid)return persistAndRender(ownerId,old,{...old},
+          rev=>creatorReviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。'));
+        if(typeof publishListing!=='function' ||
+          typeof listingStore?.createDraft!=='function' ||
+          typeof listingStore?.updateDraft!=='function' ||
+          typeof listingStore?.markPublished!=='function')
+          return persistAndRender(ownerId,old,{...old},
+            rev=>creatorReviewPanel(draft,rev,'公開用の既存GATE・Topic・売上DB接続はまだ検証されていません。投稿は行われません。'));
+        const reservation={...old,revision:old.revision+1,publishing:'in_progress'};
+        // Reserve callback revision *before* any paid-media send; rejects races.
+        await sessionStore.write(ownerId,old.revision,reservation);
+        let stored=null;
+        try {
+          // The price and 30% deduction are shown on the same review screen.
+          // Explicit tapping of the existing "投稿する" button records fee
+          // acceptance; no extra button or user command is introduced.
+          const acceptedDraft={...draft,feeTermsAccepted:true};
+          stored=draft.mode==='edit'
+            ? await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,acceptedDraft)
+            : await listingStore.createDraft(ownerId,randomUUID(),acceptedDraft);
+          const published=await publishListing({
+            ...stored,ownerConfirmedPublish:true,
+            rightsVerified:draft.rightsVerified,
+            adultConsentVerified:draft.adultConsentVerified
+          });
+          if(published?.posted!==true || !Number.isSafeInteger(published.paidMessageId))
+            throw new Error('publication not confirmed');
+          await listingStore.markPublished(ownerId,stored.id,stored.revision,published);
+          const current=await sessionStore.read(ownerId);
+          return persistAndRender(ownerId,current,{...current,draft:null,
+            screen:'home',publishing:null,waiting:null},
+            {text:'✅ 動画の投稿を確認しました。マイ動画から確認できます。',
+             reply_markup:{inline_keyboard:[[{
+               text:'📦 マイ動画',callback_data:'menu:manage'
+             }],[{text:'↩ 戻る',callback_data:'menu:home'}]]}});
+        } catch(e) {
+          const current=await sessionStore.read(ownerId);
+          return persistAndRender(ownerId,current,{
+            ...current,publishing:'needs_reconcile',waiting:null,
+            screen:'review',draft
+          },rev=>creatorReviewPanel(draft,rev,
+            '⚠️ 送信または保存結果の照合が必要です。重複投稿を防止するため、再投稿しません。'));
+        }
+      
+  }
+
   async function handleCallback(update) {
     const {ownerId,messageId}=privateUser(update);
     const cb=update.callback_query;
@@ -159,6 +211,25 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         {...old,screen:'sales',waiting:null},rev=>salesOverviewPanel(summary,rev));
       throw new Error('UNKNOWN_SALES_ACTION');
     }
+    if(code.startsWith('entry:')) {
+      expectSession(old,messageId);
+      const action=validateRevision(code,old);
+      if(action==='entry:skip'&&old.screen==='description') {
+        return persistAndRender(ownerId,old,
+          {...old,screen:'editor',waiting:null,descriptionEntered:true},
+          rev=>statusPanel(old.draft,rev));
+      }
+      if(action==='entry:register'&&old.screen==='editor') {
+        // The actual 登録 control explicitly accepts the adjacent rights/
+        // adult-performer and 30-percent fee disclosures; no extra menu.
+        const draft=old.draft.paidVideo
+          ?editCreatorDraft(old.draft,{type:'confirmRights',
+             rightsVerified:true,adultConsentVerified:true})
+          :old.draft;
+        return registerVideo(ownerId,old,draft);
+      }
+      throw new Error('UNKNOWN_CREATOR_ENTRY_ACTION');
+    }
     if(code.startsWith('edit:')) {
       expectSession(old,messageId);
       const action=validateRevision(code,old);
@@ -220,55 +291,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         return persistAndRender(ownerId,old,{...old,draft:agreed},
           rev=>creatorReviewPanel(agreed,rev));
       }
-      if(action==='review:publish') {
-        if(old.publishing==='needs_reconcile')throw new Error('PUBLISH_NEEDS_RECONCILE');
-        const valid=!!draft.thumbnail&&!!draft.sample&&!!draft.paidVideo&&
-          !!draft.title&&Number.isSafeInteger(draft.priceStars)&&
-          draft.rightsVerified===true&&draft.adultConsentVerified===true;
-        if(!valid)return persistAndRender(ownerId,old,{...old},
-          rev=>creatorReviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。'));
-        if(typeof publishListing!=='function' ||
-          typeof listingStore?.createDraft!=='function' ||
-          typeof listingStore?.updateDraft!=='function' ||
-          typeof listingStore?.markPublished!=='function')
-          return persistAndRender(ownerId,old,{...old},
-            rev=>creatorReviewPanel(draft,rev,'公開用の既存GATE・Topic・売上DB接続はまだ検証されていません。投稿は行われません。'));
-        const reservation={...old,revision:old.revision+1,publishing:'in_progress'};
-        // Reserve callback revision *before* any paid-media send; rejects races.
-        await sessionStore.write(ownerId,old.revision,reservation);
-        let stored=null;
-        try {
-          // The price and 30% deduction are shown on the same review screen.
-          // Explicit tapping of the existing "投稿する" button records fee
-          // acceptance; no extra button or user command is introduced.
-          const acceptedDraft={...draft,feeTermsAccepted:true};
-          stored=draft.mode==='edit'
-            ? await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,acceptedDraft)
-            : await listingStore.createDraft(ownerId,randomUUID(),acceptedDraft);
-          const published=await publishListing({
-            ...stored,ownerConfirmedPublish:true,
-            rightsVerified:draft.rightsVerified,
-            adultConsentVerified:draft.adultConsentVerified
-          });
-          if(published?.posted!==true || !Number.isSafeInteger(published.paidMessageId))
-            throw new Error('publication not confirmed');
-          await listingStore.markPublished(ownerId,stored.id,stored.revision,published);
-          const current=await sessionStore.read(ownerId);
-          return persistAndRender(ownerId,current,{...current,draft:null,
-            screen:'home',publishing:null,waiting:null},
-            {text:'✅ 動画の投稿を確認しました。マイ動画から確認できます。',
-             reply_markup:{inline_keyboard:[[{
-               text:'📦 マイ動画',callback_data:'menu:manage'
-             }],[{text:'↩ 戻る',callback_data:'menu:home'}]]}});
-        } catch(e) {
-          const current=await sessionStore.read(ownerId);
-          return persistAndRender(ownerId,current,{
-            ...current,publishing:'needs_reconcile',waiting:null,
-            screen:'review',draft
-          },rev=>creatorReviewPanel(draft,rev,
-            '⚠️ 送信または保存結果の照合が必要です。重複投稿を防止するため、再投稿しません。'));
-        }
-      }
+      if(action==='review:publish')return registerVideo(ownerId,old,draft);
       throw new Error('UNKNOWN_REVIEW_ACTION');
     }
     if(code.startsWith('video:')) {
