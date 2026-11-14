@@ -165,6 +165,10 @@ test('TGtumbler shop web app uses hentaigay.org and rejects unrelated domain',as
  assert.equal(buttons.find(b=>b.web_app)?.web_app.url,
    'https://shop.hentaigay.org/shop?product='+productId);
  assert.equal(f.invoiceCount,0);
+ assert.equal(buttons.some(x=>x.callback_data?.startsWith('sale:accept|r')),true);
+ await f.flow.handle(f.cb(81,'sale:accept'));
+ assert.equal(f.state(81).screen,'sticker_sale_agreed');
+ assert.equal(f.invoiceCount,0);
  assert.throws(()=>fixture('https://shop.g-acebot.com/'),
    /STICKER_SHOP_BASE_URL_INVALID/);
  assert.throws(()=>fixture('https://hentaigay.org.evil.example/'),
