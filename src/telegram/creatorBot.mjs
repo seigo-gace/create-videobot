@@ -61,7 +61,7 @@ export function createCreatorBotUpdateHandler(options={}) {
         const sales=await options.stickerSalesHandler(update);
         if(sales?.handled)return sales;
       }
-      const inlineEdit=/^\/start(?:@[A-Za-z0-9_]+)?\s+ved_(title|paidVideo|thumbnail|sample|price)_r([1-9][0-9]*)$/
+      const inlineEdit=/^\/start(?:@[A-Za-z0-9_]+)?\s+ved_(title|description)_r([1-9][0-9]*)$/
         .exec(message.text.trim());
       if(inlineEdit)return wizard.openTextEdit(update,inlineEdit[1],Number(inlineEdit[2]));
       // Existing video deep links enter the existing video menu directly.
