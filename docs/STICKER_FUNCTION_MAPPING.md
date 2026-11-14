@@ -33,6 +33,8 @@
 | S15 | 本番Git/Compose/DB/Webhook | deploy/Dockerfile、Gserver既存アプリOwner、GateApp-Bot live owner adapter | 共通ServerTerminal host.command。稼働Userbotは既存常駐IPCのみ、二重起動・logout厳禁 | Source CIのみPASS。Host f102 result not returned、最新HEADデプロイ/9 migrations本番/Telegram E2E/owner port接続はNOT_VERIFIED |
 | S16 | 購入後に任意の相手へプレゼント | src/telegram/stickerSales.mjs、src/telegram/creatorBot.mjs、src/stickers/pgStickerGifts.mjs、sql/010_sticker_gifts.sql | 購入済み本人だけが一回限りの受取URL発行、Telegram共有先選択、最初の受取人へ固定、購入者権利維持、無償再取得。既存VideoBot画面/Session・sendStickerのみ再利用 | Source実装済、Node/実PostgreSQL gift receipt・二重受領・他人所有・再取得・Stars課金非増加テストPASS。Telegram実機/Gserver本番未検証。転送されたURLの受領者固定は最初の受取人方式で、宛先IDを事前取得する仕様ではない |
 
+| S17 | Stars追加購入への公式外部導線（Telegram/@PremiumBot・Fragment） | `src/telegram/stickerSales.mjs`、`src/telegram/menuPanel.mjs` | CreateVdobotの既存DMメニューと購入画面にURLボタンのみ追加。外部Stars補充はTelegram/Fragment側の責務。XTR購入承諾・Invoice・販売30/70とは完全に分離し、BotはStars残高を補充したと主張しない。Fragment紹介料・独自手数料の契約は未確認で実装しない | `test/stickerSalesFlow.test.mjs`、`test/menuPanel.test.mjs` 追加。Source commit `c7e7a233`。CIとGserver反映・Android/iOS・Fragmentログイン/購入は別検証 |
+
 ## 担当・状態DBの分離
 | 保存対象 | 既存Owner | 禁止事項 |
 |---|---|---|
