@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {createTelegramPrivateMediaUploader} from '../src/telegram/privateMediaUpload.mjs';
+import {createTelegramPrivateMediaUploader,createCreatorDmPreviewUploader} from '../src/telegram/privateMediaUpload.mjs';
 
 const token='1234:'+'A'.repeat(36);
 async function fileTest(fn){
@@ -51,4 +51,22 @@ test('denies unverified or public storage and excessive files without API calls'
  });
  await assert.rejects(()=>limited({path,type:'video'}),/not safe to upload/);
  assert.equal(called,false);
+}));
+
+test('generated creator previews upload only to their owner DM and delete staging message',()=>fileTest(async path=>{
+ const calls=[];
+ const uploader=createCreatorDmPreviewUploader({token,
+  telegramApi:async(method,params)=>{calls.push({method,params});return true;},
+  fetchImpl:async(url,opts)=>{
+   calls.push({url,opts});
+   assert.ok(url.endsWith('/sendVideo'));
+   assert.equal(opts.body.get('chat_id'),'33');
+   assert.equal(opts.body.get('protect_content'),'true');
+   return {ok:true,json:async()=>({ok:true,result:{message_id:71,video:{file_id:'dm_video_file'}}})};
+  }
+ });
+ assert.deepEqual(await uploader({path,type:'video',ownerId:33}),{fileId:'dm_video_file'});
+ assert.deepEqual(calls.at(-1),{method:'deleteMessage',params:{chat_id:33,message_id:71}});
+ await assert.rejects(()=>uploader({path,type:'video',ownerId:-10033}),/owner/);
+ assert.equal(calls.length,2);
 }));
