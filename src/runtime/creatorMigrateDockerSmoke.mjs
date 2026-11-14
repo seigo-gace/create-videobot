@@ -19,7 +19,7 @@ try {
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==16)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==17)throw new Error('schema re-application invalid');
  // Exercise the actual Node adapter against PostgreSQL, not an in-memory fake.
  const inventory=createPostgresStickerInventory(pool);
  // Regression: a failed conversion/upload before the Telegram pack-write
