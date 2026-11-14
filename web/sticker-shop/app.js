@@ -67,42 +67,64 @@
     if(!res.ok)throw Error(result.error||'gallery_failed');
     return result;
   };
-  try{
-    const list=await requestOwner('/api/my-pack/catalog');
-    $('title').textContent=list.title;
-    $('summary').textContent=(list.kind==='custom_emoji'?'絵文字':'ステッカー')+
-      ' · '+list.page+'ページ · '+list.items.length+'個';
-    notice('編集する画像をタップしてください。選択後はBotのDMに戻ります。');
-    if(!list.items.length){notice('このページには素材がありません。',true);return;}
-    const grid=$('grid');
-    for(const item of list.items){
-      const tile=document.createElement('button');
-      tile.type='button';tile.className='gallery-tile';
-      tile.setAttribute('aria-label','素材 '+(item.index+1)+'を編集');
-      const img=document.createElement('img');
-      img.src=item.preview;img.alt='素材 '+(item.index+1);img.loading='lazy';
-      img.addEventListener('error',()=>{
-        tile.disabled=true;
-        tile.textContent='画像を取得できません';
-      });
-      tile.appendChild(img);
-      tile.addEventListener('click',async()=>{
-        if(loading)return;
-        loading=true;
-        [...grid.querySelectorAll('button')].forEach(b=>{b.disabled=true;});
-        notice('選んだ素材をBotの編集画面で開いています…');
-        try{
-          await requestOwner('/api/my-pack/select',{index:item.index});
-          notice('BotのDMに編集メニューを表示しました。');
-          app?.close?.();
-        }catch{
-          notice('選択を確認できません。BotのDMに戻って開き直してください。',true);
-          [...grid.querySelectorAll('button')].forEach(b=>{b.disabled=false;});
-        }finally{loading=false;}
-      });
-      grid.appendChild(tile);
-    }
-  }catch{notice('パックの画像を表示できません。BotのDMから開き直してください。',true);}
+  let page=0;
+  const grid=$('grid');
+  const controls=document.createElement('nav');
+  controls.className='gallery-navigation';
+  controls.setAttribute('aria-label','画像一覧ページ送り');
+  grid.insertAdjacentElement('afterend',controls);
+  async function display(requestedPage){
+    loading=true;
+    grid.textContent='';controls.textContent='';
+    notice('画像を読み込んでいます…');
+    try{
+      const list=await requestOwner('/api/my-pack/catalog',{page:requestedPage});
+      page=requestedPage;
+      $('title').textContent=list.title;
+      $('summary').textContent=(list.kind==='custom_emoji'?'絵文字':'ステッカー')+
+        ' · '+list.page+'ページ · '+list.items.length+'個';
+      if(!list.items.length){notice('このページには素材がありません。',true);return;}
+      notice('編集する画像をタップしてください。');
+      for(const item of list.items){
+        const tile=document.createElement('button');
+        tile.type='button';tile.className='gallery-tile';
+        tile.setAttribute('aria-label','素材 '+(page*10+item.index+1)+'を編集');
+        const img=document.createElement('img');
+        img.src=item.preview;img.alt='素材 '+(page*10+item.index+1);
+        img.loading='lazy';
+        img.addEventListener('error',()=>{
+          tile.disabled=true;tile.textContent='画像を取得できません';
+        });
+        tile.appendChild(img);
+        tile.addEventListener('click',async()=>{
+          if(loading)return;
+          loading=true;
+          [...grid.querySelectorAll('button')].forEach(b=>{b.disabled=true;});
+          notice('選んだ素材をBotの編集画面で開いています…');
+          try{
+            await requestOwner('/api/my-pack/select',{page,index:item.index});
+            notice('BotのDMに編集メニューを表示しました。');
+            app?.close?.();
+          }catch{
+            notice('選択を確認できません。BotのDMから開き直してください。',true);
+            [...grid.querySelectorAll('button')].forEach(b=>{b.disabled=false;});
+          }finally{loading=false;}
+        });
+        grid.appendChild(tile);
+      }
+      const addButton=(text,onClick)=>{
+        const control=document.createElement('button');
+        control.type='button';control.textContent=text;
+        control.addEventListener('click',()=>{if(!loading)onClick();});
+        controls.appendChild(control);
+      };
+      addButton('🔙 戻る',()=>page>0?display(page-1):app?.close?.());
+      addButton('キャンセル',()=>app?.close?.());
+      if(list.hasNext)addButton('次 ➔',()=>display(page+1));
+    }catch{notice('パックの画像を表示できません。BotのDMから開き直してください。',true);}
+    finally{loading=false;}
+  }
+  await display(0);
  }
  async function main(){
   app?.ready?.();app?.expand?.();
