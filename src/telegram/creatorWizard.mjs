@@ -78,24 +78,20 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   async function openTextEdit(update,field,linkRevision) {
     const {ownerId,messageId}=privateUser(update);
     const old=await sessionStore.read(ownerId);
-    const fields=['title','paidVideo','thumbnail','sample','price'];
+    const fields=['title','description'];
     if(!fields.includes(field) || !Number.isSafeInteger(linkRevision) ||
       linkRevision<1 || old?.revision!==linkRevision ||
       !['editor','price'].includes(old?.screen) || !old?.draft ||
       !Number.isSafeInteger(old.screenMessageId) || old.screenMessageId<=0)
       return {handled:true,staleTextLink:true};
     const draft=old.draft;
-    const registered=field==='price'?draft.paidVideo&&draft.priceStars!=null:
-      field==='title'?draft.paidVideo&&!!draft.title:!!draft[field];
+    const registered=!!draft.paidVideo && (field==='description'||!!draft.title);
     if(!registered)return {handled:true,staleTextLink:true};
-    const patch={...old,screen:field==='price'?'price':'editor',
-      waiting:field==='price'?null:field};
+    const patch={...old,screen:'editor',waiting:field};
     const note=field==='title'?'タイトルを1行で送信してください。':
-      field==='paidVideo'?'動画とタイトル（キャプション）を一緒に送信してください。':
-      field==='thumbnail'?'新しいサムネ画像を送信してください。':
-      field==='sample'?'新しいサンプル動画を送信してください。':'';
+      '動画の説明を送信してください（最大800文字・省略可）。';
     const result=await persistAndRender(ownerId,old,patch,
-      rev=>statusPanel(draft,rev,note,field==='price'?'price':'editor'));
+      rev=>statusPanel(draft,rev,note));
     // Telegram deep link generates a /start message; remove only that message.
     await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
     return result;
@@ -117,7 +113,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(code!=='menu:listing')validateRevision(code,old);
       const draft=old?.draft??openCreatorEditor({sellerId:String(ownerId)});
       return persistAndRender(ownerId,old,{
-        ...old,screenMessageId:messageId,screen:'editor',draft,waiting:draft.paidVideo?null:'paidVideo'
+        ...old,screenMessageId:messageId,screen:draft.paidVideo?'editor':'await_video',draft,waiting:draft.paidVideo?null:'paidVideo'
       },rev=>statusPanel(draft,rev));
     }
     if(code==='menu:manage') {
@@ -175,10 +171,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         rev=>statusPanel(draft,rev));
       if(value==='price')return persistAndRender(ownerId,old,{...old,screen:'price',waiting:null},
         rev=>statusPanel(draft,rev,'','price'));
-      if(['thumbnail','sample','paidVideo','title'].includes(value)) {
+      if(['thumbnail','sample','paidVideo','title','description'].includes(value)) {
         return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:value},
           rev=>statusPanel(draft,rev,'Telegramの通常入力欄へ'+
-            (value==='thumbnail'?'サムネ画像':value==='sample'?'サンプル動画':value==='paidVideo'?'販売用本編動画':'タイトル')+'を送信してください。'));
+            (value==='thumbnail'?'サムネ画像':value==='sample'?'サンプル動画':value==='paidVideo'?'販売用本編動画とキャプションタイトル':value==='description'?'説明文':'タイトル')+'を送信してください。'));
       }
       if(value==='price:custom') {
         const changed=editCreatorDraft(draft,{type:'custom'});
@@ -203,7 +199,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           } else warning='自動生成サービスが未接続です。';
         }
         const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!prepared[k]);
-        const note=missing.length ? warning : '本人が［投稿する］を押すまでは公開されません。';
+        const note=missing.length ? warning : '本人が［登録］を押すまでは公開されません。';
         return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null,screen:'review'},
           rev=>creatorReviewPanel(prepared,rev,note));
       }
