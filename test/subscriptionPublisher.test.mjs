@@ -137,3 +137,13 @@ test('other private channels cannot become subscription destination',async()=>{
  await assert.rejects(p.publish(video()),/SUBSCRIPTION_MASTER_CHANNEL_MISMATCH/);
  assert.equal(count,0);
 });
+
+test('official paid invite cannot be issued for an unrelated channel',async()=>{
+ let called=0;
+ const create=createOfficialSubscriptionInvite({
+  verifyChannelAdmin:async()=>{called++;return true},
+  telegramApi:async()=>{called++;return {}}
+ });
+ await assert.rejects(create({channelId:-100333,priceStars:400}),/SUBSCRIPTION_MASTER_CHANNEL_MISMATCH/);
+ assert.equal(called,0);
+});
