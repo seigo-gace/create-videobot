@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {menuPage,parseMenuCallback,handleMenuUpdate} from '../src/telegram/menuPanel.mjs';
 test('menu buttons and no slash command UI',()=>{
  const p=menuPage();
- assert.equal(p.reply_markup.inline_keyboard.length,2);
+ assert.equal(p.reply_markup.inline_keyboard.length,4);
+  assert.deepEqual(p.reply_markup.inline_keyboard[2],[{text:'🔗 Starsを購入（Telegram）',url:'https://t.me/PremiumBot'}]);
+  assert.deepEqual(p.reply_markup.inline_keyboard[3],[{text:'🔗 暗号資産で購入（Fragment）',url:'https://fragment.com/stars'}]);
  assert.ok(!p.text.includes('/start'));
  assert.deepEqual(p.reply_markup.inline_keyboard[0][0],{text:'🎬 動画を投稿',callback_data:'menu:listing'});
  assert.deepEqual(p.reply_markup.inline_keyboard[0][1],{text:'📦 マイ動画',callback_data:'menu:manage'});
