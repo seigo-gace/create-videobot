@@ -101,12 +101,13 @@ test('STK-02 title edit uses one DM screen, owner inventory and preserves video 
   assert.equal(f.state().draft.paidVideo.fileId,'must-preserve');
   assert.equal(f.counts().mutations,1);
   const keyboard=f.panels.at(-1).reply_markup.inline_keyboard;
-  assert.ok(keyboard.flat().some(b=>b.web_app?.url?.includes('/shop/my-pack?pack=')));
+  assert.ok(keyboard.flat().some(b=>b.callback_data?.startsWith('sticker:item:')));
+  assert.ok(!keyboard.flat().some(b=>b.web_app));
 });
 test('STK-02 edit timeout survives as a locked receipt; readback never repeats mutation',async()=>{
   const f=fixture({timeoutOnMove:true});
   await f.enter();
-  await f.wizard.selectGalleryItem({ownerId:42,packName:f.pack.pack_name,index:1});
+  await f.click('sticker:item:1');
   await f.click('sticker:move_up');
   assert.equal(f.state().screen,'sticker_edit_reconcile');
   assert.equal(f.state().stickerEditPending.status,'needs_reconcile');
@@ -122,7 +123,7 @@ test('STK-02 edit timeout survives as a locked receipt; readback never repeats m
 test('STK-02 deletion requires explicit confirmation and updates item inventory',async()=>{
   const f=fixture();
   await f.enter();
-  await f.wizard.selectGalleryItem({ownerId:42,packName:f.pack.pack_name,index:0});
+  await f.click('sticker:item:0');
   await f.click('sticker:delete');
   assert.equal(f.counts().mutations,0);
   assert.equal(f.state().screen,'sticker_item_delete_confirm');
@@ -145,7 +146,7 @@ test('STK-02 stale callbacks cannot edit a pack twice',async()=>{
 test('STK-02 item replacement uses durable upload checkpoint before Telegram mutation',async()=>{
   const f=fixture();
   await f.enter();
-  await f.wizard.selectGalleryItem({ownerId:42,packName:f.pack.pack_name,index:0});
+  await f.click('sticker:item:0');
   await f.click('sticker:replace_item');
   assert.equal(f.state().screen,'sticker_replace_input');
   await f.wizard.handle({message:{from:{id:42},chat:{id:42,type:'private'},
