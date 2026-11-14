@@ -554,14 +554,16 @@ test('pending Topic deep link shows usable menu and allows read-only owned pack 
  assert.ok(displayed.at(-1).reply_markup.inline_keyboard.flat()
    .some(button=>button.text.includes('マイパック')));
  await wizard.handle(callback('sticker:packs|r2'));
+ assert.equal(state.screen,'sticker_pack_kinds');
+ await wizard.handle(callback('sticker:kind:regular|r3'));
  assert.equal(state.screen,'sticker_packs');
- await wizard.handle(callback('sticker:pick:0|r3'));
+ await wizard.handle(callback('sticker:edit_pack:0|r4'));
  assert.equal(state.screen,'sticker_pack');
  assert.equal(state.stickerSelectedPack.title,'Owned pack');
- const blocked=await wizard.handle(callback('sticker:add|r4'));
+ const blocked=await wizard.handle(callback('sticker:add|r5'));
  assert.equal(blocked.registrationLocked,true);
  assert.equal(state.stickerPending.status,'needs_reconcile');
- await wizard.handle(callback('sticker:pack_back|r4'));
+ await wizard.handle(callback('sticker:pack_back|r5'));
  assert.equal(state.screen,'sticker_choose');
 });
 
