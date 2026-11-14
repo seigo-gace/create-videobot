@@ -140,7 +140,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       }
       if(value==='price:custom') {
         const changed=editCreatorDraft(draft,{type:'custom'});
-        return persistAndRender(ownerId,old,{...old,draft:changed,waiting:'title'},
+        return persistAndRender(ownerId,old,{...old,draft:changed,waiting:'customPrice'},
           rev=>statusPanel(changed,rev,'','price'));
       }
       if(/^price:(50|100|300|500|1000)$/.test(value)) {
@@ -313,6 +313,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     let draft=old.draft,error=null;
     try {
       if(old.waiting==='title') {
+        draft=editCreatorDraft(draft,{type:'captionTitle',text:update.message.text});
+      } else if(old.waiting==='customPrice') {
         draft=editCreatorDraft(draft,{type:'titleInput',text:update.message.text});
       } else if(old.waiting==='thumbnail') {
         const p=update.message.photo?.at(-1);
