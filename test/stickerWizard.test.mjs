@@ -558,7 +558,7 @@ test('pending Topic deep link shows usable menu and allows read-only owned pack 
  await wizard.handle(callback('sticker:kind:regular|r3'));
  assert.equal(state.screen,'sticker_packs');
  await wizard.handle(callback('sticker:edit_pack:0|r4'));
- assert.equal(state.screen,'sticker_pack');
+ assert.equal(state.screen,'sticker_pack_items');
  assert.equal(state.stickerSelectedPack.title,'Owned pack');
  const blocked=await wizard.handle(callback('sticker:add|r5'));
  assert.equal(blocked.registrationLocked,true);
