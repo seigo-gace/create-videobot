@@ -91,15 +91,19 @@ test('source-composed offline Telegram webhook drives real wizard route with dur
  assert.equal(state().revision,2);
  assert.equal(state().payload.draft.mode,'create');
  assert.ok(x.calls.some(y=>y.method==='editMessageText'&&
-  y.params.text.includes('残り70%')));
- await x.send(callback(3,'edit:title|r2'));
- assert.equal(state().revision,3);
- assert.equal(state().payload.waiting,'title');
- r=await x.send({update_id:4,message:{message_id:11,
-  from:{id:33},chat:{id:33,type:'private'},text:'夏の思い出'}});
+  y.params.text.includes('タイトルと動画を投稿してください')));
+ r=await x.send({update_id:3,message:{message_id:11,
+  from:{id:33},chat:{id:33,type:'private'},video:{file_id:'main_001'},caption:'夏の思い出'}});
  assert.equal(r.handled,true);
+ assert.equal(state().revision,3);
  assert.equal(state().payload.draft.title,'夏の思い出');
+ assert.equal(state().payload.screen,'description');
  assert.ok(x.calls.some(y=>y.method==='deleteMessage'&&y.params.message_id===11));
+ await x.send(callback(4,'entry:skip|r3'));
+ assert.equal(state().payload.screen,'editor');
+ assert.equal(state().revision,4);
+ const finalScreen=x.calls.filter(y=>y.method==='editMessageText').at(-1);
+ assert.ok(finalScreen.params.entities.some(e=>e.url.endsWith('ved_description_r4')));
  await x.send(callback(5,'edit:price|r4'));
  assert.equal(state().revision,5);
  await x.send(callback(6,'edit:price:300|r5'));
