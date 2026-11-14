@@ -614,6 +614,26 @@ export function createStickerWizard({api,sessionStore,screenTransport,publishSti
                 ?{...draft,nonce:randomBytes(8).toString('hex')}:draft,
               stickerHelp:stickerHelp(error)});
           }
+          // Telegram may have committed despite a lost acknowledgement.
+          // Read the actual pack automatically before showing any recovery UI.
+          // This is read-only: never issue a second create/add mutation.
+          if(current.stickerPending?.fileUniqueId&&
+             current.stickerPending?.format&&typeof reconcileSticker==='function'){
+            const verified=await reconcileSticker({owner:id,pending:current.stickerPending})
+              .catch(()=>({verified:false}));
+            if(verified?.verified===true&&verified.status==='registered'&&verified.name){
+              const latest=await sessionStore.read(id);
+              const set={name:verified.name,title:draft.title};
+              const saved={...latest.stickerSets,[draft.kind]:set};
+              const link=draft.kind==='custom_emoji'
+                ?'https://t.me/addemoji/'+verified.name
+                :'https://t.me/addstickers/'+verified.name;
+              return persist(id,latest,{screen:'sticker_done',stickerPending:null,
+                stickerSets:saved,stickerDeferred:false,
+                stickerDraft:{...draft,setName:verified.name,link,fileId:null},
+                stickerHelp:null});
+            }
+          }
           return persist(id,current,{screen:'sticker_reconcile',
             stickerPending:{...current.stickerPending,status:'needs_reconcile'}});
         }
