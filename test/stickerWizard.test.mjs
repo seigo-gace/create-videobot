@@ -849,7 +849,7 @@ test('a submitted Telegram operation is never unlocked by pre-mutation recovery'
  const wizard=createStickerWizard({
   api:async()=>true,
   sessionStore:{read:async()=>structuredClone(state),
-   write:async()=>{throw Error('must preserve receipt');},setScreen:async()=>{}},
+   write:async(_id,rev,next)=>{assert.equal(rev,state.revision);state=structuredClone(next);},setScreen:async()=>{}},
   screenTransport:{show:async()=>({messageId:301})},
   publishSticker:async()=>{throw Error('never replay');},
   releasePendingSticker:async()=>{throw Error('must not release submitted record');},
@@ -857,6 +857,7 @@ test('a submitted Telegram operation is never unlocked by pre-mutation recovery'
  });
  assert.equal((await wizard.recoverPending(42)).status,'retry_readback');
  assert.equal(state.stickerPending.phase,'submission_started');
+ assert.equal(state.stickerPending.recoveryAttempts,1);
 });
 
 test('submitted session can safely recover only when DB confirms no Telegram mutation',async()=>{
