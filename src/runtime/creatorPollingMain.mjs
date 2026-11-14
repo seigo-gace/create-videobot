@@ -167,22 +167,25 @@ export async function runCreatorPollingMain({
   }
   onStatus('CREATOR_DM_POLL_READY=PASS');
   onStatus('CREATOR_GATE_PUBLIC_RELEASE='+(rt.gateConnected?'CONNECTED':'NOT_VERIFIED'));
-  let recoveryCursor=0;
+  let recoveryCursor=0,recoveryInFlight=null;
   while(!signal?.aborted){
    const outcome=await rt.poller.pollBatch({timeout:8});
    if(outcome.accepted>0)onStatus('CREATOR_DM_UPDATES_HANDLED='+outcome.accepted);
-   try{
-     const result=await sweepStickerRegistrations({source:rt.source,
-       afterOwnerId:recoveryCursor,limit:10});
-     recoveryCursor=result.afterOwnerId;
-     if(result.recovered>0)
-       onStatus('STICKER_REGISTRATION_AUTO_RECOVERED='+result.recovered);
-   }catch{
-     // The next batch continues the same recovery scan, with the same
-     // owner cursor. This must never interrupt the Telegram DM consumer.
-     onStatus('STICKER_REGISTRATION_RECOVERY_RETRY=YES');
+   if(!recoveryInFlight){
+     // Never await a slow getStickerSet inside update polling.
+     // Only one bounded scan runs at a time in the SAME process.
+     recoveryInFlight=sweepStickerRegistrations({source:rt.source,
+       afterOwnerId:recoveryCursor,limit:10})
+       .then(result=>{
+         recoveryCursor=result.afterOwnerId;
+         if(result.recovered>0)
+           onStatus('STICKER_REGISTRATION_AUTO_RECOVERED='+result.recovered);
+       })
+       .catch(()=>onStatus('STICKER_REGISTRATION_RECOVERY_RETRY=YES'))
+       .finally(()=>{recoveryInFlight=null;});
    }
   }
+  if(recoveryInFlight)await recoveryInFlight;
  }finally{
   if(shopServer?.listening)await new Promise(resolve=>shopServer.close(()=>resolve()));
   await rt.close();
