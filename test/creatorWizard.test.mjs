@@ -97,9 +97,9 @@ test('invalid input stays on same screen with preserved previously selected pric
   assert.equal(x.states.get(33).draft.priceStars,100);
   assert.equal(x.states.get(33).waiting,'customPrice');
   assert.match(x.screens.at(-1).panel.text,/⚠️/);
-  await x.send({text:'Title\n250'},215);
+  await x.send({text:'250'},215);
   assert.equal(x.states.get(33).waiting,null);
-  assert.equal(x.states.get(33).draft.title,'Title');
+  assert.equal(x.states.get(33).draft.title,'');
   assert.equal(x.states.get(33).draft.priceStars,250);
 });
 test('my videos uses owner-filtered existing listing store; edit uses original',async()=>{
@@ -280,8 +280,9 @@ test('one-line title edit retains custom Stars price without demanding two-line 
  await x.send({video:{file_id:'main001'},caption:'旧題名'},501);
  await x.callback('edit:price|r2');
  await x.callback('edit:price:custom|r3');
- await x.send({text:'旧題名\n250'},502);
+ await x.send({text:'250'},502);
  assert.equal(x.states.get(33).draft.priceStars,250);
+ assert.equal(x.states.get(33).draft.title,'旧題名');
  await x.callback('edit:title|r5');
  await x.send({text:'新題名'},503);
  assert.equal(x.states.get(33).draft.title,'新題名');
