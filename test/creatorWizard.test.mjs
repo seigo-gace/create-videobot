@@ -379,3 +379,21 @@ test('existing draft recovers missing automatic media on editor re-entry without
   assert.equal(restored.previewMessageId,null,
     'unconfirmed album response is never represented as a successful album');
 });
+
+test('Stars settings back regenerates missing media for an old registered draft',async()=>{
+  const x=setup();
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'既存作品'},210);
+  await x.callback('entry:skip|r2');
+  const old=x.states.get(33);
+  x.states.set(33,{...old,draft:{...old.draft,thumbnail:null,sample:null}});
+  await x.callback('edit:price|r3');
+  await x.callback('edit:back|r4');
+  const restored=x.states.get(33);
+  assert.equal(restored.screen,'editor');
+  assert.equal(restored.draft.paidVideo.fileId,'main001');
+  assert.equal(restored.draft.thumbnail.fileId,'photo_auto_1');
+  assert.equal(restored.draft.sample.durationSeconds,30);
+  assert.ok(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(
+    b=>b.callback_data.startsWith('menu:manage')));
+});
