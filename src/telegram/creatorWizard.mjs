@@ -173,6 +173,22 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     await api('answerCallbackQuery',{callback_query_id:cb.id});
     const code=cb.data??'';
     const old=await sessionStore.read(ownerId);
+    // Older bot screens can remain visible after a deployment. If the owner
+    // taps an obsolete video-editor control, recover the current durable
+    // draft instead of silently swallowing a stale-screen rejection.
+    const legacyEditorTap=/^edit:(?:price|back)(?:\\|r[1-9][0-9]*)?$/.test(code);
+    const actionRevision=/\\|r([1-9][0-9]*)$/.exec(code);
+    const oldScreen=old?.screenMessageId!==messageId ||
+      (actionRevision && Number(actionRevision[1])!==old?.revision);
+    if(legacyEditorTap && old?.draft?.paidVideo && oldScreen) {
+      const recovered=(!old.draft.thumbnail||!old.draft.sample)
+        ?await autoPreview(ownerId,old.draft)
+        :{draft:old.draft,warning:'',previewMessageId:old.previewMessageId??null};
+      return persistAndRender(ownerId,old,{
+        ...old,screen:'editor',waiting:null,draft:recovered.draft,
+        previewMessageId:recovered.previewMessageId??old.previewMessageId??null
+      },rev=>statusPanel(recovered.draft,rev,recovered.warning));
+    }
     if(code==='menu:video') {
       return persistAndRender(ownerId,old,{
         ...old,screenMessageId:messageId,screen:'video_home',waiting:null
