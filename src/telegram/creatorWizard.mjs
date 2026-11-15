@@ -176,8 +176,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     // Older bot screens can remain visible after a deployment. If the owner
     // taps an obsolete video-editor control, recover the current durable
     // draft instead of silently swallowing a stale-screen rejection.
-    const legacyEditorTap=/^edit:(?:price|back)(?:\\|r[1-9][0-9]*)?$/.test(code);
-    const actionRevision=/\\|r([1-9][0-9]*)$/.exec(code);
+    const legacyEditorTap=/^edit:(?:price|back)(?:\|r[1-9][0-9]*)?$/.test(code);
+    const actionRevision=/\|r([1-9][0-9]*)$/.exec(code);
     const oldScreen=old?.screenMessageId!==messageId ||
       (actionRevision && Number(actionRevision[1])!==old?.revision);
     if(legacyEditorTap && old?.draft?.paidVideo && oldScreen) {
