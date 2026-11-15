@@ -52,7 +52,15 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
        Number.isSafeInteger(next.previewMessageId) && next.previewMessageId>0)
       drawn.replyToMessageId=next.previewMessageId;
     await sessionStore.write(ownerId,expected,next);
-    const result=await screenTransport.show(ownerId,patch.screenMessageId??old?.screenMessageId,drawn);
+    // A text message cannot gain a reply-to-album relation through editMessageText.
+    // After the first upload, create one replacement screen replying to the album.
+    const firstAlbumScreen=next.screen==='description' && old?.screen==='await_video' &&
+      Number.isSafeInteger(next.previewMessageId) && next.previewMessageId>0;
+    const previousScreenId=patch.screenMessageId??old?.screenMessageId;
+    const result=await screenTransport.show(ownerId,firstAlbumScreen?null:previousScreenId,drawn);
+    if(firstAlbumScreen && Number.isSafeInteger(previousScreenId) && previousScreenId>0 &&
+       previousScreenId!==result.messageId)
+      await api('deleteMessage',{chat_id:ownerId,message_id:previousScreenId}).catch(()=>{});
     if(!Number.isSafeInteger(result?.messageId)||result.messageId<=0)throw new Error('WIZARD_SCREEN_UNKNOWN');
     if(result.messageId!==next.screenMessageId)
       await sessionStore.setScreen(ownerId,next.revision,result.messageId);
