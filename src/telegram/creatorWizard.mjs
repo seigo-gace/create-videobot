@@ -456,11 +456,16 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         draft=editCreatorDraft(draft,{type:'sample',media:processed});
       } else throw new Error('UNKNOWN_CREATOR_INPUT');
     } catch(e){error=e instanceof Error?e.message:'入力を確認できません。';}
-    // Applies existing common UI rule: remove input even when invalid.
-    let inputDeleteFailed=false;
-    try{await api('deleteMessage',{chat_id:ownerId,message_id:messageId});}
-    catch{inputDeleteFailed=true;}
     const firstVideo=old.waiting==='paidVideo' && old.screen==='await_video';
+    // Never erase the only visible video while three-item album creation failed.
+    // Preserve the original video as the visible editor anchor until an album exists.
+    const keepOriginalVideo=firstVideo && !previewMessageId;
+    if(keepOriginalVideo && !error)previewMessageId=messageId;
+    let inputDeleteFailed=false;
+    if(!keepOriginalVideo){
+      try{await api('deleteMessage',{chat_id:ownerId,message_id:messageId});}
+      catch{inputDeleteFailed=true;}
+    }
     const nextScreen=error?old.screen:firstVideo?'description':'editor';
     const next={...old,draft,previewMessageId,waiting:error?old.waiting:nextScreen==='description'?'description':null,
       screen:nextScreen,
