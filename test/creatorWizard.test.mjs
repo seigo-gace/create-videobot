@@ -75,7 +75,8 @@ test('creator DM callback/standard input/price flow uses one existing screen and
   assert.equal(draft.sample.fileId,'prepared_sample_001');
   assert.ok(x.screens.at(-1).panel.text.includes('動画販売プレビュー'));
   assert.ok(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===213));
-  assert.equal(x.screens.every(s=>s.oldId===101),true);
+  assert.ok(x.screens.some(s=>s.panel.replyToMessageId===210 && s.oldId===null),
+    'registration details reply to the visible original when album creation is unconfirmed');
 });
 test('old callback revision or different owner cannot change draft',async()=>{
   const x=setup();
