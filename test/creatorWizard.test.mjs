@@ -361,3 +361,21 @@ test('creator may skip description and still have editable text description befo
  assert.match(panel.text,/［編集］ 説明：なし/);
  assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r3')));
 });
+
+test('existing draft recovers missing automatic media on editor re-entry without re-upload',async()=>{
+  const x=setup();
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'保存済み動画'},210);
+  const prior=x.states.get(33);
+  x.states.set(33,{...prior,
+    draft:{...prior.draft,thumbnail:null,sample:null},
+    previewMessageId:null});
+  await x.callback('menu:listing|r2');
+  const restored=x.states.get(33);
+  assert.equal(restored.draft.paidVideo.fileId,'main001');
+  assert.equal(restored.draft.thumbnail.fileId,'photo_auto_1');
+  assert.equal(restored.draft.sample.durationSeconds,30);
+  assert.equal(restored.screen,'editor');
+  assert.equal(x.calls.filter(c=>c.method==='sendMediaGroup').length,0,
+    'unconfirmed album response is never represented as a successful album');
+});
