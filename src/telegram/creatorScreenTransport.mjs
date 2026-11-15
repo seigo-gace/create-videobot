@@ -33,6 +33,7 @@ export function createVideoBotScreenTransport(telegramApi) {
         !Number.isSafeInteger(e.length)||e.length<1||
         typeof e.url!=='string'||!e.url.startsWith('https://t.me/CreateVdobot?start=ved_'))))
       throw new Error('invalid creator text links');
+    if(panel.replyToMessageId!==undefined)positive(panel.replyToMessageId,'PREVIEW_MESSAGE');
     const id=previousMessageId==null?null:positive(previousMessageId,'MESSAGE');
     if(id!==null) {
       try {
@@ -50,7 +51,8 @@ export function createVideoBotScreenTransport(telegramApi) {
     }
     const sent=await telegramApi('sendMessage',{
       chat_id:chatId,text:panel.text,reply_markup:panel.reply_markup,
-      ...(panel.entities?{entities:panel.entities}:{})
+      ...(panel.entities?{entities:panel.entities}:{}),
+      ...(panel.replyToMessageId?{reply_parameters:{message_id:panel.replyToMessageId,allow_sending_without_reply:true}}:{})
     });
     if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0)
       throw new Error('WIZARD_NEW_SCREEN_UNKNOWN');
