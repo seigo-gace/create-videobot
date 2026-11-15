@@ -54,8 +54,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     await sessionStore.write(ownerId,expected,next);
     // A text message cannot gain a reply-to-album relation through editMessageText.
     // After the first upload, create one replacement screen replying to the album.
-    const firstAlbumScreen=next.screen==='description' && old?.screen==='await_video' &&
-      Number.isSafeInteger(next.previewMessageId) && next.previewMessageId>0;
+    const firstAlbumScreen=Number.isSafeInteger(next.previewMessageId) &&
+      next.previewMessageId>0 && next.previewMessageId!==old?.previewMessageId &&
+      ['description','editor'].includes(next.screen);
     const previousScreenId=patch.screenMessageId??old?.screenMessageId;
     const result=await screenTransport.show(ownerId,firstAlbumScreen?null:previousScreenId,drawn);
     if(firstAlbumScreen && Number.isSafeInteger(previousScreenId) && previousScreenId>0 &&
@@ -180,9 +181,18 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     if(/^menu:listing(?:\|r[1-9][0-9]*)?$/.test(code)) {
       if(code!=='menu:listing')validateRevision(code,old);
       const draft=old?.draft??openCreatorEditor({sellerId:String(ownerId)});
+      // Older in-progress drafts may have been saved before the automatic
+      // preview pipeline was active. Repair only missing derived media on
+      // explicit editor re-entry; never require a second main-video upload.
+      const recovery=draft.paidVideo && (!draft.thumbnail || !draft.sample)
+        ?await autoPreview(ownerId,draft)
+        :{draft,warning:'',previewMessageId:old?.previewMessageId??null};
       return persistAndRender(ownerId,old,{
-        ...old,screenMessageId:messageId,screen:draft.paidVideo?'editor':'await_video',draft,waiting:draft.paidVideo?null:'paidVideo'
-      },rev=>statusPanel(draft,rev));
+        ...old,screenMessageId:messageId,
+        previewMessageId:recovery.previewMessageId??old?.previewMessageId??null,
+        screen:recovery.draft.paidVideo?'editor':'await_video',
+        draft:recovery.draft,waiting:recovery.draft.paidVideo?null:'paidVideo'
+      },rev=>statusPanel(recovery.draft,rev,recovery.warning));
     }
     if(code==='menu:manage') {
       const items=await listingStore.listByOwner(ownerId);
