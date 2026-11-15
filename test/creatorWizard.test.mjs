@@ -397,3 +397,22 @@ test('Stars settings back regenerates missing media for an old registered draft'
   assert.ok(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(
     b=>b.callback_data.startsWith('menu:manage')));
 });
+
+test('obsolete pre-deploy Stars button redraws owner current draft and recovers My Videos',async()=>{
+  const x=setup();
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'旧画面作品'},210);
+  const current=x.states.get(33);
+  x.states.set(33,{...current,
+    draft:{...current.draft,thumbnail:null,sample:null},
+    screenMessageId:999,previewMessageId:null});
+  const result=await x.callback('edit:price|r1',101);
+  const state=x.states.get(33);
+  assert.equal(result.handled,true);
+  assert.equal(state.screen,'editor');
+  assert.equal(state.draft.title,'旧画面作品');
+  assert.equal(state.draft.thumbnail.fileId,'photo_auto_1');
+  assert.equal(state.draft.sample.durationSeconds,30);
+  assert.ok(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(
+    b=>b.text==='📦 Myビデオを見る'));
+});
