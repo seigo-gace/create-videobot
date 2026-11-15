@@ -47,6 +47,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const next={...patch,revision:expected+1,
       ...(old?.publishing==='needs_reconcile'?{publishing:'needs_reconcile'}:{})};
     const drawn=typeof panel==='function'?panel(next.revision):panel;
+    // Keep the editable text screen visually attached to the owner's album preview.
+    if(['description','editor','price'].includes(next.screen) &&
+       Number.isSafeInteger(next.previewMessageId) && next.previewMessageId>0)
+      drawn.replyToMessageId=next.previewMessageId;
     await sessionStore.write(ownerId,expected,next);
     const result=await screenTransport.show(ownerId,patch.screenMessageId??old?.screenMessageId,drawn);
     if(!Number.isSafeInteger(result?.messageId)||result.messageId<=0)throw new Error('WIZARD_SCREEN_UNKNOWN');
@@ -367,8 +371,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   }
 
   async function autoPreview(ownerId,draft) {
-    let prepared=draft,warning='';
-    if(!draft.paidVideo)return {draft:prepared,warning};
+    let prepared=draft,warning='',previewMessageId=null;
+    if(!draft.paidVideo)return {draft:prepared,warning,previewMessageId};
     if((!draft.thumbnail||!draft.sample)&&typeof mediaProcessor?.prepareMissingPreviews==='function'){
       try{
         const refs=await mediaProcessor.prepareMissingPreviews(draft);
@@ -394,11 +398,12 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         if(!Array.isArray(response)||response.length!==3||
           response.some(m=>!Number.isSafeInteger(m?.message_id)||m.message_id<1))
           warning+='\n⚠️ アルバム表示の応答を確認できません。重複送信は行いません。';
+        else previewMessageId=response[2].message_id;
       }catch{
         warning+='\n⚠️ プレビューアルバムの表示を確認できません。重複送信は行いません。';
       }
     }
-    return {draft:prepared,warning};
+    return {draft:prepared,warning,previewMessageId};
   }
 
   async function handleInput(update) {
@@ -410,7 +415,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       old.waiting='paidVideo';
     }
     if(!old.waiting)return {handled:false};
-    let draft=old.draft,error=null,previewWarning='';
+    let draft=old.draft,error=null,previewWarning='',previewMessageId=old.previewMessageId??null;
     try {
       if(old.waiting==='title') {
         draft=editCreatorDraft(draft,{type:'captionTitle',text:update.message.text});
@@ -435,6 +440,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         const preview=await autoPreview(ownerId,draft);
         draft=preview.draft;
         previewWarning=preview.warning;
+        previewMessageId=preview.previewMessageId;
       } else if(old.waiting==='sample') {
         if(!update.message.video?.file_id)throw new Error('サンプル動画を送信してください。');
         if(typeof mediaProcessor?.prepareUserSample!=='function')throw new Error('サンプル生成サービスは未接続です。');
@@ -448,7 +454,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     catch{inputDeleteFailed=true;}
     const firstVideo=old.waiting==='paidVideo' && old.screen==='await_video';
     const nextScreen=error?old.screen:firstVideo?'description':'editor';
-    const next={...old,draft,waiting:error?old.waiting:nextScreen==='description'?'description':null,
+    const next={...old,draft,previewMessageId,waiting:error?old.waiting:nextScreen==='description'?'description':null,
       screen:nextScreen,
       ...(nextScreen==='editor'&&old.waiting==='description'?{descriptionEntered:true}:{})};
     const note=(error?'⚠️ '+error:firstVideo?'': '✅ 反映しました。')+
