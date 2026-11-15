@@ -331,7 +331,8 @@ test('creator video first: automatic 3-item private preview, optional descriptio
  assert.equal(state.draft.description,'この動画の説明です');
  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.map(row=>row.map(b=>b.text)),[
    ['🎬 動画変更','🖼 サムネ変更','🎞 サンプル変更'],
-   ['⭐ Stars設定','✅ 登録','❌ キャンセル']
+   ['⭐ Stars設定','✅ 登録','❌ キャンセル'],
+    ['📦 Myビデオを見る']
  ]);
  await x.callback('edit:price|r3');
  await x.callback('edit:price:300|r4');
