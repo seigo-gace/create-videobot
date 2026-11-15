@@ -376,6 +376,6 @@ test('existing draft recovers missing automatic media on editor re-entry without
   assert.equal(restored.draft.thumbnail.fileId,'photo_auto_1');
   assert.equal(restored.draft.sample.durationSeconds,30);
   assert.equal(restored.screen,'editor');
-  assert.equal(x.calls.filter(c=>c.method==='sendMediaGroup').length,0,
+  assert.equal(restored.previewMessageId,null,
     'unconfirmed album response is never represented as a successful album');
 });
