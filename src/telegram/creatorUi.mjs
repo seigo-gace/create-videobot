@@ -109,7 +109,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   const btn=(text,action)=>({text,callback_data:action+(revision?'|r'+revision:'')});
   if(screen==='await_video' || (screen==='editor'&&!draft.paidVideo)){
     return {text:'🎬 動画を投稿\n\nタイトルと動画を投稿してください。\n動画のキャプションにタイトルを入力し、1回で送信してください。',
-      reply_markup:{inline_keyboard:[[btn('❌ キャンセル','edit:cancel')]]}};
+      reply_markup:{inline_keyboard:[[btn('📦 Myビデオを見る','menu:manage'),btn('❌ キャンセル','edit:cancel')]]}};
   }
   if(screen==='description'){
     return {text:'🎬 動画のアルバムプレビュー\n\n'+
