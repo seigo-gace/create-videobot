@@ -459,7 +459,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const firstVideo=old.waiting==='paidVideo' && old.screen==='await_video';
     // Never erase the only visible video while three-item album creation failed.
     // Preserve the original video as the visible editor anchor until an album exists.
-    const keepOriginalVideo=firstVideo && !previewMessageId;
+    const keepOriginalVideo=firstVideo && !error && !previewMessageId;
     if(keepOriginalVideo && !error)previewMessageId=messageId;
     let inputDeleteFailed=false;
     if(!keepOriginalVideo){
