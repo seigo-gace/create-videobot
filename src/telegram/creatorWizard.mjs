@@ -264,8 +264,17 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(value==='cancel') {
         return persistAndRender(ownerId,old,{...old,draft:null,waiting:null},menuPage('home'));
       }
-      if(value==='back')return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},
-        rev=>statusPanel(draft,rev));
+      if(value==='back') {
+        // Existing drafts from the former UI can be repaired by returning
+        // from Stars settings, without losing their stored main video.
+        const recovery=draft.paidVideo && (!draft.thumbnail || !draft.sample)
+          ?await autoPreview(ownerId,draft)
+          :{draft,warning:'',previewMessageId:old.previewMessageId??null};
+        return persistAndRender(ownerId,old,{
+          ...old,screen:'editor',waiting:null,draft:recovery.draft,
+          previewMessageId:recovery.previewMessageId??old.previewMessageId??null
+        },rev=>statusPanel(recovery.draft,rev,recovery.warning));
+      }
       if(value==='price')return persistAndRender(ownerId,old,{...old,screen:'price',waiting:null},
         rev=>statusPanel(draft,rev,'','price'));
       if(['thumbnail','sample','paidVideo','title','description'].includes(value)) {
