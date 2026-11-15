@@ -152,7 +152,8 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   return {text:text+'\n\n※［登録］で権利・出演者の成人と掲載同意、および売上の管理費30%に同意して公開します。',
     entities,reply_markup:{inline_keyboard:[
       [btn('🎬 動画変更','edit:paidVideo'),btn('🖼 サムネ変更','edit:thumbnail'),btn('🎞 サンプル変更','edit:sample')],
-      [btn('⭐ Stars設定','edit:price'),btn('✅ 登録','entry:register'),btn('❌ キャンセル','edit:cancel')]
+      [btn('⭐ Stars設定','edit:price'),btn('✅ 登録','entry:register'),btn('❌ キャンセル','edit:cancel')],
+      [btn('📦 Myビデオを見る','menu:manage')]
     ]}};
 }
 
