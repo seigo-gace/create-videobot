@@ -108,7 +108,7 @@ test('new/edit and review all disclose 30 percent management fee without adding 
  const editor=creatorEditorPanel(d,2);
  assert.match(editor.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.match(editor.text,/30%/);
- assert.equal(editor.reply_markup.inline_keyboard.length,2);
+ assert.equal(editor.reply_markup.inline_keyboard.length,3);
  assert.equal(editor.reply_markup.inline_keyboard[0][0].text,'🎬 動画変更');
  assert.equal(editor.reply_markup.inline_keyboard[1][0].text,'⭐ Stars設定');
  assert.equal(editor.reply_markup.inline_keyboard[1][1].text,'✅ 登録');
@@ -157,7 +157,8 @@ test('creator first shows only upload prompt, then title and description text ed
  assert.doesNotMatch(final.text,/［編集］ サムネ|［編集］ 本動画|［編集］ Stars/);
  assert.deepEqual(final.reply_markup.inline_keyboard.map(row=>row.map(b=>b.text)),[
    ['🎬 動画変更','🖼 サムネ変更','🎞 サンプル変更'],
-   ['⭐ Stars設定','✅ 登録','❌ キャンセル']
+   ['⭐ Stars設定','✅ 登録','❌ キャンセル'],
+    ['📦 Myビデオを見る']
  ]);
  assert.equal(final.entities.length,2);
  assert.ok(final.entities.some(e=>e.url.endsWith('ved_title_r3')));
