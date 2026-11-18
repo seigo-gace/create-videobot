@@ -258,7 +258,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     // Reconstruct a current owner-only panel, but do NOT publish, delete or
     // approve rights from an obsolete callback.
     if(code.startsWith('review:') && old?.draft) {
-      const receivedRevision=/\\|r([1-9][0-9]*)$/.exec(code);
+      const receivedRevision=/\|r([1-9][0-9]*)$/.exec(code);
       const obsolete=old.screen!=='review' || old.screenMessageId!==messageId ||
         !receivedRevision || Number(receivedRevision[1])!==old.revision;
       if(obsolete) {
