@@ -57,7 +57,8 @@ export function createTelegramPrivateMediaUploader({
  * file IDs. The final three-item DM album is sent by the existing wizard.
  */
 export function createCreatorDmPreviewUploader({
- token,fetchImpl=globalThis.fetch,telegramApi,maxBytes=20_000_000
+ token,fetchImpl=globalThis.fetch,telegramApi,maxBytes=20_000_000,
+ baseUrl='https://api.telegram.org'
 }={}){
  if(typeof token!=='string'||!/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)||
     typeof fetchImpl!=='function'||typeof telegramApi!=='function')
@@ -66,6 +67,8 @@ export function createCreatorDmPreviewUploader({
    if(!Number.isSafeInteger(ownerId)||ownerId<=0||
       typeof path!=='string'||!path.startsWith('/')||
       !['photo','video'].includes(type))throw new Error('invalid creator DM media owner');
+   if(!['https://api.telegram.org','http://telegram-bot-api:8081'].includes(baseUrl))
+     throw Error('unverified Bot API upload endpoint');
    const stat=await lstat(path);
    if(!stat.isFile()||stat.isSymbolicLink()||stat.size<1||stat.size>maxBytes)
      throw new Error('generated creator preview upload size invalid');
@@ -77,7 +80,7 @@ export function createCreatorDmPreviewUploader({
    form.set(type,new Blob([bytes],{type:type==='photo'?'image/jpeg':'video/mp4'}),
      type==='photo'?'creator-preview.jpg':'creator-sample.mp4');
    const method=type==='photo'?'sendPhoto':'sendVideo';
-   const response=await fetchImpl('https://api.telegram.org/bot'+token+'/'+method,{
+   const response=await fetchImpl(baseUrl+'/bot'+token+'/'+method,{
      method:'POST',body:form,redirect:'error',signal:AbortSignal.timeout(60000)
    });
    if(response?.ok!==true)throw new Error('creator preview Telegram upload failed');
