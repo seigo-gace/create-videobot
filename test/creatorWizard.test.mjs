@@ -416,3 +416,19 @@ test('obsolete pre-deploy Stars button redraws owner current draft and recovers 
   assert.ok(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(
     b=>b.text==='📦 Myビデオを見る'));
 });
+
+test('stale review buttons refresh current draft without publishing or canceling',async()=>{
+  const published=[];
+  const x=setup({publishListing:async x=>{published.push(x);return {posted:true,paidMessageId:99};}});
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'守る作品'},210);
+  const original=x.states.get(33);
+  x.states.set(33,{...original,screen:'editor',screenMessageId:999});
+  for(const action of ['review:publish|r1','review:edit|r1','review:cancel|r1']){
+    await x.callback(action,101);
+    assert.equal(x.states.get(33).draft.title,'守る作品');
+    assert.equal(x.states.get(33).screen,'review');
+    assert.match(x.screens.at(-1).panel.text,/前の画面のボタン/);
+  }
+  assert.equal(published.length,0);
+});
