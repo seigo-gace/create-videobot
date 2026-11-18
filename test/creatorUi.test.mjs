@@ -168,3 +168,12 @@ test('creator first shows only upload prompt, then title and description text ed
  assert.match(creatorEditorPanel(d,4).text,/説明：説明本文/);
  assert.throws(()=>editCreatorDraft(d,{type:'descriptionInput',text:'x'.repeat(801)}),/description/);
 });
+
+test('video review uses clear Master-approved navigation and cancellation labels',()=>{
+  let d=openCreatorEditor({sellerId:'seller1'});
+  d=editCreatorDraft(d,{type:'captionTitle',text:'作品'});
+  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main11'}});
+  const p=creatorReviewPanel(d,2);
+  assert.deepEqual(p.reply_markup.inline_keyboard[1].map(b=>b.text),
+    ['✅ 投稿する','↩ 編集に戻る','❌ キャンセル']);
+});
