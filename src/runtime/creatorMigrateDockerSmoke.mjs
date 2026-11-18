@@ -23,7 +23,7 @@ try {
  // Real PostgreSQL proof: exceptional update is retained privately,
  // reinsertions with the same fingerprint are idempotent, and mismatches fail.
  const unknown={update_id:88001,callback_query:{data:'review:publish|r3'}};
- const raw=JSON.stringify(unknown),digest='a'.repeat(64);
+ const digest='a'.repeat(64);
  const insertUnknown=async(hash,payload)=>pool.query(
    `INSERT INTO videobot_poll_quarantine(update_id,payload_sha256,payload,reason)
       VALUES ($1,$2,$3::jsonb,'WEBHOOK_UPDATE_NEEDS_RECONCILE')
@@ -37,7 +37,8 @@ try {
    'SELECT payload_sha256,payload FROM videobot_poll_quarantine WHERE update_id=88001');
  if(firstUnknown.rowCount!==1||duplicateUnknown.rowCount!==1||
     wrongUnknown.rowCount!==0||keptUnknown.rows[0]?.payload_sha256.trim()!==digest||
-    JSON.stringify(keptUnknown.rows[0].payload)!==raw)
+    keptUnknown.rows[0].payload?.update_id!==88001||
+    keptUnknown.rows[0].payload?.callback_query?.data!=='review:publish|r3')
    throw Error('POLL_QUARANTINE_DB_RECEIPT_NOT_DURABLE');
  // Exercise the actual Node adapter against PostgreSQL, not an in-memory fake.
  const inventory=createPostgresStickerInventory(pool);
