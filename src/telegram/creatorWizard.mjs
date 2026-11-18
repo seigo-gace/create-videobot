@@ -94,9 +94,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   async function openVideoMenu(update) {
     const {ownerId}=privateUser(update);
     const old=await sessionStore.read(ownerId);
+    const items=await listingStore.listByOwner(ownerId);
     return persistAndRender(ownerId,old,{
-      ...old,screen:'video_home',waiting:null
-    },menuPage('video'));
+      ...old,screen:'my_videos',page:0,waiting:null
+    },rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
   }
   /** Telegram deep links from the inline [編集] text, owner/revision scoped.
    * No pre-registration edit link exists. Old/forwarded links cannot mutate
@@ -122,6 +123,22 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     // Telegram deep link generates a /start message; remove only that message.
     await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
     return result;
+  }
+
+  async function openOwnedVideo(update,listingId,linkRevision) {
+    const {ownerId}=privateUser(update);
+    const old=await sessionStore.read(ownerId);
+    if(!old || old.revision!==linkRevision || old.screen!=='my_videos')
+      return {handled:true,staleTextLink:true};
+    const owned=await listingStore.getOwned(ownerId,listingId);
+    if(!owned)return {handled:true,staleTextLink:true};
+    // Publicly sold media are immutable. Never silently overwrite purchases.
+    if(owned.status==='published'||owned.status==='paused')
+      return persistAndRender(ownerId,old,{...old,screen:'video_detail',detailId:listingId},
+        rev=>videoInfoPanel(owned,rev));
+    const draft=openCreatorEditor({sellerId:String(ownerId),existing:owned});
+    return persistAndRender(ownerId,old,{...old,draft,screen:'editor',waiting:null},
+      rev=>statusPanel(draft,rev));
   }
 
   async function registerVideo(ownerId,old,draft) {
@@ -213,9 +230,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       },rev=>statusPanel(recovered.draft,rev,recovered.warning));
     }
     if(code==='menu:video') {
+      const items=await listingStore.listByOwner(ownerId);
       return persistAndRender(ownerId,old,{
-        ...old,screenMessageId:messageId,screen:'video_home',waiting:null
-      },menuPage('video'));
+        ...old,screenMessageId:messageId,screen:'my_videos',page:0,waiting:null
+      },rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
     }
     if(/^menu:listing(?:\|r[1-9][0-9]*)?$/.test(code)) {
       if(code!=='menu:listing')validateRevision(code,old);
@@ -562,6 +580,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     openHome,
     openVideoMenu,
     openTextEdit,
+    openOwnedVideo,
     async handle(update){
       if(update?.callback_query)return handleCallback(update);
       if(update?.message && (update.message.text||update.message.photo||update.message.video))return handleInput(update);
