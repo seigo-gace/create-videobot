@@ -106,20 +106,25 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   async function openTextEdit(update,field,linkRevision) {
     const {ownerId,messageId}=privateUser(update);
     const old=await sessionStore.read(ownerId);
-    const fields=['title','description'];
+    const fields=['title','description','price','paidVideo','thumbnail','sample'];
     if(!fields.includes(field) || !Number.isSafeInteger(linkRevision) ||
       linkRevision<1 || old?.revision!==linkRevision ||
       !['editor','price'].includes(old?.screen) || !old?.draft ||
       !Number.isSafeInteger(old.screenMessageId) || old.screenMessageId<=0)
       return {handled:true,staleTextLink:true};
     const draft=old.draft;
-    const registered=!!draft.paidVideo && (field==='description'||!!draft.title);
+    const registered=!!draft.paidVideo && !!draft.title;
     if(!registered)return {handled:true,staleTextLink:true};
-    const patch={...old,screen:'editor',waiting:field};
+    const isPrice=field==='price';
+    const patch={...old,screen:isPrice?'price':'editor',waiting:isPrice?null:field};
     const note=field==='title'?'タイトルを1行で送信してください。':
-      '動画の説明を送信してください（最大800文字・省略可）。';
+      field==='description'?'説明文を送信してください（最大800文字・省略可）。':
+      field==='thumbnail'?'変更するサムネ画像を送信してください。':
+      field==='sample'?'変更するサンプル動画を送信してください。':
+      field==='paidVideo'?'変更する本編動画を送信してください。':
+      'Stars価格を選択してください。';
     const result=await persistAndRender(ownerId,old,patch,
-      rev=>statusPanel(draft,rev,note));
+      rev=>statusPanel(draft,rev,note,isPrice?'price':'editor'));
     // Telegram deep link generates a /start message; remove only that message.
     await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
     return result;
@@ -146,7 +151,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         if(old.publishing==='needs_reconcile')throw new Error('PUBLISH_NEEDS_RECONCILE');
         const valid=!!draft.thumbnail&&!!draft.sample&&!!draft.paidVideo&&
           !!draft.title&&Number.isSafeInteger(draft.priceStars)&&
-          draft.rightsVerified===true&&draft.adultConsentVerified===true;
+          draft.rightsVerified===true&&draft.adultConsentVerified===true&&
+          draft.feeTermsAccepted===true;
         if(!valid)return persistAndRender(ownerId,old,{...old},
           rev=>old.screen==='review'
             ?creatorReviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。')
@@ -167,7 +173,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           // The price and 30% deduction are shown beside the final 登録 button.
           // Explicit tapping of 登録 records fee
           // acceptance; no extra button or user command is introduced.
-          const acceptedDraft={...draft,feeTermsAccepted:true};
+          const acceptedDraft=draft;
           stored=draft.mode==='edit'
             ? await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,acceptedDraft)
             : await listingStore.createDraft(ownerId,randomUUID(),acceptedDraft);
@@ -327,13 +333,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           rev=>statusPanel(old.draft,rev));
       }
       if(action==='entry:register'&&old.screen==='editor') {
-        // The actual 登録 control explicitly accepts the adjacent rights/
-        // adult-performer and 30-percent fee disclosures; no extra menu.
-        const draft=old.draft.paidVideo
-          ?editCreatorDraft(old.draft,{type:'confirmRights',
-             rightsVerified:true,adultConsentVerified:true})
-          :old.draft;
-        return registerVideo(ownerId,old,draft);
+        // Publishing is impossible until a separate visible agreement step.
+        return persistAndRender(ownerId,old,
+          {...old,screen:'review',waiting:null},
+          rev=>creatorReviewPanel(old.draft,rev));
       }
       throw new Error('UNKNOWN_CREATOR_ENTRY_ACTION');
     }
@@ -401,9 +404,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         {...old,screen:'editor',waiting:null},rev=>statusPanel(draft,rev));
       if(action==='review:cancel')return persistAndRender(ownerId,old,
         {...old,draft:null,waiting:null,screen:'home'},menuPage('home'));
-      if(action==='review:rights') {
+      if(action==='review:agree'||action==='review:rights') {
         const agreed=editCreatorDraft(draft,
-          {type:'confirmRights',rightsVerified:true,adultConsentVerified:true});
+          {type:draft.feeTermsAccepted?'clearTerms':'confirmTerms'});
         return persistAndRender(ownerId,old,{...old,draft:agreed},
           rev=>creatorReviewPanel(agreed,rev));
       }
@@ -537,9 +540,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:p.file_id}});
       } else if(old.waiting==='paidVideo') {
         if(!update.message.video?.file_id)throw new Error('本編動画を送信してください。');
-        // Only accept video + valid one-line caption as one atomic input.
+        // New creation requires a caption-title; replacement may retain title.
         const caption=update.message.caption;
-        const withTitle=editCreatorDraft(draft,{type:'captionTitle',text:caption});
+        const withTitle=caption?editCreatorDraft(draft,{type:'captionTitle',text:caption}):
+          draft.title?draft:editCreatorDraft(draft,{type:'captionTitle',text:caption});
         draft=editCreatorDraft(withTitle,{type:'paidVideo',media:{fileId:update.message.video.file_id}});
         // A replacement invalidates automatically-derived previews from the previous source video.
         if(old.draft.paidVideo?.fileId!==update.message.video.file_id){
@@ -552,7 +556,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       } else if(old.waiting==='sample') {
         if(!update.message.video?.file_id)throw new Error('サンプル動画を送信してください。');
         if(typeof mediaProcessor?.prepareUserSample!=='function')throw new Error('サンプル生成サービスは未接続です。');
-        const processed=await mediaProcessor.prepareUserSample(update.message.video);
+        const processed=await mediaProcessor.prepareUserSample({...update.message.video,ownerId});
         draft=editCreatorDraft(draft,{type:'sample',media:processed});
       } else throw new Error('UNKNOWN_CREATOR_INPUT');
     } catch(e){error=e instanceof Error?e.message:'入力を確認できません。';}
@@ -566,7 +570,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       try{await api('deleteMessage',{chat_id:ownerId,message_id:messageId});}
       catch{inputDeleteFailed=true;}
     }
-    const nextScreen=error?old.screen:firstVideo?'description':'editor';
+    const nextScreen=error?old.screen:'editor';
     const next={...old,draft,previewMessageId,waiting:error?old.waiting:nextScreen==='description'?'description':null,
       screen:nextScreen,
       ...(nextScreen==='editor'&&old.waiting==='description'?{descriptionEntered:true}:{})};
