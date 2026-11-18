@@ -250,8 +250,8 @@ export function creatorReviewPanel(draft, revision = 0, note = '') {
   const keys=[
     [{text:draft.rightsVerified&&draft.adultConsentVerified?'✅ 権利・出演者確認済み':'📜 権利・出演者を確認',callback_data:'review:rights|r'+revision}],
     [{text:'✅ 投稿する',callback_data:'review:publish|r'+revision},
-     {text:'↩ 登録画面へ',callback_data:'review:edit|r'+revision},
-     {text:'❌ 中止',callback_data:'review:cancel|r'+revision}]
+     {text:'↩ 編集に戻る',callback_data:'review:edit|r'+revision},
+     {text:'❌ キャンセル',callback_data:'review:cancel|r'+revision}]
   ];
   const text=['👁 動画販売プレビュー','',
     'タイトル：'+(draft.title||'未入力'),
