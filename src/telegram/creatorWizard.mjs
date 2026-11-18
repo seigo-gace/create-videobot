@@ -194,6 +194,15 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const actionRevision=/\|r([1-9][0-9]*)$/.exec(code);
     const oldScreen=old?.screenMessageId!==messageId ||
       (actionRevision && Number(actionRevision[1])!==old?.revision);
+    if((code.startsWith('entry:register') || code.startsWith('edit:cancel')) &&
+       old?.draft?.paidVideo && oldScreen) {
+      // Obsolete destructive/publishing buttons can never execute the old
+      // action. Refresh the saved draft and require a fresh explicit tap.
+      return persistAndRender(ownerId,old,{
+        ...old,screen:'editor',waiting:null
+      },rev=>statusPanel(old.draft,rev,
+        '前の画面のボタンでした。現在の登録内容を表示しました。もう一度選択してください。'));
+    }
     if(legacyEditorTap && old?.draft?.paidVideo && oldScreen) {
       const recovered=(!old.draft.thumbnail||!old.draft.sample)
         ?await autoPreview(ownerId,old.draft)
