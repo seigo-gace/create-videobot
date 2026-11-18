@@ -56,6 +56,8 @@ test('more than 30 seconds is cut from beginning into a distinct file', () => fi
   const ffmpeg = calls.find(x => x.command === 'ffmpeg').args;
   assert.deepEqual(ffmpeg.slice(ffmpeg.indexOf('-t'), ffmpeg.indexOf('-t') + 2), ['-t', '30']);
   assert.equal(ffmpeg[ffmpeg.indexOf('-i') + 1], input);
+  assert.equal(ffmpeg[ffmpeg.indexOf('-maxrate')+1],'2500k');
+  assert.equal(ffmpeg[ffmpeg.indexOf('-b:a')+1],'96k');
   assert.equal(await readFile(input, 'utf8'), 'original remains unchanged');
   assert.equal(await readFile(output, 'utf8'), 'clipped fixture');
 }));
