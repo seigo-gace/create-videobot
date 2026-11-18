@@ -68,6 +68,16 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
       return {alreadyCurrent:true};
     throw new Error('Telegram API request failed');
   }
+  if(response.status===400&&method==='editMessageCaption'){
+    // A confirmed Telegram 400 is a definitive caption rejection, unlike
+    // transport timeout/5xx. It is safe to present the editor as text.
+    let reply;
+    try{reply=await response.json();}catch{throw Error('Telegram API request failed');}
+    const description=typeof reply?.description==='string'?reply.description.toLowerCase():'';
+    if(/^bad request: message is not modified$/.test(description))
+      return {alreadyCurrent:true};
+    throw Error('message cannot be edited');
+  }
   if(response.status===400&&method==='editMessageText'){
     let reply;
     try{reply=await response.json();}catch{throw new Error('Telegram API request failed');}
