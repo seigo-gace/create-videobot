@@ -447,3 +447,14 @@ test('video preview failure keeps source video and displays 20MB download blocke
   assert.equal(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===410),false,
     'failed media preparation must not delete the only visible source video');
 });
+
+test('old published review keyboard opens My Videos instead of becoming inert',async()=>{
+ const x=setup();
+ await x.callback('menu:listing');
+ const state=x.states.get(33);
+ x.states.set(33,{...state,draft:null,screen:'home',screenMessageId:999});
+ const result=await x.callback('review:publish|r1',101);
+ assert.equal(result.handled,true);
+ assert.equal(x.states.get(33).screen,'my_videos');
+ assert.match(x.screens.at(-1).panel.text,/マイ動画|Myビデオ/);
+});
