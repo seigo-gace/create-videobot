@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,readdir,readFile,stat,rm} from 'node:fs/promises';
+import {mkdtemp,readdir,readFile,stat,rm,writeFile,open} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createTelegramVideoFetcher} from '../src/telegram/telegramFileFetch.mjs';
@@ -95,3 +95,32 @@ test('retries short writes to preserve every byte and cleans up on a stalled wri
  assert.equal(removed,true);
  assert.deepEqual(await readdir(dir),[]);
 }));
+
+test('approved local Bot API reads large source without 20MB cloud download or copy',()=>fixture(async dir=>{
+ const root=join(dir,'verified-media');
+ await import('node:fs/promises').then(fs=>fs.mkdir(root));
+ const source=join(root,'original.mp4');
+ const f=await open(source,'wx',0o600);
+ await f.truncate(21_000_000);await f.close();
+ const fetcher=createTelegramVideoFetcher({
+  token:dummy,localFileRoot:root,maxBytes:2_000_000_000,
+  telegramApi:async(method)=>({file_path:source,file_size:21_000_000}),
+  fetchImpl:async()=>{throw Error('public download must not run');}
+ });
+ const item=await fetcher('large_media_001',dir);
+ assert.equal(item.path,source);
+ await item.cleanup();
+ assert.equal((await stat(source)).size,21_000_000,'shared file is never deleted');
+}));
+test('local Bot API cannot read paths outside verified share',()=>fixture(async dir=>{
+ const root=join(dir,'approved');
+ await import('node:fs/promises').then(fs=>fs.mkdir(root));
+ const external=join(dir,'private.mp4');
+ await writeFile(external,'never disclose');
+ const fetcher=createTelegramVideoFetcher({
+  token:dummy,localFileRoot:root,maxBytes:2_000_000_000,
+  telegramApi:async()=>({file_path:external,file_size:14})
+ });
+ await assert.rejects(()=>fetcher('valid_media_01',dir),/outside verified private root/);
+ assert.throws(()=>createTelegramVideoFetcher({token:dummy,localFileRoot:'/',maxBytes:2_000_000_000}),/verified local/);
+});
