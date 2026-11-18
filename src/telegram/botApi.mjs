@@ -59,8 +59,7 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
   // Telegram can confirm that the existing paid-media caption/keyboard
   // already matches the requested appearance. Treat only that exact reply
   // as an idempotent success; do not mark a paid Topic post as UNKNOWN.
-  if(response.status===400&&
-     (method==='editMessageCaption'||method==='editMessageReplyMarkup')){
+  if(response.status===400&&method==='editMessageReplyMarkup'){
     let reply;
     try{reply=await response.json();}catch{throw new Error('Telegram API request failed');}
     const description=typeof reply?.description==='string'?reply.description.toLowerCase():'';
