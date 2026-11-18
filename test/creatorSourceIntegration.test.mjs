@@ -100,7 +100,7 @@ test('source-composed offline Telegram webhook drives real wizard route with dur
  assert.equal(state().payload.screen,'editor');
  assert.equal(x.calls.some(y=>y.method==='deleteMessage'&&y.params.message_id===11),false,
     'original video stays visible when no confirmed album exists');
- const finalScreen=x.calls.filter(y=>y.method==='editMessageText').at(-1);
+ const finalScreen=x.calls.filter(y=>['sendMessage','editMessageText'].includes(y.method)).at(-1);
  assert.ok(finalScreen.params.entities.some(e=>e.url.endsWith('ved_description_r3')));
  await x.send(callback(4,'edit:price|r3'));
  assert.equal(state().revision,4);
