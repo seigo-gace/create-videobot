@@ -74,7 +74,13 @@ export async function createCreatorPollingRuntime({
  const outbound=createCreatorTelegramFetch(fetchImpl);
  let api,source,poller;
  try{
-  api=createTelegramBotApi({token,fetchImpl:outbound.fetch,timeoutMs:25000});
+  const localApi=env.VIDEOBOT_LOCAL_API_URL??null;
+  if(localApi!==null && (localApi!=='http://telegram-bot-api:8081'||
+    typeof env.VIDEOBOT_LOCAL_MEDIA_ROOT!=='string'||
+    env.VIDEOBOT_LOCAL_MEDIA_ROOT!=='/var/lib/telegram-bot-api'))
+    throw Error('CREATOR_LOCAL_BOT_API_NOT_VERIFIED');
+  const baseUrl=localApi??'https://api.telegram.org';
+  api=createTelegramBotApi({token,fetchImpl:outbound.fetch,timeoutMs:25000,baseUrl});
   await verifyCreateVdoBot({api,checkProfile:false});
   // The approved one-time sticker Topic receipt is an existing on-disk
   // Telegram-verified Owner proof. No video sale routes are enabled.
@@ -96,8 +102,10 @@ export async function createCreatorPollingRuntime({
   const schema=await applySchema({pool});
   if(schema.migrations!==18)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
   const pollAdmissionSecret=randomBytes(32).toString('hex');
-  const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch});
-  const saveGenerated=createCreatorDmPreviewUploader({token,fetchImpl:outbound.fetch,telegramApi:api});
+  const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch,
+    ...(localApi?{localFileRoot:env.VIDEOBOT_LOCAL_MEDIA_ROOT,maxBytes:2_000_000_000}:{})});
+  const saveGenerated=createCreatorDmPreviewUploader({token,fetchImpl:outbound.fetch,
+    telegramApi:api,baseUrl});
   source=createSource({
    pool,telegramApi:api,gateOwner,botToken:token,
    stickerShopBaseUrl:env.VIDEOBOT_SHOP_PUBLIC_URL??null,
