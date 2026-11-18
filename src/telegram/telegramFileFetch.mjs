@@ -1,4 +1,4 @@
-import {open,lstat,unlink} from 'node:fs/promises';
+import {open,lstat,unlink,realpath} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 
@@ -9,13 +9,19 @@ import {randomUUID} from 'node:crypto';
  * separately approved Local Bot API Server, not an accidental fallback.
  */
 export function createTelegramVideoFetcher({
-  telegramApi,token,fetchImpl=globalThis.fetch,maxBytes=20_000_000,openFile=open
+  telegramApi,token,fetchImpl=globalThis.fetch,maxBytes=20_000_000,
+  openFile=open,localFileRoot=null
 }={}) {
   if(typeof telegramApi!=='function' || typeof token!=='string' ||
      !/^\d+:[A-Za-z0-9_-]{30,}$/.test(token))
     throw new Error('Telegram fetcher credentials unavailable');
+  const local=localFileRoot!==null;
+  if(local && (typeof localFileRoot!=='string'||!localFileRoot.startsWith('/')||
+      localFileRoot==='/'||localFileRoot.includes('..')))
+    throw Error('verified local Bot API file root required');
   if(typeof fetchImpl!=='function'||typeof openFile!=='function'||!Number.isSafeInteger(maxBytes)||
-     maxBytes<1||maxBytes>20_000_000)throw new Error('invalid download boundary');
+     maxBytes<1||maxBytes>(local?2_000_000_000:20_000_000))
+    throw new Error('invalid download boundary');
   return async function fetchSource(fileId,dir) {
     if(typeof fileId!=='string'||!/^[A-Za-z0-9_-]{3,256}$/.test(fileId))throw new Error('invalid Telegram file ID');
     if(typeof dir!=='string'||!dir.startsWith('/'))throw new Error('private media work directory required');
@@ -23,10 +29,23 @@ export function createTelegramVideoFetcher({
     if(!info.isDirectory()||info.isSymbolicLink())throw new Error('unsafe media work directory');
     const result=await telegramApi('getFile',{file_id:fileId});
     const path=result?.file_path;
+    if(local && typeof path==='string' && path.startsWith('/')) {
+      const approvedRoot=await realpath(localFileRoot);
+      const resolved=await realpath(path);
+      if(!resolved.startsWith(approvedRoot+'/') || resolved===approvedRoot)
+        throw Error('Telegram local file outside verified private root');
+      const info=await lstat(resolved);
+      if(!info.isFile()||info.isSymbolicLink()||info.size<1||info.size>maxBytes ||
+        Number.isFinite(result.file_size)&&result.file_size>maxBytes)
+        throw Error('Telegram local media file invalid or too large');
+      // Owned by the local Bot API service; never unlink its shared media.
+      return {path:resolved,cleanup:async()=>{}};
+    }
     if(typeof path!=='string' || !/^[A-Za-z0-9_.\/-]+$/.test(path)||
        path.startsWith('/')||path.split('/').some(segment=>segment===''||segment==='.'||segment==='..'))
       throw new Error('Telegram file path invalid');
-    if(Number.isFinite(result.file_size)&&result.file_size>maxBytes)throw new Error('file exceeds Bot API download limit');
+    if(Number.isFinite(result.file_size)&&result.file_size>maxBytes)
+      throw new Error('file exceeds Bot API download limit');
     const target=join(root,'download-'+randomUUID()+'.mp4');
     const url='https://api.telegram.org/file/bot'+token+'/'+path;
     let created=false,fd;
