@@ -34,7 +34,26 @@ export function createVideoBotScreenTransport(telegramApi) {
         typeof e.url!=='string'||!e.url.startsWith('https://t.me/CreateVdobot?start=ved_'))))
       throw new Error('invalid creator text links');
     if(panel.replyToMessageId!==undefined)positive(panel.replyToMessageId,'PREVIEW_MESSAGE');
+    // When a private three-item media group exists, attach the editable
+    // caption and inline keyboard to the bot-owned last video. This is
+    // exactly one Telegram media message, not a detached text preview.
+    // A definitive refusal falls back to the existing text screen.
+    if(panel.albumMessageId!==undefined)positive(panel.albumMessageId,'ALBUM_MESSAGE');
     const id=previousMessageId==null?null:positive(previousMessageId,'MESSAGE');
+    if(panel.albumMessageId && panel.text.length<=1024) {
+      try {
+        await telegramApi('editMessageCaption',{
+          chat_id:chatId,message_id:panel.albumMessageId,
+          caption:panel.text,reply_markup:panel.reply_markup,
+          ...(panel.entities?{caption_entities:panel.entities}:{})
+        });
+        if(id!==null && id!==panel.albumMessageId)
+          await telegramApi('deleteMessage',{chat_id:chatId,message_id:id}).catch(()=>{});
+        return {messageId:panel.albumMessageId,replaced:id===panel.albumMessageId,album:true};
+      }catch(error){
+        if(editOutcome(error)!=='cannot_edit')throw new Error('WIZARD_ALBUM_EDIT_RESULT_UNKNOWN');
+      }
+    }
     if(id!==null) {
       try {
         await telegramApi('editMessageText',{
