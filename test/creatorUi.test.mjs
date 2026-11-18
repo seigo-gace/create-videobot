@@ -107,7 +107,7 @@ test('preview uses inline edit links and fee disclosure, review gates publicatio
  assert.match(editor.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.equal(editor.entities.length,6);
  assert.deepEqual(editor.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
- assert.match(editor.text,/説明:\[未登録\]/);
+ assert.match(editor.text,/説明：\[未登録\]/);
  const review=creatorReviewPanel(d,3);
  assert.match(review.text,/30%/);
  assert.equal(review.reply_markup.inline_keyboard.flat().some(b=>b.callback_data.startsWith('review:publish')),false);
@@ -145,7 +145,7 @@ test('first video opens inline preview with six edit links and no extra descript
  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample123',durationSeconds:30}});
  const final=creatorEditorPanel(d,3,'editor');
  assert.match(final.text,/［編集］タイトル：作品タイトル/);
- assert.match(final.text,/説明:\[未登録\]/);
+ assert.match(final.text,/説明：\[未登録\]/);
  assert.match(final.text,/［編集］価格：未設定/);
  assert.deepEqual(final.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
  assert.equal(final.entities.length,6);
