@@ -186,12 +186,12 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
             throw new Error('publication not confirmed');
           await listingStore.markPublished(ownerId,stored.id,stored.revision,published);
           const current=await sessionStore.read(ownerId);
+          const items=await listingStore.listByOwner(ownerId);
           return persistAndRender(ownerId,current,{...current,draft:null,
-            screen:'home',publishing:null,waiting:null},
-            {text:'✅ 動画の投稿を確認しました。マイ動画から確認できます。',
-             reply_markup:{inline_keyboard:[[{
-               text:'📦 マイ動画',callback_data:'menu:manage'
-             }],[{text:'↩ 戻る',callback_data:'menu:home'}]]}});
+            screen:'my_videos',page:0,publishing:null,waiting:null},
+            rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,
+              revision:rev,notice:draft.mode==='edit'?
+                '動画を編集／更新しました。':'新規動画を登録しました。'}));
         } catch(e) {
           const current=await sessionStore.read(ownerId);
           return persistAndRender(ownerId,current,{
@@ -346,7 +346,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       const draft=old.draft;
       const value=action.slice(5);
       if(value==='cancel') {
-        return persistAndRender(ownerId,old,{...old,draft:null,waiting:null},menuPage('home'));
+        const items=await listingStore.listByOwner(ownerId);
+        // Cancel navigation, not the user's media or a destructive delete.
+        return persistAndRender(ownerId,old,{...old,screen:'my_videos',page:0,waiting:null},
+          rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
       }
       if(value==='back') {
         // Existing drafts from the former UI can be repaired by returning
@@ -402,8 +405,12 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       const draft=old.draft;
       if(action==='review:edit')return persistAndRender(ownerId,old,
         {...old,screen:'editor',waiting:null},rev=>statusPanel(draft,rev));
-      if(action==='review:cancel')return persistAndRender(ownerId,old,
-        {...old,draft:null,waiting:null,screen:'home'},menuPage('home'));
+      if(action==='review:cancel') {
+        const items=await listingStore.listByOwner(ownerId);
+        return persistAndRender(ownerId,old,
+          {...old,waiting:null,screen:'my_videos',page:0},
+          rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
+      }
       if(action==='review:agree'||action==='review:rights') {
         const agreed=editCreatorDraft(draft,
           {type:draft.feeTermsAccepted?'clearTerms':'confirmTerms'});
