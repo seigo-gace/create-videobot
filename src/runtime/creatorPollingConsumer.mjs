@@ -46,7 +46,7 @@ export function createCreatorPollingConsumer({telegramApi,handleTelegramWebhook,
       'purchased_paid_media']
   });
   if(!Array.isArray(updates))throw Error('CREATOR_POLL_RESPONSE_INVALID');
-  let accepted=0;
+  let accepted=0,quarantined=0;
   for(const update of updates){
    const id=update?.update_id;
    if(!Number.isSafeInteger(id)||id<0)
@@ -56,13 +56,34 @@ export function createCreatorPollingConsumer({telegramApi,handleTelegramWebhook,
    if(buf.length>262144)throw Error('CREATOR_POLL_UPDATE_TOO_LARGE');
    // The existing source module's webhook admission claims and commits
    // the same update receipt. It is NOT exposed as an HTTP listener here.
-   const result=await handleTelegramWebhook({secretHeader:webhookSecret,body:buf});
+   let result;
+   try {
+     result=await handleTelegramWebhook({secretHeader:webhookSecret,body:buf});
+   } catch(error) {
+     if(error?.message!=='WEBHOOK_UPDATE_NEEDS_RECONCILE')throw error;
+     // On a second attempt, admission has already recorded this exact
+     // update as unknown. Preserve its full original payload privately and
+     // durably before advancing the cursor. NEVER re-run its effects here.
+     // This prevents one uncertain post/payment from freezing all new DMs.
+     const digest=createHash('sha256').update(buf).digest('hex');
+     const kept=await pool.query(`INSERT INTO videobot_poll_quarantine
+       (update_id,payload_sha256,payload,reason)
+       VALUES ($1,$2,$3::jsonb,'WEBHOOK_UPDATE_NEEDS_RECONCILE')
+       ON CONFLICT (update_id) DO UPDATE SET updated_at=NOW()
+       WHERE videobot_poll_quarantine.payload_sha256=EXCLUDED.payload_sha256
+       RETURNING update_id`,[id,digest,buf.toString('utf8')]);
+     if(kept?.rowCount!==1 || Number(kept.rows?.[0]?.update_id)!==id)
+       throw Error('CREATOR_POLL_QUARANTINE_NOT_DURABLE');
+     await recordOffset(id);
+     quarantined++;
+     continue;
+   }
    if(result?.accepted!==true||result.updateId!==id)
      throw Error('CREATOR_POLL_UPDATE_NOT_ACCEPTED');
    await recordOffset(id);
    accepted++;
   }
-  return {accepted,received:updates.length,lastUpdateId:await lastOffset()};
+  return {accepted,quarantined,received:updates.length,lastUpdateId:await lastOffset()};
  }
  return Object.freeze({pollBatch,verifyIngress,lastOffset});
 }
