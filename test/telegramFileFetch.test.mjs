@@ -123,4 +123,4 @@ test('local Bot API cannot read paths outside verified share',()=>fixture(async 
  });
  await assert.rejects(()=>fetcher('valid_media_01',dir),/outside verified private root/);
  assert.throws(()=>createTelegramVideoFetcher({token:dummy,localFileRoot:'/',maxBytes:2_000_000_000}),/verified local/);
-});
+}));
