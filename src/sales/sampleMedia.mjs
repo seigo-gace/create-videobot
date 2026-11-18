@@ -62,7 +62,10 @@ export async function prepareSampleVideo({ inputPath, outputPath, run = exec, ff
       '-i', input, '-t', String(limitSeconds),
       '-map', '0:v:0', '-map', '0:a?',
       '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-movflags', '+faststart', '-y', temporary
+      // 30s at this bounded video bitrate stays comfortably below the
+      // existing 20 MB Telegram upload limit for generated media.
+      '-maxrate', '2500k', '-bufsize', '5000k',
+      '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', '-y', temporary
     ], { timeout: 180000, maxBuffer: 1024 * 1024 });
     const clippedDuration = await probeDurationSeconds(temporary, { run, ffprobe });
     if (clippedDuration > limitSeconds) throw new Error('generated sample exceeds requested length');
