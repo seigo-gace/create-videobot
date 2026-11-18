@@ -65,6 +65,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     if(['description','editor','price'].includes(next.screen) &&
        Number.isSafeInteger(next.previewMessageId) && next.previewMessageId>0)
       drawn.replyToMessageId=next.previewMessageId;
+    if(['editor','price'].includes(next.screen)&&
+       Number.isSafeInteger(next.albumMessageId)&&next.albumMessageId>0 &&
+       drawn.text.length<=1024)
+      drawn.albumMessageId=next.albumMessageId;
     await sessionStore.write(ownerId,expected,next);
     // A text message cannot gain a reply-to-album relation through editMessageText.
     // After the first upload, create one replacement screen replying to the album.
@@ -253,6 +257,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       return persistAndRender(ownerId,old,{
         ...old,screenMessageId:messageId,
         previewMessageId:recovery.previewMessageId??old?.previewMessageId??null,
+        albumMessageId:recovery.previewMessageId??old?.albumMessageId??null,
         screen:recovery.draft.paidVideo?'editor':'await_video',
         draft:recovery.draft,waiting:recovery.draft.paidVideo?null:'paidVideo'
       },rev=>statusPanel(recovery.draft,rev,recovery.warning));
@@ -359,7 +364,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           :{draft,warning:'',previewMessageId:old.previewMessageId??null};
         return persistAndRender(ownerId,old,{
           ...old,screen:'editor',waiting:null,draft:recovery.draft,
-          previewMessageId:recovery.previewMessageId??old.previewMessageId??null
+          previewMessageId:recovery.previewMessageId??old.previewMessageId??null,
+          albumMessageId:recovery.previewMessageId??old.albumMessageId??null
         },rev=>statusPanel(recovery.draft,rev,recovery.warning));
       }
       if(value==='price')return persistAndRender(ownerId,old,{...old,screen:'price',waiting:null},
@@ -533,7 +539,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       old.waiting='paidVideo';
     }
     if(!old.waiting)return {handled:false};
-    let draft=old.draft,error=null,previewWarning='',previewMessageId=old.previewMessageId??null;
+    let draft=old.draft,error=null,previewWarning='',
+      previewMessageId=old.previewMessageId??null,albumMessageId=old.albumMessageId??null;
     try {
       if(old.waiting==='title') {
         draft=editCreatorDraft(draft,{type:'captionTitle',text:update.message.text});
@@ -560,6 +567,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         draft=preview.draft;
         previewWarning=preview.warning;
         previewMessageId=preview.previewMessageId;
+        albumMessageId=preview.previewMessageId;
       } else if(old.waiting==='sample') {
         if(!update.message.video?.file_id)throw new Error('サンプル動画を送信してください。');
         if(typeof mediaProcessor?.prepareUserSample!=='function')throw new Error('サンプル生成サービスは未接続です。');
@@ -578,7 +586,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       catch{inputDeleteFailed=true;}
     }
     const nextScreen=error?old.screen:'editor';
-    const next={...old,draft,previewMessageId,waiting:error?old.waiting:nextScreen==='description'?'description':null,
+    const next={...old,draft,previewMessageId,albumMessageId,
+      waiting:error?old.waiting:null,
       screen:nextScreen,
       ...(nextScreen==='editor'&&old.waiting==='description'?{descriptionEntered:true}:{})};
     const note=(error?'⚠️ '+error:firstVideo?'': '✅ 反映しました。')+
