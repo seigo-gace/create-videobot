@@ -66,8 +66,11 @@ export function editCreatorDraft(draft, action) {
     case 'paidVideo':
       field = action.type;
       value = media(action.media, field);
-      if (field === 'paidVideo') return { ...draft, paidVideo: value, rightsVerified:false, adultConsentVerified:false,
+      if (field === 'paidVideo') return { ...draft, paidVideo: value, rightsVerified:false, adultConsentVerified:false, feeTermsAccepted:false,
         dirtyFields: [...new Set([...draft.dirtyFields,'paidVideo','rightsVerified','adultConsentVerified'])] };
+      if(draft.feeTermsAccepted) return {...draft,[field]:value,feeTermsAccepted:false,
+        rightsVerified:false,adultConsentVerified:false,
+        dirtyFields:[...new Set([...draft.dirtyFields,field,'feeTermsAccepted','rightsVerified','adultConsentVerified'])]};
       break;
     case 'confirmTerms':
       if(!draft.paidVideo)throw new Error('main video required before agreement');
