@@ -73,3 +73,38 @@ test('registered-field [編集] text links pass through Telegram entities on the
  await assert.rejects(()=>show.show(33,101,{...withLink,
   entities:[{type:'text_link',offset:0,length:4,url:'https://evil.example/start'}]}),/invalid creator text links/);
 });
+
+test('attach editable title/description/keyboard to last video of private album',async()=>{
+ const calls=[],transport=createVideoBotScreenTransport(async(method,args)=>{
+   calls.push({method,args});return true;
+ });
+ const editor={...panel,albumMessageId:311,
+   entities:[{type:'text_link',offset:0,length:2,
+     url:'https://t.me/CreateVdobot?start=ved_title_r2'}]};
+ const result=await transport.show(33,101,editor);
+ assert.deepEqual(result,{messageId:311,replaced:false,album:true});
+ assert.deepEqual(calls.map(c=>c.method),['editMessageCaption','deleteMessage']);
+ assert.equal(calls[0].args.message_id,311);
+ assert.equal(calls[0].args.caption,panel.text);
+ assert.deepEqual(calls[0].args.caption_entities,editor.entities);
+ assert.equal(calls[0].args.reply_markup,editor.reply_markup);
+});
+test('definitive album-caption refusal falls back to one normal text editor',async()=>{
+ const calls=[],transport=createVideoBotScreenTransport(async(method,args)=>{
+   calls.push(method);
+   if(method==='editMessageCaption'||method==='editMessageText')throw Error('message cannot be edited');
+   if(method==='sendMessage')return {message_id:403};
+   return true;
+ });
+ const result=await transport.show(33,101,{...panel,albumMessageId:311});
+ assert.equal(result.messageId,403);
+ assert.deepEqual(calls,['editMessageCaption','editMessageText','sendMessage','deleteMessage']);
+});
+test('ambiguous Telegram caption response never sends a second editor',async()=>{
+ const calls=[],transport=createVideoBotScreenTransport(async(method)=>{
+   calls.push(method);throw Error('network timeout');
+ });
+ await assert.rejects(()=>transport.show(33,101,{...panel,albumMessageId:311}),
+   /WIZARD_ALBUM_EDIT_RESULT_UNKNOWN/);
+ assert.deepEqual(calls,['editMessageCaption']);
+});
