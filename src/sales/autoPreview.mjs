@@ -58,7 +58,10 @@ export async function prepareMissingPreviewAssets({
 } = {}) {
   if (thumbnail && sample) return { thumbnail: { kind: 'existing', value: thumbnail }, sample: { kind: 'existing', value: sample } };
   const seconds = await probeDurationSeconds(sourcePath, { run, ffprobe });
-  if (!sample && seconds <= 2) throw new Error('video too short to auto-generate safe sample');
+  // A short paid video still receives a *strictly shorter* free sample.
+  // Do not expose the entire video as a free preview. Sub-second clips
+  // need a source playable for at least a few frames at 30 FPS.
+  if(!sample && seconds < 0.3)throw Error('video shorter than playable preview minimum');
   let generatedThumbnail = null;
   try {
     const thumbnailResult = thumbnail
@@ -69,7 +72,7 @@ export async function prepareMissingPreviewAssets({
       ? { kind: 'existing', value: sample }
       : await prepareSampleVideo({
           inputPath: sourcePath, outputPath: sampleOutputPath, run, ffprobe, ffmpeg,
-          limitSeconds: seconds > 30 ? 30 : Math.floor(seconds / 3 * 100) / 100
+          limitSeconds: seconds > 30 ? 30 : Math.max(0.1,Math.floor(seconds / 3 * 100) / 100)
         });
     if (!sample && sampleResult.kind !== 'clipped') throw new Error('paid main must not be copied fully as free sample');
     return { thumbnail: thumbnailResult, sample: sampleResult };
