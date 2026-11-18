@@ -18,7 +18,7 @@ test('native Telegram start opens existing main menu; callback enters reuse-base
  });
  await handler({message:{from:{id:33},chat:{id:33,type:'private'},message_id:5,text:'/start'}});
  assert.equal(calls[0].m,'screen');
- assert.equal(calls[0].p.reply_markup.inline_keyboard[0][0].callback_data,'menu:listing');
+ assert.equal(calls[0].p.reply_markup.inline_keyboard[0][0].callback_data,'menu:video');
  assert.equal(calls[0].p.reply_markup.inline_keyboard[0][1].callback_data,'menu:stickers');
  assert.equal(states.get(33).screenMessageId,11);
  await handler({message:{from:{id:33},chat:{id:33,type:'private'},message_id:6,text:'/start'}});
@@ -142,24 +142,20 @@ test('text-linked field edit works only after video registration and for current
   message_id:150,video:{file_id:'video_001'},caption:'作品タイトル'}});
  assert.equal(states.get(33).revision,3);
  const screen=calls.filter(x=>x.method==='screen').at(-1).panel;
- assert.equal(states.get(33).screen,'description');
- assert.equal(screen.entities,undefined);
- await handler({callback_query:{id:'skip_desc',from:{id:33},data:'entry:skip|r3',
-  message:{chat:{id:33,type:'private'},message_id:41}}});
  assert.equal(states.get(33).screen,'editor');
- const final=calls.filter(x=>x.method==='screen').at(-1).panel;
- assert.ok(final.entities.some(e=>e.url.endsWith('ved_title_r4')));
- assert.ok(final.entities.some(e=>e.url.endsWith('ved_description_r4')));
- assert.ok(final.reply_markup.inline_keyboard.flat().every(b=>!b.text.includes('編集')));
- const result=await handler(priv(33,'/start ved_title_r4'));
+ assert.ok(screen.entities.some(e=>e.url.endsWith('ved_title_r3')));
+ assert.ok(screen.entities.some(e=>e.url.endsWith('ved_description_r3')));
+ assert.equal(screen.entities.length,6);
+ assert.ok(screen.reply_markup.inline_keyboard.flat().every(b=>!b.text.includes('編集')));
+ const result=await handler(priv(33,'/start ved_title_r3'));
  assert.equal(result.handled,true);
  assert.equal(states.get(33).waiting,'title');
- assert.equal(states.get(33).revision,5);
+ assert.equal(states.get(33).revision,4);
  assert.ok(calls.some(x=>x.method==='deleteMessage'), 'deep link command is cleaned up');
- const stale=await handler(priv(33,'/start ved_price_r4'));
- assert.ok(!stale?.revision || stale?.revision!==6);
+ const stale=await handler(priv(33,'/start ved_price_r3'));
+ assert.ok(!stale?.revision || stale?.revision!==5);
  await handler({message:{chat:{id:33,type:'private'},from:{id:33},
   message_id:151,text:'変更後タイトル'}});
  assert.equal(states.get(33).draft.title,'変更後タイトル');
- assert.equal(states.get(33).revision,6);
+ assert.equal(states.get(33).revision,5);
 });
