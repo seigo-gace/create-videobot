@@ -63,7 +63,21 @@ test('failed sample does not leave a partial auto thumbnail or tamper with origi
   assert.deepEqual((await readdir(dir)).sort(),['main.mp4']);
   assert.equal(await readFile(src,'utf8'),'paid source must not be touched');
 }));
-test('very short paid video is never made freely available in full',()=>fixture(async({src,jpg,mp4,dir})=>{
-  await assert.rejects(()=>prepareMissingPreviewAssets({sourcePath:src,thumbnailOutputPath:jpg,sampleOutputPath:mp4,run:runFake({duration:1.4})}),/too short/);
-  assert.deepEqual((await readdir(dir)).sort(),['main.mp4']);
+test('one-second paid video gets strictly shorter automatic free sample',()=>fixture(async({src,jpg,mp4})=>{
+ const calls=[];
+ const result=await prepareMissingPreviewAssets({
+  sourcePath:src,thumbnailOutputPath:jpg,sampleOutputPath:mp4,
+  run:runFake({duration:1.4,calls})
+ });
+ assert.equal(result.thumbnail.kind,'generated');
+ assert.equal(result.sample.kind,'clipped');
+ assert.ok(result.sample.durationSeconds<1.4);
+ const clip=calls.find(c=>c.command==='ffmpeg'&&c.args.includes('-t'));
+ assert.ok(Number(clip.args[clip.args.indexOf('-t')+1])<1.4);
+}));
+test('unplayably tiny video fails without publishing original',()=>fixture(async({src,jpg,mp4,dir})=>{
+ await assert.rejects(()=>prepareMissingPreviewAssets({
+  sourcePath:src,thumbnailOutputPath:jpg,sampleOutputPath:mp4,
+  run:runFake({duration:0.1})}),/shorter than playable/);
+ assert.deepEqual((await readdir(dir)).sort(),['main.mp4']);
 }));
