@@ -3,9 +3,12 @@
  * Do not log request URL: it contains the Bot Token.
  */
 const METHODS = new Set(['editMessageCaption', 'editMessageReplyMarkup', 'getMe', 'sendPaidMedia', 'sendPhoto', 'sendMediaGroup', 'deleteMessage', 'getFile', 'getStarTransactions', 'getMyName', 'getMyDescription', 'getMyShortDescription', 'getMyCommands', 'getWebhookInfo', 'getUpdates', 'setWebhook', 'setMyName', 'setMyDescription', 'setMyShortDescription', 'setMyCommands', 'sendMessage', 'editMessageText', 'answerCallbackQuery', 'uploadStickerFile', 'getStickerSet', 'createNewStickerSet', 'addStickerToSet', 'replaceStickerInSet', 'deleteStickerFromSet', 'setStickerPositionInSet', 'setStickerEmojiList', 'setStickerSetTitle', 'deleteStickerSet', 'sendInvoice', 'createInvoiceLink', 'answerPreCheckoutQuery', 'sendSticker', 'getChat', 'getChatMember', 'pinChatMessage']);
-export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeoutMs=8000}) {
+export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeoutMs=8000,
+ baseUrl='https://api.telegram.org'}) {
  if(typeof token!=='string' || !/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)) throw new Error('invalid Bot Token');
  if(typeof fetchImpl!=='function') throw new Error('fetch implementation required');
+ if(!['https://api.telegram.org','http://telegram-bot-api:8081'].includes(baseUrl))
+   throw Error('unverified Bot API endpoint');
  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<100||timeoutMs>30000) throw new Error('invalid API timeout');
  return async function telegramBotApi(method, params={}) {
   if(!METHODS.has(method)) throw new Error('Telegram method not allowed');
@@ -48,7 +51,7 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
     body=JSON.stringify(params);
     headers={'content-type':'application/json'};
   }
-  const response=await fetchImpl('https://api.telegram.org/bot'+token+'/'+method,{
+  const response=await fetchImpl(baseUrl+'/bot'+token+'/'+method,{
    method:'POST',...(headers?{headers}:{}),
    body,signal:AbortSignal.timeout(timeoutMs),redirect:'error'
   });
