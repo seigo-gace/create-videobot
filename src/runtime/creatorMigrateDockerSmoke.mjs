@@ -19,7 +19,26 @@ try {
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==17)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==18)throw new Error('schema re-application invalid');
+ // Real PostgreSQL proof: exceptional update is retained privately,
+ // reinsertions with the same fingerprint are idempotent, and mismatches fail.
+ const unknown={update_id:88001,callback_query:{data:'review:publish|r3'}};
+ const raw=JSON.stringify(unknown),digest='a'.repeat(64);
+ const insertUnknown=async(hash,payload)=>pool.query(
+   `INSERT INTO videobot_poll_quarantine(update_id,payload_sha256,payload,reason)
+      VALUES ($1,$2,$3::jsonb,'WEBHOOK_UPDATE_NEEDS_RECONCILE')
+      ON CONFLICT (update_id) DO UPDATE SET updated_at=NOW()
+      WHERE videobot_poll_quarantine.payload_sha256=EXCLUDED.payload_sha256
+      RETURNING update_id`,[88001,hash,JSON.stringify(payload)]);
+ const firstUnknown=await insertUnknown(digest,unknown);
+ const duplicateUnknown=await insertUnknown(digest,unknown);
+ const wrongUnknown=await insertUnknown('b'.repeat(64),unknown);
+ const keptUnknown=await pool.query(
+   'SELECT payload_sha256,payload FROM videobot_poll_quarantine WHERE update_id=88001');
+ if(firstUnknown.rowCount!==1||duplicateUnknown.rowCount!==1||
+    wrongUnknown.rowCount!==0||keptUnknown.rows[0]?.payload_sha256.trim()!==digest||
+    JSON.stringify(keptUnknown.rows[0].payload)!==raw)
+   throw Error('POLL_QUARANTINE_DB_RECEIPT_NOT_DURABLE');
  // Exercise the actual Node adapter against PostgreSQL, not an in-memory fake.
  const inventory=createPostgresStickerInventory(pool);
  // Regression: a failed conversion/upload before the Telegram pack-write
