@@ -271,6 +271,15 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     // callbacks after the owning session has advanced to another screen.
     // Reconstruct a current owner-only panel, but do NOT publish, delete or
     // approve rights from an obsolete callback.
+    if(code.startsWith('review:') && !old?.draft) {
+      // A completed publication has no editable draft. Old buttons must
+      // respond with the owner's current listing screen, never repeat a sale.
+      const items=await listingStore.listByOwner(ownerId);
+      return persistAndRender(ownerId,old,{
+        ...old,screen:'my_videos',page:0,waiting:null
+      },rev=>myVideosPanel({sellerId:String(ownerId),
+        listings:items,page:0,revision:rev}));
+    }
     if(code.startsWith('review:') && old?.draft) {
       const receivedRevision=/\|r([1-9][0-9]*)$/.exec(code);
       const obsolete=old.screen!=='review' || old.screenMessageId!==messageId ||
