@@ -108,53 +108,50 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   if(!Number.isSafeInteger(revision)||revision<0)throw new Error('invalid screen revision');
   const btn=(text,action)=>({text,callback_data:action+(revision?'|r'+revision:'')});
   if(screen==='await_video' || (screen==='editor'&&!draft.paidVideo)){
-    return {text:'🎬 動画を投稿\n\nタイトルと動画を投稿してください。\n動画のキャプションにタイトルを入力し、1回で送信してください。',
-      reply_markup:{inline_keyboard:[[btn('📦 Myビデオを見る','menu:manage'),btn('❌ キャンセル','edit:cancel')]]}};
+    return {text:'🎬 新規動画を投稿\n\nタイトルと動画を投稿してください。\n動画のキャプションへタイトルを入力し、一緒に送信してください。',
+      reply_markup:{inline_keyboard:[[btn('🔙 戻る','menu:manage'),btn('❌ キャンセル','edit:cancel')]]}};
   }
-  if(screen==='description'){
-    return {text:'🎬 動画のアルバムプレビュー\n\n'+
-      '📝 タイトル：'+draft.title+'\n'+
-      '🖼 サムネ：'+(draft.thumbnail?'自動生成済み':'未生成')+'\n'+
-      '🎞 サンプル：'+(draft.sample?'先頭'+draft.sample.durationSeconds+'秒':'未生成')+'\n'+
-      '🎬 有料本編：登録済み\n\n'+
-      '次は動画の説明を入力してください。（スキップ可）',
-      reply_markup:{inline_keyboard:[
-        [btn('⏭ スキップ','entry:skip')],
-        [btn('❌ キャンセル','edit:cancel')]
-      ]}};
-  }
-  const rows=[
-    '🎬 動画の登録内容','',
-    '［編集］ タイトル：'+draft.title,
-    '［編集］ 説明：'+(draft.description||'なし'),
-    '🖼 サムネ：'+(draft.thumbnail?'登録済み':'未生成'),
-    '🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒）':'未生成'),
-    '🎬 本動画：登録済み',
-    '⭐ Stars：'+(draft.priceStars==null?'未設定':draft.priceStars+' Stars'),
-    managementFeeDisclosure(draft.priceStars)
-  ];
+  const rows=['👁 プレビュー','','［編集］タイトル：'+(draft.title||'未登録')];
+  if(draft.description)rows.push('［編集］説明：'+draft.description);
+  else rows.push('説明：[未登録]');
+  rows.push(
+    '［編集］価格：'+(draft.priceStars==null?'未設定':'⭐ '+draft.priceStars+' Stars'),
+    '［編集］🖼 サムネ：'+(draft.thumbnail?'登録済み':'未生成'),
+    '［編集］🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒）':'未生成'),
+    '［編集］🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録')
+  );
+  if(draft.mode==='edit'&&draft.rightsVerified&&draft.adultConsentVerified&&draft.feeTermsAccepted)
+    rows.push('☑ 規約約款同意済み');
+  rows.push('',managementFeeDisclosure(draft.priceStars));
   const text=rows.join('\n');
   const entities=[];
-  for(const [field,index] of [['title',2],['description',3]]){
+  const fields=[
+    ['title',2,'［編集］'],
+    ['description',3,draft.description?'［編集］':'[未登録]'],
+    ['price',4,'［編集］'],
+    ['thumbnail',5,'［編集］'],
+    ['sample',6,'［編集］'],
+    ['paidVideo',7,'［編集］']
+  ];
+  for(const [field,index,mark] of fields) {
     const offset=rows.slice(0,index).reduce((n,v)=>n+v.length+1,0);
-    entities.push({type:'text_link',offset,length:'［編集］'.length,
+    const inRow=rows[index].indexOf(mark);
+    if(inRow<0)throw new Error('invalid inline editor label');
+    entities.push({type:'text_link',offset:offset+inRow,length:mark.length,
       url:'https://t.me/CreateVdobot?start=ved_'+field+'_r'+revision});
   }
   if(screen==='price'){
-    return {text:text+'\n\nStars価格を選択してください。自由入力は数字のみ（1〜25000）。',entities,
+    return {text:text+'\n\nStars価格を選択してください。自由入力は通常の入力欄へ数字のみ（1〜25000）。',entities,
       reply_markup:{inline_keyboard:[
         PRICE_PRESETS.slice(0,3).map(n=>btn(n+' ⭐','edit:price:'+n)),
         [...PRICE_PRESETS.slice(3).map(n=>btn(n+' ⭐','edit:price:'+n)),
           btn('自分で決める','edit:price:custom')],
-        [btn('↩ 戻る','edit:back')]
+        [btn('🔙 戻る','edit:back')]
       ]}};
   }
-  return {text:text+'\n\n※［登録］で権利・出演者の成人と掲載同意、および売上の管理費30%に同意して公開します。',
-    entities,reply_markup:{inline_keyboard:[
-      [btn('🎬 動画変更','edit:paidVideo'),btn('🖼 サムネ変更','edit:thumbnail'),btn('🎞 サンプル変更','edit:sample')],
-      [btn('⭐ Stars設定','edit:price'),btn('✅ 登録','entry:register'),btn('❌ キャンセル','edit:cancel')],
-      [btn('📦 Myビデオを見る','menu:manage')]
-    ]}};
+  return {text,entities,reply_markup:{inline_keyboard:[
+    [btn('✅ 投稿する','entry:register'),btn('❌ キャンセル','edit:cancel')]
+  ]}};
 }
 
 export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, notice = '' } = {}) {
@@ -243,27 +240,35 @@ export function confirmedWithdrawal({ amount, availableBefore, officialTransferC
 /** Creator can see exactly what will publish, then explicitly confirm rights
  * for the current paid-video revision before publishing. No side effects.
  */
+/** One explicit terms step after preview. Telegram buttons are only
+ * offered when the private user's agreement flag is persisted. */
 export function creatorReviewPanel(draft, revision = 0, note = '') {
   expectDraft(draft);
   if(!Number.isSafeInteger(revision)||revision<1)throw new Error('invalid review revision');
   const missing=['thumbnail','sample','paidVideo','title','priceStars'].filter(k=>!draft[k]);
-  const ready=missing.length===0 && draft.rightsVerified===true && draft.adultConsentVerified===true;
-  const keys=[
-    [{text:draft.rightsVerified&&draft.adultConsentVerified?'✅ 権利・出演者確認済み':'📜 権利・出演者を確認',callback_data:'review:rights|r'+revision}],
-    [{text:'✅ 投稿する',callback_data:'review:publish|r'+revision},
-     {text:'↩ 編集に戻る',callback_data:'review:edit|r'+revision},
+  const agreed=draft.rightsVerified===true&&draft.adultConsentVerified===true&&
+    draft.feeTermsAccepted===true;
+  const text=[
+    '📋 投稿前の規約・約款確認','',
+    '投稿タイトル：'+(draft.title||'未登録'),
+    '販売価格：'+(draft.priceStars==null?'未設定':draft.priceStars+' Stars'),
+    managementFeeDisclosure(draft.priceStars),'',
+    '・投稿者は動画の掲載権限を持ち、出演者全員が18歳以上で掲載に同意していることを確認します。',
+    '・設定したStars売上の30%を運営費として差し引きます。',
+    '・購入後にコンテンツが引き渡された取引は、原則として返金を行いません。ただし法令やTelegramの公式制度で必要な対応を除きます。',
+    '・Botは出品者と購入者の取引を仲介します。',
+    '',
+    agreed?'☑ 規約・約款に同意済み':'☐ 内容を確認し、規約・約款に同意する',
+    missing.length?'⚠️ 未生成・未設定：'+missing.join('・'):'',
+    note
+  ].filter(Boolean).join('\n');
+  const row=[
+    {text:agreed?'☑ 同意を取り消す':'☐ 内容を確認して同意する',callback_data:'review:agree|r'+revision}
+  ];
+  const actions=[
+    ...(agreed&&!missing.length?[[{text:'✅ 投稿する',callback_data:'review:publish|r'+revision}]]:[]),
+    [{text:'🔙 プレビューへ戻る',callback_data:'review:edit|r'+revision},
      {text:'❌ キャンセル',callback_data:'review:cancel|r'+revision}]
   ];
-  const text=['👁 動画販売プレビュー','',
-    'タイトル：'+(draft.title||'未入力'),
-    '価格：'+(draft.priceStars==null?'未設定':'⭐ '+draft.priceStars+' Stars'),
-    managementFeeDisclosure(draft.priceStars),
-    '🖼 サムネ：'+(draft.thumbnail?'登録済み（ネタバレ）':'未登録'),
-    '🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒・ネタバレ）':'未登録'),
-    '🎬 有料本編：'+(draft.paidVideo?'登録済み・Starsロック':'未登録'),
-    '📜 権利・同意：'+(draft.rightsVerified&&draft.adultConsentVerified?'確認済み':'未確認（出演者全員の成人・掲載同意）'),
-    '', missing.length?'⚠️ 未登録：'+missing.join('・'):ready?'✅ 投稿内容を確認してください。':'⚠️ この動画の権利・出演者全員の成人と掲載同意を確認してください。',
-    '無料アルバムとStars有料本編は別メッセージで投稿します。',
-    '［✅ 投稿する］を押すと、売上の30%を運営管理費として差し引く条件に同意した扱いになります。',note].filter(Boolean).join('\n');
-  return {text,reply_markup:{inline_keyboard:keys}};
+  return {text,reply_markup:{inline_keyboard:[row,...actions]}};
 }
