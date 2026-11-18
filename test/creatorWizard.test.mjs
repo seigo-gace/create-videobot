@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCreatorWizard } from '../src/telegram/creatorWizard.mjs';
 
-function setup({listingStoreOverride={},publishListing,salesProvider}={}){
+function setup({listingStoreOverride={},publishListing,salesProvider,mediaProcessorOverride={}}={}){
   const states=new Map(),calls=[],screens=[];
   const sessionStore={
     async read(id){return states.get(id)??null;},
@@ -43,7 +43,7 @@ function setup({listingStoreOverride={},publishListing,salesProvider}={}){
       return {thumbnail:{fileId:'photo_auto_1'},sample:{fileId:'sample_auto_1',durationSeconds:30}};
     }
   };
-  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor,publishListing,salesProvider});
+  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor:{...mediaProcessor,...mediaProcessorOverride},publishListing,salesProvider});
   const callback=(action,id=101,from=33)=>handler.handle({
     callback_query:{id:'cq_'+action,from:{id:from},data:action,
       message:{chat:{id:33,type:'private'},message_id:id}}
@@ -431,4 +431,19 @@ test('stale review buttons refresh current draft without publishing or canceling
     assert.match(x.screens.at(-1).panel.text,/前の画面のボタン/);
   }
   assert.equal(published.length,0);
+});
+
+test('video preview failure keeps source video and displays 20MB download blocker',async()=>{
+  const x=setup({mediaProcessorOverride:{
+    async prepareMissingPreviews(){throw Error('file exceeds Bot API download limit');}
+  }});
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main_large_001',duration:360},caption:'長い動画'},410);
+  const session=x.states.get(33);
+  assert.equal(session.draft.paidVideo.fileId,'main_large_001');
+  assert.equal(session.draft.thumbnail,null);
+  assert.equal(session.draft.sample,null);
+  assert.match(x.screens.at(-1).panel.text,/20MB取得上限/);
+  assert.equal(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===410),false,
+    'failed media preparation must not delete the only visible source video');
 });
