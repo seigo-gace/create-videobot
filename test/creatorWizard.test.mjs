@@ -160,7 +160,8 @@ test('creator confirms rights and explicitly publishes only after verified store
  assert.equal(saved[0].owner,33);
  assert.equal(x.states.get(33).draft,null);
  assert.match(x.screens.at(-1).panel.text,/投稿を確認しました/);
- await assert.rejects(()=>x.callback('review:publish|r7'),/CREATOR_SCREEN_STALE|CREATOR_NOT_IN_REVIEW/);
+ await x.callback('review:publish|r7');
+ assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(published.length,1);
 });
 test('unknown paid-media send result locks creator flow for explicit reconciliation',async()=>{
