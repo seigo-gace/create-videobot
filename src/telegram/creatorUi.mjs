@@ -157,7 +157,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     ]}};
 }
 
-export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {}) {
+export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, notice = '' } = {}) {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('invalid listing screen revision');
   if (typeof sellerId !== 'string' || !USER_ID.test(sellerId)) throw new Error('seller verification required');
   if (!Array.isArray(listings) || !Number.isSafeInteger(page) || page < 0) throw new Error('invalid pagination');
@@ -165,26 +165,27 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0 } = {
   if (owned.some(v => !ID.test(v.id || '') || typeof v.title !== 'string')) throw new Error('invalid video listing');
   const pages = Math.max(1, Math.ceil(owned.length / 10));
   if (page >= pages) throw new Error('page outside listing range');
-  const keyboard = [];
-  for (const item of owned.slice(page * 10, page * 10 + 10)) {
-    // Sticker My Packs layout: one compact row per owned product.
-    // Keep item details reachable and avoid splitting edit/delete into
-    // detached rows that are easy to associate with the wrong product.
-    const amount = item.priceStars == null ? '未設定' : price(item.priceStars) + ' Stars';
-    keyboard.push([
-      { text: (item.title.length > 18 ? item.title.slice(0, 17) + '…' : item.title) + '｜⭐' + amount,
-        callback_data: 'video:open:' + item.id },
-      { text: '✏️ 編集', callback_data: 'video:edit:' + item.id },
-      { text: '🗑 削除', callback_data: 'video:delete:' + item.id }
-    ]);
+  const items=owned.slice(page*10,page*10+10);
+  const intro=notice || (owned.length ? '🎬 登録済み動画' : '現在動画は未登録です。\n🆕新規動画を登録してください。');
+  const rows=[intro];
+  const entities=[];
+  for(const [index,item] of items.entries()){
+    const prefix='［編集］';
+    const row=prefix + (item.status==='published'?'🎬 ':'🆕') + item.title;
+    const offset=rows.join('\n').length+1;
+    // Telegram deep link is owner- and revision-validated by the wizard.
+    entities.push({type:'text_link',offset,length:prefix.length,
+      url:'https://t.me/CreateVdobot?start=ved_video_'+item.id+'_r'+revision});
+    rows.push(row);
   }
-  keyboard.push([{text:'🆕 新しい動画を投稿',callback_data:'menu:listing'}]);
-  const nav = [];
-  if (page > 0) nav.push({ text: '◀ 前へ', callback_data: 'video:page:' + (page - 1) });
-  if (page + 1 < pages) nav.push({ text: '次へ ▶', callback_data: 'video:page:' + (page + 1) });
-  if (nav.length) keyboard.push(nav);
-  keyboard.push([{ text: '↩ 戻る', callback_data: 'menu:home' }]);
-  return { text: '📦 マイ動画\n※ 販売売上から管理費30%が差し引かれ、投稿者分は70%です。\n' + (owned.length ? (page * 10 + 1) + '〜' + Math.min(owned.length, page * 10 + 10) + ' / ' + owned.length + '件' : 'まだ登録された動画はありません。'), reply_markup: { inline_keyboard: revision ? keyboard.map(row => row.map(b=>({...b,callback_data:b.callback_data==='menu:home'?'menu:home':b.callback_data+'|r'+revision}))) : keyboard } };
+  const btn=(text,data)=>({text,callback_data:data});
+  const nav=[];
+  if(page>0)nav.push(btn('◀ 前へ','video:page:'+(page-1)+'|r'+revision));
+  if(page+1<pages)nav.push(btn('次へ ▶','video:page:'+(page+1)+'|r'+revision));
+  const keyboard=[[btn('🔙 戻る','menu:home'),btn('🆕 新規投稿','menu:listing')]];
+  if(nav.length)keyboard.push(nav);
+  return {text:rows.join('\n'),...(entities.length?{entities}:{}),
+    reply_markup:{inline_keyboard:keyboard}};
 }
 
 /** Read-only detail for the existing title and price buttons on My Videos.
