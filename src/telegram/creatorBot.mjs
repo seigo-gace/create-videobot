@@ -64,6 +64,9 @@ export function createCreatorBotUpdateHandler(options={}) {
       const inlineEdit=/^\/start(?:@[A-Za-z0-9_]+)?\s+ved_(title|description|paidVideo|thumbnail|sample|price)_r([1-9][0-9]*)$/
         .exec(message.text.trim());
       if(inlineEdit)return wizard.openTextEdit(update,inlineEdit[1],Number(inlineEdit[2]));
+      const videoEdit=/^\/start(?:@[A-Za-z0-9_]+)?\s+ved_video_([A-Za-z0-9_-]{1,40})_r([1-9][0-9]*)$/
+        .exec(message.text.trim());
+      if(videoEdit)return wizard.openOwnedVideo(update,videoEdit[1],Number(videoEdit[2]));
       // Existing video deep links enter the existing video menu directly.
       // Generic /start now uses the shared video/sticker selector.
       if(/^\/start(?:@[A-Za-z0-9_]+)?\s+video$/.test(message.text.trim()))
