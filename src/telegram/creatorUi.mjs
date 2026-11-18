@@ -69,6 +69,13 @@ export function editCreatorDraft(draft, action) {
       if (field === 'paidVideo') return { ...draft, paidVideo: value, rightsVerified:false, adultConsentVerified:false,
         dirtyFields: [...new Set([...draft.dirtyFields,'paidVideo','rightsVerified','adultConsentVerified'])] };
       break;
+    case 'confirmTerms':
+      if(!draft.paidVideo)throw new Error('main video required before agreement');
+      return {...draft,rightsVerified:true,adultConsentVerified:true,feeTermsAccepted:true,
+        dirtyFields:[...new Set([...draft.dirtyFields,'rightsVerified','adultConsentVerified','feeTermsAccepted'])]};
+    case 'clearTerms':
+      return {...draft,rightsVerified:false,adultConsentVerified:false,feeTermsAccepted:false,
+        dirtyFields:[...new Set([...draft.dirtyFields,'rightsVerified','adultConsentVerified','feeTermsAccepted'])]};
     case 'confirmRights':
       if (!draft.paidVideo) throw new Error('paid video required before rights confirmation');
       if (action.rightsVerified !== true || action.adultConsentVerified !== true)
