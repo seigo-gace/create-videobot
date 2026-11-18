@@ -459,3 +459,18 @@ test('old published review keyboard opens My Videos instead of becoming inert',a
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.match(x.screens.at(-1).panel.text,/マイ動画|Myビデオ/);
 });
+
+test('obsolete register and cancel never act on newer draft',async()=>{
+ const x=setup();
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'main001',duration:90},caption:'下書き'},210);
+ const current=x.states.get(33);
+ x.states.set(33,{...current,screen:'editor',screenMessageId:999});
+ for(const code of ['entry:register|r1','edit:cancel|r1']){
+   const result=await x.callback(code,101);
+   assert.equal(result.handled,true);
+   assert.equal(x.states.get(33).draft.paidVideo.fileId,'main001');
+   assert.equal(x.states.get(33).screen,'editor');
+   assert.match(x.screens.at(-1).panel.text,/前の画面のボタン/);
+ }
+});
