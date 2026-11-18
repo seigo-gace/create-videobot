@@ -317,7 +317,7 @@ test('video upload -> inline edit -> explicit terms -> publish once -> personal 
  assert.equal(x.calls.filter(c=>c.method==='sendMediaGroup').length,1);
  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
    ['✅ 投稿する','❌ キャンセル']);
- assert.match(x.screens.at(-1).panel.text,/説明:\[未登録\]/);
+ assert.match(x.screens.at(-1).panel.text,/説明：\[未登録\]/);
  await x.callback('edit:description|r2');
  await x.send({text:'この動画の説明です'},1002);
  await x.callback('edit:price|r4');
@@ -346,7 +346,7 @@ test('description remains optional and editable through inline text only',async(
  assert.equal(x.states.get(33).screen,'editor');
  assert.equal(x.states.get(33).draft.description,'');
  const panel=x.screens.at(-1).panel;
- assert.match(panel.text,/説明:\[未登録\]/);
+ assert.match(panel.text,/説明：\[未登録\]/);
  assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r2')));
 });
 
