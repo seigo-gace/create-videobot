@@ -253,6 +253,21 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         {...old,screen:'sales',waiting:null},rev=>salesOverviewPanel(summary,rev));
       throw new Error('UNKNOWN_SALES_ACTION');
     }
+    // Old review keyboards survive a deployment. Telegram can deliver their
+    // callbacks after the owning session has advanced to another screen.
+    // Reconstruct a current owner-only panel, but do NOT publish, delete or
+    // approve rights from an obsolete callback.
+    if(code.startsWith('review:') && old?.draft) {
+      const receivedRevision=/\\|r([1-9][0-9]*)$/.exec(code);
+      const obsolete=old.screen!=='review' || old.screenMessageId!==messageId ||
+        !receivedRevision || Number(receivedRevision[1])!==old.revision;
+      if(obsolete) {
+        return persistAndRender(ownerId,old,{
+          ...old,screen:'review',waiting:null
+        },rev=>creatorReviewPanel(old.draft,rev,
+          '前の画面のボタンでした。現在の登録内容を表示しました。もう一度選択してください。'));
+      }
+    }
     if(code.startsWith('entry:')) {
       expectSession(old,messageId);
       const action=validateRevision(code,old);
