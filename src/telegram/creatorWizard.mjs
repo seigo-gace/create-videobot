@@ -563,6 +563,12 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         if(old.draft.paidVideo?.fileId!==update.message.video.file_id){
           draft=editCreatorDraft(editCreatorDraft(draft,{type:'removeThumbnail'}),{type:'removeSample'});
         }
+        // Telegram may supply a native thumbnail for a video even when
+        // its full bytes exceed the public Bot API download limit.
+        // Reuse this owner-provided file_id before attempting FFmpeg.
+        const nativeThumbnail=update.message.video.thumbnail?.file_id;
+        if(!draft.thumbnail && typeof nativeThumbnail==='string')
+          draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:nativeThumbnail}});
         const preview=await autoPreview(ownerId,draft);
         draft=preview.draft;
         previewWarning=preview.warning;
