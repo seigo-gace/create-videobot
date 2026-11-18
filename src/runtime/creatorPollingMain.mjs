@@ -170,6 +170,7 @@ export async function runCreatorPollingMain({
   while(!signal?.aborted){
    const outcome=await rt.poller.pollBatch({timeout:8});
    if(outcome.accepted>0)onStatus('CREATOR_DM_UPDATES_HANDLED='+outcome.accepted);
+   if(outcome.quarantined>0)onStatus('CREATOR_UPDATES_QUARANTINED='+outcome.quarantined);
    if(!recoveryInFlight){
      // Never await a slow getStickerSet inside update polling.
      // Only one bounded scan runs at a time in the SAME process.
