@@ -22,6 +22,20 @@ function validateRevision(action,session) {
 function expectSession(session,screenMessageId) {
   if(!session?.draft || session.screenMessageId!==screenMessageId)throw new Error('CREATOR_SCREEN_STALE');
 }
+function safePreviewFailure(error) {
+  const message=String(error instanceof Error?error.message:'');
+  if(/file exceeds Bot API download limit|download exceeds configured limit|file is too big/i.test(message))
+    return '⚠️ 動画がBot APIの20MB取得上限を超えています。元動画は保持していますが、現在の取得方式ではサムネとサンプルを生成できません。';
+  if(/video too short|invalid video duration|invalid sample length/i.test(message))
+    return '⚠️ 動画が短すぎる、または再生時間を確認できないため、無料サンプルを生成できませんでした。';
+  if(/download failed|file path invalid|getFile|ETELEGRAM|timeout|fetch failed/i.test(message))
+    return '⚠️ Telegramから動画を取得できませんでした。動画を保持したまま再試行できます。';
+  if(/ffmpeg|ffprobe|thumbnail not generated|sample|spawn|invalid data found|conversion/i.test(message))
+    return '⚠️ 動画の変換処理に失敗しました。元動画を保持しています。';
+  if(/upload|sendPhoto|sendVideo|storage/i.test(message))
+    return '⚠️ 自動生成した素材をTelegramへ登録できませんでした。元動画は保持しています。';
+  return '⚠️ サムネ・サンプルの自動生成に失敗しました。元動画は保持されています。';
+}
 function statusPanel(draft,rev,extra='',screen='editor') {
   const p=creatorEditorPanel(draft,rev,screen);
   return {...p,text:p.text+(extra?'\n\n'+extra:'')};
@@ -439,7 +453,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         if(!prepared.sample&&refs?.sample)
           prepared=editCreatorDraft(prepared,{type:'sample',media:refs.sample});
       }catch(e){
-        warning='⚠️ 自動サムネ・サンプル生成に失敗しました。素材変更から登録してください。';
+        warning=safePreviewFailure(e);
       }
     }
     if(prepared.thumbnail&&prepared.sample){
