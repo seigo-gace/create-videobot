@@ -75,7 +75,11 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
     const description=typeof reply?.description==='string'?reply.description.toLowerCase():'';
     if(/^bad request: message is not modified$/.test(description))
       return {alreadyCurrent:true};
-    throw Error('message cannot be edited');
+    // Positive owner DM is a reversible editor presentation failure.
+    // Public sales/sticker caption edits retain their distinct safety contract.
+    if(Number.isSafeInteger(params.chat_id)&&params.chat_id>0)
+      throw Error('message cannot be edited');
+    throw Error('Telegram API request failed');
   }
   if(response.status===400&&method==='editMessageText'){
     let reply;
