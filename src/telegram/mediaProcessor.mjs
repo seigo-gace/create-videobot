@@ -1,7 +1,7 @@
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {prepareSampleVideo} from '../sales/sampleMedia.mjs';
+import {prepareSampleVideo,probeDurationSeconds} from '../sales/sampleMedia.mjs';
 import {prepareMissingPreviewAssets} from '../sales/autoPreview.mjs';
 
 /** Bridges existing media processors with the trusted Telegram media store.
@@ -36,6 +36,20 @@ export function createVideoMediaProcessor({
     return result.fileId;
   }
   return {
+    // A Telegram document file_id cannot be reused as a video file_id.
+    // Verify the actual file and upload it through the existing private
+    // video staging adapter before the creator editor receives it.
+    async normalizeVideoDocument(document,ownerId) {
+      if(document?.mime_type!=='video/mp4' ||
+         typeof document.file_id!=='string' ||
+         !Number.isSafeInteger(ownerId)||ownerId<=0)
+        throw new Error('MP4動画ファイルを送信してください。');
+      return withSource(document.file_id,async(path)=>{
+        await probeDurationSeconds(path,options);
+        const fileId=await uploadPrepared(path,'video',ownerId);
+        return {file_id:fileId};
+      });
+    },
     async prepareUserSample(video) {
       if(typeof video?.file_id!=='string')throw new Error('sample video required');
       return withSource(video.file_id,async(path,dir)=>{
