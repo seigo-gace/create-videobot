@@ -116,3 +116,48 @@ test('large MP4 cannot be uploaded through public Bot API or an unverified size 
  await assert.rejects(()=>publicUploader({path,type:'video',ownerId:33}),/size boundary invalid/);
  assert.equal(called,0);
 }));
+
+test('local Bot API zero-copy path normalizes 23MB document without a second upload',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'videobot-local-root-'));
+ try {
+   const path=join(dir,'owner.mp4');
+   await writeFile(path,'initial');
+   await truncate(path,23_200_000);
+   const calls=[];
+   const upload=createCreatorDmPreviewUploader({
+     token,baseUrl:'http://telegram-bot-api:8081',
+     localMediaRoot:dir,maxBytes:2_000_000_000,
+     telegramApi:async(method,params)=>{
+       calls.push({method,params});
+       if(method==='sendVideo')return {message_id:83,video:{file_id:'normalized_large_video_001'}};
+       if(method==='deleteMessage')return true;
+       throw Error('unexpected Telegram call');
+     },
+     fetchImpl:async()=>{throw Error('zero-copy must not make multipart network call');}
+   });
+   assert.deepEqual(await upload({path,type:'video',ownerId:33}),
+     {fileId:'normalized_large_video_001'});
+   assert.deepEqual(calls.map(x=>x.method),['sendVideo','deleteMessage']);
+   assert.equal(calls[0].params.video,path);
+   assert.equal(calls[0].params.chat_id,33);
+   assert.equal(calls[1].params.message_id,83);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('local path upload rejects symlink and media outside approved root',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'videobot-path-root-'));
+ const outside=await mkdtemp(join(tmpdir(),'videobot-outside-'));
+ try {
+   const path=join(outside,'outside.mp4');await writeFile(path,'MP4');
+   let called=false;
+   const upload=createCreatorDmPreviewUploader({
+     token,baseUrl:'http://telegram-bot-api:8081',
+     localMediaRoot:root,maxBytes:2_000_000_000,
+     telegramApi:async()=>{called=true;throw Error('must not call');},
+     fetchImpl:async()=>{called=true;throw Error('must not call');}
+   });
+   // Untrusted path outside the shared Bot API volume is eligible only for
+   // an ordinary bounded multipart upload, never zero-copy path disclosure.
+   await assert.rejects(()=>upload({path,type:'video',ownerId:33}),/must not call/);
+   assert.equal(called,true);
+ }finally{await rm(root,{recursive:true,force:true});await rm(outside,{recursive:true,force:true});}
+});
