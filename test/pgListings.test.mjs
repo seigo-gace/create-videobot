@@ -8,7 +8,7 @@ function fakeDb(){
     return {listing_id:id,seller_user_id:owner,revision:1,title:d[0],price_stars:d[1],
       price_mode:d[2],thumbnail_file_id:d[3],sample_file_id:d[4],
       sample_duration_seconds:d[5],paid_video_file_id:d[6],
-      rights_verified:d[7],adult_consent_verified:d[8],fee_terms_accepted_at:d[9]?'CI-consented':null,
+      rights_verified:d[7],adult_consent_verified:d[8],fee_terms_accepted_at:d[9]?d[13]:null,
       management_fee_bps:3000,description:d[10]??'',creator_terms_version:d[11]??null,creator_terms_url:d[12]??null,status:'draft'};
   }
   const query=async(sql,params)=>{
@@ -159,8 +159,23 @@ test('posting agreement keeps version and URL in database, and legacy unversione
  const initial=await store.createDraft(33,'terms_ok',example({feeTermsAccepted:true}));
  assert.equal(initial.termsVersion,'1.0');
  assert.equal(initial.termsUrl,'https://example.test/createvdobot-terms.html');
+ assert.equal(initial.termsAcceptedAt,'2026-11-19T12:00:00.000Z');
  assert.ok(initial.termsAcceptedAt);
  const invalid=example({feeTermsAccepted:true,termsVersion:null});
  await assert.rejects(()=>store.createDraft(33,'terms_invalid',invalid),/versioned creator terms/);
  assert.equal(db.rows.has('terms_invalid'),false);
+});
+
+test('updated creator draft retains exact original acceptance timestamp; clearing terms removes it',async()=>{
+ const db=fakeDb(),store=createPostgresListingStore(db);
+ const accepted=example({feeTermsAccepted:true,termsAcceptedAt:'2026-11-19T12:34:56.789Z'});
+ const first=await store.createDraft(33,'time001',accepted);
+ assert.equal(first.termsAcceptedAt,accepted.termsAcceptedAt);
+ const next=await store.updateDraft(33,'time001',first.revision,accepted);
+ assert.equal(next.termsAcceptedAt,accepted.termsAcceptedAt);
+ const cleared=await store.updateDraft(33,'time001',next.revision,example({feeTermsAccepted:false}));
+ assert.equal(cleared.feeTermsAccepted,false);
+ assert.equal(cleared.termsAcceptedAt,null);
+ assert.equal(cleared.termsVersion,null);
+ assert.equal(cleared.termsUrl,null);
 });
