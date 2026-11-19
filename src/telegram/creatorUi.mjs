@@ -168,7 +168,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   ]}};
 }
 
-export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, notice = '' } = {}) {
+export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, notice = '', updatedId = null } = {}) {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('invalid listing screen revision');
   if (typeof sellerId !== 'string' || !USER_ID.test(sellerId)) throw new Error('seller verification required');
   if (!Array.isArray(listings) || !Number.isSafeInteger(page) || page < 0) throw new Error('invalid pagination');
@@ -182,7 +182,7 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
   const entities=[];
   for(const [index,item] of items.entries()){
     const prefix='［編集］';
-    const row=prefix + (item.status==='published'?'🎬 ':'🆕') + item.title;
+    const row=prefix + (item.id===updatedId?'📝 ':item.status==='published'?'🎬 ':'🆕') + item.title;
     const offset=rows.join('\n').length+1;
     // Telegram deep link is owner- and revision-validated by the wizard.
     entities.push({type:'text_link',offset,length:prefix.length,
