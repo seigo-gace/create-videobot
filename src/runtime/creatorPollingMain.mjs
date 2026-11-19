@@ -105,7 +105,7 @@ export async function createCreatorPollingRuntime({
   const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch,
     ...(localApi?{localFileRoot:env.VIDEOBOT_LOCAL_MEDIA_ROOT,maxBytes:2_000_000_000}:{})});
   const saveGenerated=createCreatorDmPreviewUploader({token,fetchImpl:outbound.fetch,
-    telegramApi:api,baseUrl});
+    telegramApi:api,baseUrl,maxBytes:localApi?2_000_000_000:20_000_000});
   source=createSource({
    pool,telegramApi:api,gateOwner,botToken:token,
    stickerShopBaseUrl:env.VIDEOBOT_SHOP_PUBLIC_URL??null,
