@@ -108,3 +108,22 @@ test('ambiguous Telegram caption response never sends a second editor',async()=>
    /WIZARD_ALBUM_EDIT_RESULT_UNKNOWN/);
  assert.deepEqual(calls,['editMessageCaption']);
 });
+
+test('single media field uses actual registered photo and never edits or removes owning album',async()=>{
+ const calls=[];
+ const api=async(method,params)=>{
+   calls.push({method,params});
+   if(method==='sendPhoto')return {message_id:220};
+   return true;
+ };
+ const transport=createVideoBotScreenTransport(api);
+ const panel={text:'🖼 サムネ：登録済み\n──────────\n画像を変更する場合は送信してください。',
+   mediaPreview:{type:'photo',fileId:'thumb_existing'},
+   reply_markup:{inline_keyboard:[[{text:'🔙 戻る',callback_data:'edit:back|r2'}]]}};
+ const result=await transport.show(33,null,panel);
+ assert.equal(result.messageId,220);
+ assert.equal(calls[0].method,'sendPhoto');
+ assert.equal(calls[0].params.photo,'thumb_existing');
+ assert.equal(calls.some(x=>x.method==='deleteMessage'),false);
+ assert.equal(calls.some(x=>x.method==='editMessageCaption'),false);
+});
