@@ -1,5 +1,6 @@
 import {readFile,lstat,realpath} from 'node:fs/promises';
 import {resolve,sep} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {createReadStream} from 'node:fs';
 import {Readable} from 'node:stream';
 import {randomBytes} from 'node:crypto';
@@ -91,7 +92,7 @@ export function createCreatorDmPreviewUploader({
      const absolute=await realpath(path);
      if(absolute.startsWith(base+sep) && absolute!==base){
        const result=await telegramApi(type==='photo'?'sendPhoto':'sendVideo',{
-         chat_id:ownerId,[type]:absolute,disable_notification:true,protect_content:true
+         chat_id:ownerId,[type]:pathToFileURL(absolute).href,disable_notification:true,protect_content:true
        });
        const fileId=type==='photo'?result?.photo?.at(-1)?.file_id:result?.video?.file_id;
        if(typeof fileId!=='string'||!fileId.trim()||
