@@ -200,7 +200,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
             screen:'my_videos',page:0,publishing:null,waiting:null},
             rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,
               revision:rev,notice:draft.mode==='edit'?
-                '動画を編集／更新しました。':'新規動画を登録しました。'}));
+                '動画を編集／更新しました。':'新規動画を登録しました。',
+              updatedId:draft.mode==='edit'?stored.id:null}));
         } catch(e) {
           const current=await sessionStore.read(ownerId);
           return persistAndRender(ownerId,current,{
