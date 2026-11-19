@@ -108,7 +108,7 @@ test('source-composed offline Telegram webhook drives real wizard route with dur
  assert.equal(state().payload.draft.priceStars,300);
  assert.equal(state().revision,5);
  const screen=x.calls.filter(y=>y.method==='editMessageText').at(-1);
- assert.match(screen.params.text,/管理費90 Stars／投稿者分210 Stars/);
+ assert.equal(screen.params.text.includes('管理費'),false,'preview keeps fees for review step');
  const replay=await x.send(callback(5,'edit:price:300|r4'));
  assert.equal(replay.duplicate,true);
  assert.equal(state().revision,5);
