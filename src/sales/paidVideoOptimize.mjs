@@ -29,7 +29,10 @@ export async function optimizePaidMp4({
  let details;
  try{details=JSON.parse(String(stdout));}catch{throw Error('creator optimizer media probe invalid');}
  const duration=Number(details?.format?.duration);
- const video=details?.streams?.find(x=>x.codec_type==='video');
+ const streams=Array.isArray(details?.streams)?details.streams:[];
+ const videos=streams.filter(x=>x.codec_type==='video');
+ const audios=streams.filter(x=>x.codec_type==='audio');
+ const video=videos[0];
  const rate=Number(details?.format?.bit_rate);
  if(!Number.isFinite(duration)||duration<=0||!video||
     !Number.isInteger(video.width)||!Number.isInteger(video.height)||
@@ -39,8 +42,9 @@ export async function optimizePaidMp4({
  // already-small product wastes time, electricity and adds quality loss.
  const bitrate=Number.isFinite(rate)&&rate>0?rate:source.size*8/duration;
  const ceiling=Math.min(7_500_000,Math.max(1_200_000,video.width*video.height*3.0));
- if(source.size<24_000_000||bitrate<=ceiling||
-    duration>7200) return {kind:'original',path:inputPath,reason:'already_efficient_or_long',
+ if(source.size<24_000_000||bitrate<=ceiling||duration>7200||
+    videos.length!==1||streams.some(x=>!['video','audio'].includes(x.codec_type)))
+   return {kind:'original',path:inputPath,reason:'already_efficient_or_unsupported_tracks',
      bytes:source.size,durationSeconds:duration};
  // Never attempt a potentially multi-GB re-encode without enough scratch
  // space for a second independent copy and reserved operating capacity.
@@ -75,7 +79,10 @@ export async function optimizePaidMp4({
    try{result=JSON.parse(String(checked.stdout));}catch{throw Error('creator optimized verification invalid');}
    const v=result?.streams?.find(x=>x.codec_type==='video');
    const seconds=Number(result?.format?.duration);
+   const verifiedAudio=Array.isArray(result?.streams)?
+     result.streams.filter(x=>x.codec_type==='audio'):[];
    if(v?.codec_name!=='h264'||v.width!==video.width||v.height!==video.height||
+     verifiedAudio.length!==audios.length||
      !Number.isFinite(seconds)||Math.abs(seconds-duration)>Math.max(0.2,duration*0.001))
      throw Error('creator optimized video mismatch');
    // No hardlink/rename overwrite of an unrelated file.
