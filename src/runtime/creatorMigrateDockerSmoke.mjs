@@ -19,7 +19,7 @@ try {
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==18)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==19)throw new Error('schema re-application invalid');
  // Real PostgreSQL proof: exceptional update is retained privately,
  // reinsertions with the same fingerprint are idempotent, and mismatches fail.
  const unknown={update_id:88001,callback_query:{data:'review:publish|r3'}};
