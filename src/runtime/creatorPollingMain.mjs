@@ -76,6 +76,11 @@ export async function createCreatorPollingRuntime({
  const outbound=createCreatorTelegramFetch(fetchImpl);
  let api,source,poller;
  try{
+  const scratch=env.VIDEOBOT_VIDEO_WORK_ROOT??null;
+  if(scratch!==null && scratch!=='/var/lib/videobot/media-work')
+   throw Error('CREATOR_MEDIA_WORK_ROOT_NOT_ADMITTED');
+  if(env.VIDEOBOT_OWNER_JOBS==='YES'&&scratch===null)
+   throw Error('CREATOR_DURABLE_MEDIA_WORK_ROOT_REQUIRED');
   const localApi=env.VIDEOBOT_LOCAL_API_URL??null;
   if(localApi!==null && (localApi!=='http://telegram-bot-api:8081'||
     typeof env.VIDEOBOT_LOCAL_MEDIA_ROOT!=='string'||
@@ -116,7 +121,7 @@ export async function createCreatorPollingRuntime({
    stickerShopBaseUrl:env.VIDEOBOT_SHOP_PUBLIC_URL??null,
    termsUrl:env.CREATEVDOBOT_TERMS_URL??'',
    webhookSecret:pollAdmissionSecret,
-   storageApproved:true,
+   storageApproved:true,mediaWorkRoot:scratch,
    mediaPorts:{fetchSource,saveGenerated}
   });
   poller=createCreatorPollingConsumer({
