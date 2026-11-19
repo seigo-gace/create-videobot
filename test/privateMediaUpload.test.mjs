@@ -98,6 +98,10 @@ test('23 MB Telegram document reupload uses streaming local API and never buffer
      const header=Buffer.concat(collected).toString('utf8');
      assert.match(header,/name="chat_id"/);
      assert.match(header,/name="video"; filename="creator-sample.mp4"/);
+     assert.ok(header.includes('\\r\\nContent-Disposition: form-data; name="chat_id"\\r\\n\\r\\n33\\r\\n'),
+       'multipart framing must contain actual CRLF bytes');
+     assert.equal(header.includes('\\\\r\\\\n'),false,
+       'literal backslash-r/backslash-n is invalid multipart framing');
      return {ok:true,json:async()=>({ok:true,result:{message_id:72,video:{file_id:'large_dm_file'}}})};
    }
  });
