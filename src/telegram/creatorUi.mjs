@@ -130,33 +130,28 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     return {text:'🎬 新規動画を投稿\n\nタイトルと動画を投稿してください。\n動画のキャプションへタイトルを入力し、一緒に送信してください。',
       reply_markup:{inline_keyboard:[[btn('🔙 戻る','menu:manage'),btn('❌ キャンセル','edit:cancel')]]}};
   }
-  const rows=['👁 プレビュー','','［編集］タイトル：'+(draft.title||'未登録')];
-  if(draft.description)rows.push('［編集］説明：'+draft.description);
-  else rows.push('説明：[未登録]');
-  rows.push(
-    '［編集］価格：'+(draft.priceStars==null?'未設定':'⭐ '+draft.priceStars+' Stars'),
-    '［編集］🖼 サムネ：'+(draft.thumbnail?'登録済み':'未生成'),
-    '［編集］🎞 サンプル：'+(draft.sample?'登録済み（'+draft.sample.durationSeconds+'秒）':'未生成'),
-    '［編集］🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録')
-  );
+  const rows=['👁 プレビュー',''];
+  const definitions=[
+    ['title','タイトル',draft.title,draft.title],
+    ['description','説明',draft.description,draft.description],
+    ['price','価格',draft.priceStars,'⭐ '+draft.priceStars+' Stars'],
+    ['thumbnail','🖼 サムネ',draft.thumbnail,'登録済み'],
+    ['sample','🎞 サンプル',draft.sample,'登録済み'],
+    ['paidVideo','🎬 有料本編',draft.paidVideo,'登録済み']
+  ];
+  const fields=[];
+  for(const [field,label,registered,display] of definitions){
+    const mark=registered?'［編集］':'［未登録］';
+    fields.push({field,index:rows.length,mark});
+    rows.push(mark+' '+label+'：'+(registered?display:''));
+  }
   if(draft.mode==='edit'&&draft.rightsVerified&&draft.adultConsentVerified&&draft.feeTermsAccepted)
     rows.push('☑ 規約約款同意済み');
-  // Fee and payout disclosure belong to the explicit terms screen, not the preview.
   const text=rows.join('\n');
   const entities=[];
-  const fields=[
-    ['title',2,'［編集］'],
-    ['description',3,draft.description?'［編集］':'[未登録]'],
-    ['price',4,'［編集］'],
-    ['thumbnail',5,'［編集］'],
-    ['sample',6,'［編集］'],
-    ['paidVideo',7,'［編集］']
-  ];
-  for(const [field,index,mark] of fields) {
+  for(const {field,index,mark} of fields) {
     const offset=rows.slice(0,index).reduce((n,v)=>n+v.length+1,0);
-    const inRow=rows[index].indexOf(mark);
-    if(inRow<0)throw new Error('invalid inline editor label');
-    entities.push({type:'text_link',offset:offset+inRow,length:mark.length,
+    entities.push({type:'text_link',offset,length:mark.length,
       url:'https://t.me/CreateVdobot?start=ved_'+field+'_r'+revision});
   }
   if(draft.mode==='edit') {
@@ -299,33 +294,38 @@ export function confirmedWithdrawal({ amount, availableBefore, officialTransferC
  */
 /** One explicit terms step after preview. Telegram buttons are only
  * offered when the private user's agreement flag is persisted. */
-export function creatorReviewPanel(draft, revision = 0, note = '') {
+export const CREATOR_TERMS_VERSION='1.0';
+export function creatorReviewPanel(draft, revision = 0, note = '', termsUrl = '') {
   expectDraft(draft);
   if(!Number.isSafeInteger(revision)||revision<1)throw new Error('invalid review revision');
+  const validTerms=typeof termsUrl==='string' &&
+    /^https:\/\/[A-Za-z0-9.-]+\/[A-Za-z0-9/_-]+\.html$/.test(termsUrl);
   const missing=['thumbnail','sample','paidVideo','title','priceStars'].filter(k=>!draft[k]);
   const agreed=draft.rightsVerified===true&&draft.adultConsentVerified===true&&
-    draft.feeTermsAccepted===true;
+    draft.feeTermsAccepted===true&&draft.termsVersion===CREATOR_TERMS_VERSION &&
+    typeof draft.termsAcceptedAt==='string';
   const text=[
     '📋 投稿前の規約・約款確認','',
     '投稿タイトル：'+(draft.title||'未登録'),
     '販売価格：'+(draft.priceStars==null?'未設定':draft.priceStars+' Stars'),
     videoFeeDisclosure(draft.priceStars),'',
-    '・投稿者は動画の掲載権限を持ち、出演者全員が18歳以上で掲載に同意していることを確認します。',
-    '・設定したStars売上の30%を運営費として差し引きます。',
-    '・購入後にコンテンツが引き渡された取引は、原則として返金を行いません。ただし法令やTelegramの公式制度で必要な対応を除きます。',
-    '・Botは出品者と購入者の取引を仲介します。',
-    '',
-    agreed?'☑ 規約・約款に同意済み':'☐ 内容を確認し、規約・約款に同意する',
-    missing.length?'⚠️ 未生成・未設定：'+missing.join('・'):'',
+    '・投稿者は自らの責任で作品を公開・販売し、著作権・肖像権・出演者の年齢と必要な同意を確認・保証します。',
+    '・違法作品、無断撮影・転載、第三者の権利を侵害する作品の販売は禁止します。',
+    '・規約違反による損害は投稿者の責任に応じて対応し、運営者の法令上の責任を免除するものではありません。',
+    '・決済はTelegram公式Starsのみ。管理費30%、投稿者の計算上の取り分70%です。',
+    '・返品・返金は法令とTelegramの公式手続に従います。',
+    '規約バージョン：'+CREATOR_TERMS_VERSION,
+    validTerms?'全文リンクから規約を確認してください。':'⚠️ 規約本文の公開先が未確認のため、同意・投稿できません。',
+    agreed?'☑ 同意済み':'☐ 規約内容を確認して同意する',
+    missing.length?'⚠️ 未登録項目：'+missing.join('・'):'',
     note
   ].filter(Boolean).join('\n');
-  const row=[
-    {text:agreed?'☑ 同意を取り消す':'☐ 内容を確認して同意する',callback_data:'review:agree|r'+revision}
-  ];
-  const actions=[
-    ...(agreed&&!missing.length?[[{text:'✅ 投稿する',callback_data:'review:publish|r'+revision}]]:[]),
-    [{text:'🔙 プレビューへ戻る',callback_data:'review:edit|r'+revision},
-     {text:'❌ キャンセル',callback_data:'review:cancel|r'+revision}]
-  ];
-  return {text,reply_markup:{inline_keyboard:[row,...actions]}};
+  const rows=[];
+  if(validTerms)rows.push([{text:'📄 規約・約款全文',url:termsUrl}]);
+  if(validTerms)rows.push([{text:agreed?'☑ 同意を取り消す':'☐ 内容を確認して同意する',
+    callback_data:'review:agree|r'+revision}]);
+  if(validTerms&&agreed&&!missing.length)rows.push([{text:'✅ 投稿する',callback_data:'review:publish|r'+revision}]);
+  rows.push([{text:'🔙 プレビューへ戻る',callback_data:'review:edit|r'+revision},
+    {text:'❌ キャンセル',callback_data:'review:cancel|r'+revision}]);
+  return {text,reply_markup:{inline_keyboard:rows}};
 }
