@@ -540,7 +540,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const {ownerId,messageId}=privateUser(update);
     const old=await sessionStore.read(ownerId);
     if(!old?.draft)return {handled:false};
-    if(!old.waiting && !old.draft.paidVideo && update.message.video?.file_id){
+    if(!old.waiting && !old.draft.paidVideo && (update.message.video?.file_id || update.message.document?.file_id)){
       // Incoming captioned video on the new-listing screen, without extra title step.
       old.waiting='paidVideo';
     }
@@ -559,20 +559,30 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         if(!p?.file_id)throw new Error('サムネイル画像を送信してください。');
         draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:p.file_id}});
       } else if(old.waiting==='paidVideo') {
-        if(!update.message.video?.file_id)throw new Error('本編動画を送信してください。');
-        // New creation requires a caption-title; replacement may retain title.
+        if(!update.message.video?.file_id && !update.message.document?.file_id)
+          throw new Error('本編動画（MP4）を送信してください。');
+        // A document file_id cannot be passed to Telegram as video media.
+        // Keep the original owner message visible if private normalization
+        // fails and do not persist a document ID as a paid-video product.
         const caption=update.message.caption;
         const withTitle=caption?editCreatorDraft(draft,{type:'captionTitle',text:caption}):
           draft.title?draft:editCreatorDraft(draft,{type:'captionTitle',text:caption});
-        draft=editCreatorDraft(withTitle,{type:'paidVideo',media:{fileId:update.message.video.file_id}});
+        let incomingVideo=update.message.video;
+        if(update.message.document){
+          const document=update.message.document;
+          if(typeof mediaProcessor?.normalizeVideoDocument!=='function')
+            throw new Error('MP4ファイルの動画変換サービスは未接続です。');
+          incomingVideo=await mediaProcessor.normalizeVideoDocument(document,ownerId);
+        }
+        draft=editCreatorDraft(withTitle,{type:'paidVideo',media:{fileId:incomingVideo.file_id}});
         // A replacement invalidates automatically-derived previews from the previous source video.
-        if(old.draft.paidVideo?.fileId!==update.message.video.file_id){
+        if(old.draft.paidVideo?.fileId!==incomingVideo.file_id){
           draft=editCreatorDraft(editCreatorDraft(draft,{type:'removeThumbnail'}),{type:'removeSample'});
         }
         // Telegram may supply a native thumbnail for a video even when
         // its full bytes exceed the public Bot API download limit.
         // Reuse this owner-provided file_id before attempting FFmpeg.
-        const nativeThumbnail=update.message.video.thumbnail?.file_id;
+        const nativeThumbnail=update.message.video?.thumbnail?.file_id;
         if(!draft.thumbnail && typeof nativeThumbnail==='string')
           draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:nativeThumbnail}});
         const preview=await autoPreview(ownerId,draft);
@@ -590,7 +600,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const firstVideo=old.waiting==='paidVideo' && old.screen==='await_video';
     // Never erase the only visible video while three-item album creation failed.
     // Preserve the original video as the visible editor anchor until an album exists.
-    const keepOriginalVideo=firstVideo && !error && !previewMessageId;
+    const keepOriginalVideo=firstVideo && !previewMessageId;
     if(keepOriginalVideo && !error)previewMessageId=messageId;
     let inputDeleteFailed=false;
     if(!keepOriginalVideo){
@@ -615,7 +625,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     openOwnedVideo,
     async handle(update){
       if(update?.callback_query)return handleCallback(update);
-      if(update?.message && (update.message.text||update.message.photo||update.message.video))return handleInput(update);
+      if(update?.message && (update.message.text||update.message.photo||update.message.video||update.message.document))return handleInput(update);
       return {handled:false};
     }
   };
