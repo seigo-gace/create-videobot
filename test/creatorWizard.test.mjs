@@ -347,7 +347,7 @@ test('description remains optional and editable through inline text only',async(
  assert.equal(x.states.get(33).screen,'editor');
  assert.equal(x.states.get(33).draft.description,'');
  const panel=x.screens.at(-1).panel;
- assert.match(panel.text,/説明：\[未登録\]/);
+ assert.match(panel.text,/［未登録］ 説明：/);
  assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r2')));
 });
 
@@ -478,7 +478,7 @@ test('MP4 sent as a Telegram document is normalized into a video and reaches the
   assert.equal(state.draft.title,'撮影作品');
   assert.equal(state.draft.paidVideo.fileId,'normalized_video_001');
   assert.equal(state.screen,'editor');
-  assert.ok(x.screens.at(-1).panel.text.includes('［編集］タイトル：撮影作品'));
+  assert.ok(x.screens.at(-1).panel.text.includes('［編集］ タイトル：撮影作品'));
 });
 
 test('MP4 document without caption reports missing title instead of silently ignoring upload',async()=>{
