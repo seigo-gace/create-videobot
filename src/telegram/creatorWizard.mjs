@@ -166,7 +166,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
            typeof draft.termsAcceptedAt==='string'&&draft.termsUrl===termsUrl&&verifiedTermsUrl;
         if(!valid)return persistAndRender(ownerId,old,{...old},
           rev=>old.screen==='review'
-            ?creatorReviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。')
+            ?reviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。')
             :statusPanel(draft,rev,'⚠️ 本編・サムネ・サンプル・Stars価格を登録してから［登録］してください。'));
         if(typeof publishListing!=='function' ||
           typeof listingStore?.createDraft!=='function' ||
@@ -174,7 +174,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           typeof listingStore?.markPublished!=='function')
           return persistAndRender(ownerId,old,{...old},
             rev=>old.screen==='review'
-              ?creatorReviewPanel(draft,rev,'公開用の既存GATE・Topic・売上DB接続はまだ検証されていません。投稿は行われません。')
+              ?reviewPanel(draft,rev,'公開用の既存GATE・Topic・売上DB接続はまだ検証されていません。投稿は行われません。')
               :statusPanel(draft,rev,'⚠️ 公開先と売上DBの接続が未確認です。投稿は行われていません。'));
         const reservation={...old,revision:old.revision+1,publishing:'in_progress'};
         // Reserve callback revision *before* any paid-media send; rejects races.
