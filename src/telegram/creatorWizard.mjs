@@ -1,5 +1,5 @@
 import { menuPage } from './menuPanel.mjs';
-import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorReviewPanel, myVideosPanel, videoInfoPanel, creatorFieldPanel } from './creatorUi.mjs';
+import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorReviewPanel, myVideosPanel, videoInfoPanel, creatorFieldPanel, CREATOR_TERMS_VERSION } from './creatorUi.mjs';
 import { randomUUID } from 'node:crypto';
 import {salesOverviewPanel,salesWithdrawalPanel,salesHistoryPanel} from './salesPanel.mjs';
 
@@ -46,10 +46,12 @@ function statusPanel(draft,rev,extra='',screen='editor') {
  * implemented by GateApp-Bot PR#11; VideoBot does not clone its transport.
  * sessionStore owns durable optimistic CAS, must not use GATE admin sessions.
  */
-export function createCreatorWizard({api,sessionStore,screenTransport,listingStore,mediaProcessor,publishListing,salesProvider}={}) {
+export function createCreatorWizard({api,sessionStore,screenTransport,listingStore,mediaProcessor,publishListing,salesProvider,termsUrl=process.env.CREATEVDOBOT_TERMS_URL||''}={}) {
   if(typeof api!=='function'||typeof screenTransport?.show!=='function')
     throw new Error('trusted Telegram/screen transport unavailable');
   requireFunctions(sessionStore,['read','write','setScreen']);
+  const verifiedTermsUrl=typeof termsUrl==='string'&&/^https:\/\/[A-Za-z0-9.-]+\/[A-Za-z0-9/_-]+\.html$/.test(termsUrl);
+  const reviewPanel=(draft,revision,note='')=>creatorReviewPanel(draft,revision,note,termsUrl);
   if(typeof listingStore?.listByOwner!=='function'||typeof listingStore?.getOwned!=='function')
     throw new Error('owner listing source required');
 
@@ -160,7 +162,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         const valid=!!draft.thumbnail&&!!draft.sample&&!!draft.paidVideo&&
           !!draft.title&&Number.isSafeInteger(draft.priceStars)&&
           draft.rightsVerified===true&&draft.adultConsentVerified===true&&
-          draft.feeTermsAccepted===true;
+          draft.feeTermsAccepted===true&&draft.termsVersion===CREATOR_TERMS_VERSION&&
+           typeof draft.termsAcceptedAt==='string'&&verifiedTermsUrl;
         if(!valid)return persistAndRender(ownerId,old,{...old},
           rev=>old.screen==='review'
             ?creatorReviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。')
@@ -206,7 +209,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           return persistAndRender(ownerId,current,{
             ...current,publishing:'needs_reconcile',waiting:null,
             screen:'review',draft
-          },rev=>creatorReviewPanel(draft,rev,
+          },rev=>reviewPanel(draft,rev,
             '⚠️ 送信または保存結果の照合が必要です。重複投稿を防止するため、再投稿しません。'));
         }
       
@@ -334,7 +337,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(obsolete) {
         return persistAndRender(ownerId,old,{
           ...old,screen:'review',waiting:null
-        },rev=>creatorReviewPanel(old.draft,rev,
+        },rev=>reviewPanel(old.draft,rev,
           '前の画面のボタンでした。現在の登録内容を表示しました。もう一度選択してください。'));
       }
     }
@@ -350,7 +353,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         // Publishing is impossible until a separate visible agreement step.
         return persistAndRender(ownerId,old,
           {...old,screen:'review',waiting:null},
-          rev=>creatorReviewPanel(old.draft,rev));
+          rev=>reviewPanel(old.draft,rev));
       }
       throw new Error('UNKNOWN_CREATOR_ENTRY_ACTION');
     }
@@ -452,7 +455,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!prepared[k]);
         const note=missing.length ? warning : '本人が［登録］を押すまでは公開されません。';
         return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null,screen:'review'},
-          rev=>creatorReviewPanel(prepared,rev,note));
+          rev=>reviewPanel(prepared,rev,note));
       }
       throw new Error('UNKNOWN_CREATOR_ACTION');
     }
@@ -470,11 +473,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
       }
       if(action==='review:agree'||action==='review:rights') {
+        if(!verifiedTermsUrl)throw new Error('CREATOR_PUBLISHED_TERMS_URL_REQUIRED');
         const agreed=editCreatorDraft(draft,
           {type:draft.feeTermsAccepted?'clearTerms':'confirmTerms'});
         return persistAndRender(ownerId,old,{...old,draft:agreed},
-          rev=>creatorReviewPanel(agreed,rev));
+          rev=>reviewPanel(agreed,rev));
       }
+      if(action==='review:publish'&&!verifiedTermsUrl)throw new Error('CREATOR_PUBLISHED_TERMS_URL_REQUIRED');
       if(action==='review:publish')return registerVideo(ownerId,old,draft);
       throw new Error('UNKNOWN_REVIEW_ACTION');
     }
