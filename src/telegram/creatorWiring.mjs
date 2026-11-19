@@ -38,7 +38,7 @@ import {join} from 'node:path';
 export function createVideoBotSourceModule({
   pool,telegramApi,screenTransport,gateOwner,mediaPorts,webhookSecret,
   mediaRun,storageApproved=false,botToken,verifyPrivateMediaStore,fetchImpl,
-  stickerShopBaseUrl=null
+  stickerShopBaseUrl=null,termsUrl=''
 }={}) {
   if(typeof pool?.query!=='function'||typeof telegramApi!=='function'||
       (screenTransport!=null&&typeof screenTransport?.show!=='function')||!gateOwner||
@@ -341,7 +341,7 @@ export function createVideoBotSourceModule({
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
     api:telegramApi,sessionStore,listingStore,
     screenTransport:screen,mediaProcessor,publishListing,
-    salesProvider:starsLedger,starsLedger,
+    salesProvider:starsLedger,starsLedger,termsUrl,
     stickerHandler:stickerWizard.handle,
     stickerSalesHandler:stickerSales.handle,
     stickerSalesPayments:stickerSales.payments,
