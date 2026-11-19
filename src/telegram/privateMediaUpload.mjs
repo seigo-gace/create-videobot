@@ -44,7 +44,8 @@ export function createTelegramPrivateMediaUploader({
    // temporary directories keep the existing bounded streaming upload.
    if(localMediaRoot!==null){
      if(baseUrl!=='http://telegram-bot-api:8081'||
-        localMediaRoot!=='/var/lib/telegram-bot-api')
+        typeof localMediaRoot!=='string'||!localMediaRoot.startsWith('/')||
+        resolve(localMediaRoot)==='/'||localMediaRoot.split(sep).includes('..'))
        throw Error('unverified local media root');
      const base=await realpath(localMediaRoot);
      const absolute=await realpath(path);
