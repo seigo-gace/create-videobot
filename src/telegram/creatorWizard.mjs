@@ -246,7 +246,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     }
     if(/^menu:listing(?:\|r[1-9][0-9]*)?$/.test(code)) {
       if(code!=='menu:listing')validateRevision(code,old);
-      const draft=old?.draft??openCreatorEditor({sellerId:String(ownerId)});
+      // From My Videos, New Post always starts a fresh product; an existing
+      // listing edit is never silently reused as a new listing.
+      const draft=old?.screen==='my_videos'||!old?.draft
+        ?openCreatorEditor({sellerId:String(ownerId)})
+        :old.draft;
       // Older in-progress drafts may have been saved before the automatic
       // preview pipeline was active. Repair only missing derived media on
       // explicit editor re-entry; never require a second main-video upload.
@@ -508,6 +512,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
             ]}}));
       }
       if(parts[1]==='cancelDelete'&&old.screen==='delete_confirm'&&old.deleteId===id) {
+        if(old.draft?.mode==='edit' && old.draft.listingId===id)
+          return persistAndRender(ownerId,old,{...old,screen:'editor',deleteId:null,waiting:null},
+            rev=>statusPanel(old.draft,rev));
         const items=await listingStore.listByOwner(ownerId);
         return persistAndRender(ownerId,old,{...old,screen:'my_videos',deleteId:null},
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:old.page??0,revision:rev}));
