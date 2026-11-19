@@ -1,4 +1,7 @@
 import {readFile,lstat} from 'node:fs/promises';
+import {createReadStream} from 'node:fs';
+import {Readable} from 'node:stream';
+import {randomBytes} from 'node:crypto';
 
 /**
  * Upload a generated preview file to an ALREADY APPROVED private Telegram
@@ -69,20 +72,57 @@ export function createCreatorDmPreviewUploader({
       !['photo','video'].includes(type))throw new Error('invalid creator DM media owner');
    if(!['https://api.telegram.org','http://telegram-bot-api:8081'].includes(baseUrl))
      throw Error('unverified Bot API upload endpoint');
+   if(!Number.isSafeInteger(maxBytes)||maxBytes<1||
+      maxBytes>(baseUrl==='http://telegram-bot-api:8081'?2_000_000_000:20_000_000))
+     throw Error('creator preview upload size boundary invalid');
    const stat=await lstat(path);
    if(!stat.isFile()||stat.isSymbolicLink()||stat.size<1||stat.size>maxBytes)
      throw new Error('generated creator preview upload size invalid');
-   const bytes=await readFile(path);
-   const form=new FormData();
-   form.set('chat_id',String(ownerId));
-   form.set('disable_notification','true');
-   form.set('protect_content','true');
-   form.set(type,new Blob([bytes],{type:type==='photo'?'image/jpeg':'video/mp4'}),
-     type==='photo'?'creator-preview.jpg':'creator-sample.mp4');
    const method=type==='photo'?'sendPhoto':'sendVideo';
-   const response=await fetchImpl(baseUrl+'/bot'+token+'/'+method,{
-     method:'POST',body:form,redirect:'error',signal:AbortSignal.timeout(60000)
-   });
+   const mime=type==='photo'?'image/jpeg':'video/mp4';
+   const filename=type==='photo'?'creator-preview.jpg':'creator-sample.mp4';
+   let request;
+   if(stat.size>20_000_000){
+     if(baseUrl!=='http://telegram-bot-api:8081')
+       throw Error('large creator media requires verified Local Bot API');
+     // Stream one multipart upload rather than Buffer-ing a one-hour movie
+     // into Node memory. An unknown Telegram result is never retried here.
+     const boundary='gace'+randomBytes(20).toString('hex');
+     const chunks=[
+       ['chat_id',String(ownerId)],
+       ['disable_notification','true'],
+       ['protect_content','true']
+     ].map(([name,value])=>Buffer.from(
+       '--'+boundary+'\\r\\nContent-Disposition: form-data; name="'+name+'"\\r\\n\\r\\n'+value+'\\r\\n'));
+     const fileHead=Buffer.from('--'+boundary+'\\r\\nContent-Disposition: form-data; name="'+type+'"; filename="'+filename+'"\\r\\nContent-Type: '+mime+'\\r\\n\\r\\n');
+     const ending=Buffer.from('\\r\\n--'+boundary+'--\\r\\n');
+     const contentLength=chunks.reduce((n,v)=>n+v.length,0)+fileHead.length+stat.size+ending.length;
+     const source=createReadStream(path,{highWaterMark:256*1024});
+     const upload=Readable.from((async function*(){
+       for(const item of chunks)yield item;
+       yield fileHead;
+       for await(const chunk of source)yield chunk;
+       yield ending;
+     })());
+     request={
+       method:'POST',
+       body:upload,
+       duplex:'half',
+       headers:{'content-type':'multipart/form-data; boundary='+boundary,
+         'content-length':String(contentLength)},
+       redirect:'error',signal:AbortSignal.timeout(900000)
+     };
+   } else {
+     const bytes=await readFile(path);
+     const form=new FormData();
+     form.set('chat_id',String(ownerId));
+     form.set('disable_notification','true');
+     form.set('protect_content','true');
+     form.set(type,new Blob([bytes],{type:mime}),filename);
+     request={method:'POST',body:form,redirect:'error',
+       signal:AbortSignal.timeout(60000)};
+   }
+   const response=await fetchImpl(baseUrl+'/bot'+token+'/'+method,request);
    if(response?.ok!==true)throw new Error('creator preview Telegram upload failed');
    const json=await response.json();
    if(json?.ok!==true)throw new Error('creator preview Telegram upload rejected');
