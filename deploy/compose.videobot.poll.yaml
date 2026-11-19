@@ -23,6 +23,7 @@ services:
       VIDEOBOT_SCHEMA_MIGRATE: "YES"
       VIDEOBOT_SHOP_HTTP_PORT: "8766"
       VIDEOBOT_SHOP_PUBLIC_URL: ${VIDEOBOT_SHOP_PUBLIC_URL:-}
+      CREATEVDOBOT_TERMS_URL: ${CREATEVDOBOT_TERMS_URL:-}
       VIDEOBOT_GATE_OWNER_ADAPTER: /opt/videobot/owner/gateOwner.mjs
       VIDEOBOT_STICKER_PIN_RECEIPT_FILE: /var/lib/videobot/sticker-entry/group2373696859_thread4640.json
       VIDEOBOT_TELEGRAM_TOKEN_FILE: /run/secrets/videobot_telegram_token
