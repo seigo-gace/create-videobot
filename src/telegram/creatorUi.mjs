@@ -1,4 +1,8 @@
 import {managementFeeDisclosure} from '../sales/managementFee.mjs';
+// Creator's pre-sale UI states Master-adopted no-refund policy in the explicit
+// terms step. Official charge reconciliation remains in the transaction ledger.
+const videoFeeDisclosure=(stars)=>managementFeeDisclosure(stars)
+  .split('\n').filter(line=>!line.startsWith('返金が発生した場合')).join('\n');
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
 const USER_ID = /^[A-Za-z0-9_-]{1,128}$/;
 export const PRICE_PRESETS = Object.freeze([50, 100, 300, 500, 1000]);
@@ -132,7 +136,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   );
   if(draft.mode==='edit'&&draft.rightsVerified&&draft.adultConsentVerified&&draft.feeTermsAccepted)
     rows.push('☑ 規約約款同意済み');
-  rows.push('',managementFeeDisclosure(draft.priceStars));
+  rows.push('',videoFeeDisclosure(draft.priceStars));
   const text=rows.join('\n');
   const entities=[];
   const fields=[
@@ -209,7 +213,7 @@ export function videoInfoPanel(listing,revision,mode='open') {
     '',
     'タイトル：'+listing.title,
     '販売価格：'+(listing.priceStars==null?'未設定':'⭐ '+price(listing.priceStars)+' Stars'),
-    managementFeeDisclosure(listing.priceStars)
+    videoFeeDisclosure(listing.priceStars)
   ];
   if(mode==='open')lines.push(
     'サムネ：'+(listing.thumbnail?'登録済み':'未登録'),
@@ -262,7 +266,7 @@ export function creatorReviewPanel(draft, revision = 0, note = '') {
     '📋 投稿前の規約・約款確認','',
     '投稿タイトル：'+(draft.title||'未登録'),
     '販売価格：'+(draft.priceStars==null?'未設定':draft.priceStars+' Stars'),
-    managementFeeDisclosure(draft.priceStars),'',
+    videoFeeDisclosure(draft.priceStars),'',
     '・投稿者は動画の掲載権限を持ち、出演者全員が18歳以上で掲載に同意していることを確認します。',
     '・設定したStars売上の30%を運営費として差し引きます。',
     '・購入後にコンテンツが引き渡された取引は、原則として返金を行いません。ただし法令やTelegramの公式制度で必要な対応を除きます。',
