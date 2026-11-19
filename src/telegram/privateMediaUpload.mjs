@@ -116,9 +116,9 @@ export function createCreatorDmPreviewUploader({
        ['disable_notification','true'],
        ['protect_content','true']
      ].map(([name,value])=>Buffer.from(
-       '--'+boundary+'\\r\\nContent-Disposition: form-data; name="'+name+'"\\r\\n\\r\\n'+value+'\\r\\n'));
-     const fileHead=Buffer.from('--'+boundary+'\\r\\nContent-Disposition: form-data; name="'+type+'"; filename="'+filename+'"\\r\\nContent-Type: '+mime+'\\r\\n\\r\\n');
-     const ending=Buffer.from('\\r\\n--'+boundary+'--\\r\\n');
+       '--'+boundary+'\r\nContent-Disposition: form-data; name="'+name+'"\r\n\r\n'+value+'\r\n'));
+     const fileHead=Buffer.from('--'+boundary+'\r\nContent-Disposition: form-data; name="'+type+'"; filename="'+filename+'"\r\nContent-Type: '+mime+'\r\n\r\n');
+     const ending=Buffer.from('\r\n--'+boundary+'--\r\n');
      const contentLength=chunks.reduce((n,v)=>n+v.length,0)+fileHead.length+stat.size+ending.length;
      const source=createReadStream(path,{highWaterMark:256*1024});
      const upload=Readable.from((async function*(){
