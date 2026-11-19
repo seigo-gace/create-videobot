@@ -53,7 +53,11 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
   }
   const response=await fetchImpl(baseUrl+'/bot'+token+'/'+method,{
    method:'POST',...(headers?{headers}:{}),
-   body,signal:AbortSignal.timeout(timeoutMs),redirect:'error'
+   body,signal:AbortSignal.timeout(
+     baseUrl==='http://telegram-bot-api:8081' && method==='sendVideo' &&
+     typeof params.video==='string' &&
+     params.video.startsWith('/var/lib/telegram-bot-api/')
+       ?900000:timeoutMs),redirect:'error'
   });
   if(!response)throw new Error('Telegram API request failed');
   // Definitively rejected edit-screen requests may safely use the shared
