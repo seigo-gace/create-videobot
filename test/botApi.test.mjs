@@ -124,10 +124,10 @@ test('local Bot API supports zero-copy sendVideo with the same bot and bounded r
      }})};
    }
  });
- const result=await api('sendVideo',{chat_id:33,video:'/var/lib/telegram-bot-api/bot/file.mp4'});
+ const result=await api('sendVideo',{chat_id:33,video:'file:///var/lib/telegram-bot-api/bot/file.mp4'});
  assert.equal(result.video.file_id,'local_video_101');
  assert.match(observed.url,/\/sendVideo$/);
  assert.equal(JSON.parse(observed.params.body).chat_id,33);
- assert.equal(JSON.parse(observed.params.body).video,'/var/lib/telegram-bot-api/bot/file.mp4');
+ assert.equal(JSON.parse(observed.params.body).video,'file:///var/lib/telegram-bot-api/bot/file.mp4');
  assert.ok(observed.params.signal instanceof AbortSignal);
 });
