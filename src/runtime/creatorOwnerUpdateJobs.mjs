@@ -82,7 +82,8 @@ export function createPostgresOwnerUpdateQueue(pool,{maxPending=1000}={}){
   return {confirmed:completed.rowCount??0,unstarted:unstarted.rowCount??0,
     needsReconcile:ambiguous.rowCount??0};
  }
- async function claim(){
+ let claimChain=Promise.resolve();
+ async function claimSql(){
   const r=await pool.query(`WITH candidate AS (
     SELECT j.update_id FROM videobot_owner_update_jobs j
     WHERE j.status='queued'
@@ -102,6 +103,13 @@ export function createPostgresOwnerUpdateQueue(pool,{maxPending=1000}={}){
   const row=r.rows[0];
   return {id:Number(row.update_id),ownerId:Number(row.owner_id),
     kind:row.job_kind,update:row.payload};
+ }
+ // Serialise claims in the only polling process, so the first heavy job
+ // commits its running state before the next selector sees the quota.
+ function claim(){
+  const next=claimChain.then(()=>claimSql());
+  claimChain=next.then(()=>undefined,()=>undefined);
+  return next;
  }
  async function completed(job){
   const r=await pool.query(`UPDATE videobot_owner_update_jobs
