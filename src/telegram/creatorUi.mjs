@@ -195,7 +195,11 @@ export function creatorFieldPanel(draft,field,revision=0,notice='') {
   ]:[];
   const removable=['description','thumbnail','sample'].includes(field)&&
     Boolean(draft[field]);
+  const media=draft[field];
+  const mediaPreview=['thumbnail','sample','paidVideo'].includes(field)&&media?.fileId
+    ?{type:field==='thumbnail'?'photo':'video',fileId:media.fileId}:null;
   return {text:[value,'──────────',guide,notice].filter(Boolean).join('\n'),
+    ...(mediaPreview?{mediaPreview}:{}),
     reply_markup:{inline_keyboard:[...options,[
       btn('🔙 戻る','edit:back'),
       ...(removable?[btn('🗑 削除','edit:clear:'+field)]:[])
