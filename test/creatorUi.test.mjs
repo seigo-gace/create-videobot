@@ -93,12 +93,12 @@ test('seller consent is explicit, reversible and reset when video changes',()=>{
  assert.equal(d.feeTermsAccepted,false);
  d=editCreatorDraft(d,{type:'confirmTerms'});
  assert.deepEqual([d.rightsVerified,d.adultConsentVerified,d.feeTermsAccepted],[true,true,true]);
- let panel=creatorReviewPanel(d,5);
+ let panel=creatorReviewPanel(d,5,'','https://example.test/terms.html');
  assert.match(panel.text,/同意済み/);
- assert.equal(panel.reply_markup.inline_keyboard[0][0].callback_data,'review:agree|r5');
+ assert.equal(panel.reply_markup.inline_keyboard[1][0].callback_data,'review:agree|r5');
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main002'}});
  assert.deepEqual([d.rightsVerified,d.adultConsentVerified,d.feeTermsAccepted],[false,false,false]);
- panel=creatorReviewPanel(d,6);
+ panel=creatorReviewPanel(d,6,'','https://example.test/terms.html');
  assert.match(panel.text,/出演者全員が18歳以上/);
 });
 
@@ -112,13 +112,13 @@ test('preview has only inline edit links; fees appear only in consent review',()
  assert.equal(editor.entities.length,6);
  assert.deepEqual(editor.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
  assert.match(editor.text,/説明：\[未登録\]/);
- const review=creatorReviewPanel(d,3);
+ const review=creatorReviewPanel(d,3,'','https://example.test/terms.html');
  assert.match(review.text,/30%/);
  assert.match(review.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.equal(review.reply_markup.inline_keyboard.flat().some(b=>b.callback_data.startsWith('review:publish')),false);
- assert.match(review.text,/原則として返金を行いません/);
+ assert.match(review.text,/返品・返金は法令とTelegram/);
  d=editCreatorDraft(d,{type:'confirmTerms'});
- const ready=creatorReviewPanel(d,4);
+ const ready=creatorReviewPanel(d,4,'','https://example.test/terms.html');
  assert.equal(ready.reply_markup.inline_keyboard.flat().some(b=>b.callback_data.startsWith('review:publish')),false,
    'missing thumbnail/sample block publication even if consent granted');
  const existing=openCreatorEditor({sellerId:'seller1',existing:{
@@ -149,15 +149,15 @@ test('first video opens inline preview with six edit links and no extra descript
  d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb123'}});
  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample123',durationSeconds:30}});
  const final=creatorEditorPanel(d,3,'editor');
- assert.match(final.text,/［編集］タイトル：作品タイトル/);
+ assert.match(final.text,/［編集］ タイトル：作品タイトル/);
  assert.match(final.text,/説明：\[未登録\]/);
- assert.match(final.text,/［編集］価格：未設定/);
+ assert.match(final.text,/［未登録］ 価格：/);
  assert.deepEqual(final.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
  assert.equal(final.entities.length,6);
  for(const e of final.entities)
    assert.match(final.text.slice(e.offset,e.offset+e.length),/編集|未登録/);
  d=editCreatorDraft(d,{type:'descriptionInput',text:'説明本文'});
- assert.match(creatorEditorPanel(d,4).text,/［編集］説明：説明本文/);
+ assert.match(creatorEditorPanel(d,4).text,/［編集］ 説明：説明本文/);
  assert.throws(()=>editCreatorDraft(d,{type:'descriptionInput',text:'x'.repeat(801)}),/description/);
 });
 
@@ -168,10 +168,10 @@ test('terms summary has checkbox and only reveals publish after all content and 
  d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb11'}});
  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample11',durationSeconds:30}});
  d=editCreatorDraft(d,{type:'preset',stars:300});
- const before=creatorReviewPanel(d,2);
+ const before=creatorReviewPanel(d,2,'','https://example.test/terms.html');
  assert.equal(before.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),false);
  d=editCreatorDraft(d,{type:'confirmTerms'});
- const after=creatorReviewPanel(d,3);
+ const after=creatorReviewPanel(d,3,'','https://example.test/terms.html');
  assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),true);
  assert.match(after.text,/☑ 規約・約款に同意済み/);
 });
@@ -205,7 +205,7 @@ test('clearing title or price is reversible in an edit draft but cannot authoriz
  const noTitle=editCreatorDraft(original,{type:'clearTitle'});
  assert.equal(noTitle.title,'');
  assert.equal(original.title,'元タイトル');
- assert.ok(creatorEditorPanel(noTitle,3).text.includes('タイトル：未登録'));
+ assert.ok(creatorEditorPanel(noTitle,3).text.includes('［未登録］ タイトル：'));
  const noPrice=editCreatorDraft(original,{type:'clearPrice'});
  assert.equal(noPrice.priceStars,null);
  assert.equal(original.priceStars,300);
