@@ -136,7 +136,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   );
   if(draft.mode==='edit'&&draft.rightsVerified&&draft.adultConsentVerified&&draft.feeTermsAccepted)
     rows.push('☑ 規約約款同意済み');
-  rows.push('',videoFeeDisclosure(draft.priceStars));
+  // Fee and payout disclosure belong to the explicit terms screen, not the preview.
   const text=rows.join('\n');
   const entities=[];
   const fields=[
@@ -154,18 +154,52 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     entities.push({type:'text_link',offset:offset+inRow,length:mark.length,
       url:'https://t.me/CreateVdobot?start=ved_'+field+'_r'+revision});
   }
-  if(screen==='price'){
-    return {text:text+'\n\nStars価格を選択してください。自由入力は通常の入力欄へ数字のみ（1〜25000）。',entities,
-      reply_markup:{inline_keyboard:[
-        PRICE_PRESETS.slice(0,3).map(n=>btn(n+' ⭐','edit:price:'+n)),
-        [...PRICE_PRESETS.slice(3).map(n=>btn(n+' ⭐','edit:price:'+n)),
-          btn('自分で決める','edit:price:custom')],
-        [btn('🔙 戻る','edit:back')]
-      ]}};
+  if(draft.mode==='edit') {
+    const changed=Array.isArray(draft.dirtyFields)&&draft.dirtyFields.length>0;
+    return {text,entities,reply_markup:{inline_keyboard:[[
+      ...(changed?[]:[btn('🔙 戻る','edit:return')]),
+      btn('✅ 変更','edit:save'),btn('❌ キャンセル','edit:cancel'),
+      ...(draft.listingId?[btn('🗑 削除','edit:delete')]:[])
+    ]]}};
   }
   return {text,entities,reply_markup:{inline_keyboard:[
     [btn('✅ 投稿する','entry:register'),btn('❌ キャンセル','edit:cancel')]
   ]}};
+}
+
+/** Field-only Telegram editor, never embeds the full listing preview. */
+export function creatorFieldPanel(draft,field,revision=0,notice='') {
+  expectDraft(draft);
+  if(!Number.isSafeInteger(revision)||revision<1)throw new Error('invalid field revision');
+  const value={
+    title:'タイトル：'+(draft.title||'未登録'),
+    description:'説明：'+(draft.description||'未登録'),
+    price:'価格：'+(draft.priceStars==null?'未設定':'⭐ '+draft.priceStars+' Stars'),
+    thumbnail:'🖼 サムネ：'+(draft.thumbnail?'登録済み':'未登録'),
+    sample:'🎞 サンプル：'+(draft.sample?'登録済み':'未登録'),
+    paidVideo:'🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録')
+  }[field];
+  if(!value)throw new Error('unknown creator field');
+  const guide={
+    title:'上記を変更する場合は、変更後のタイトルを1行で送信してください。',
+    description:'上記を変更する場合は、説明文を送信してください（最大800文字）。省略する場合は戻るを押してください。',
+    price:'変更するStars価格を選択してください。自由入力は1〜25000の数字を送信してください。',
+    thumbnail:'上記を変更する場合は、新しいサムネ画像を送信してください。',
+    sample:'上記を変更する場合は、新しいサンプル動画を送信してください。',
+    paidVideo:'上記を変更する場合は、新しい本編動画を送信してください。'
+  }[field];
+  const btn=(text,action)=>({text,callback_data:action+'|r'+revision});
+  const options=field==='price'?[
+    PRICE_PRESETS.slice(0,3).map(n=>btn(n+' ⭐','edit:price:'+n)),
+    [...PRICE_PRESETS.slice(3).map(n=>btn(n+' ⭐','edit:price:'+n)),btn('自分で決める','edit:price:custom')]
+  ]:[];
+  const removable=['description','thumbnail','sample'].includes(field)&&
+    Boolean(draft[field]);
+  return {text:[value,'──────────',guide,notice].filter(Boolean).join('\n'),
+    reply_markup:{inline_keyboard:[...options,[
+      btn('🔙 戻る','edit:back'),
+      ...(removable?[btn('🗑 削除','edit:clear:'+field)]:[])
+    ]]}};
 }
 
 export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, notice = '', updatedId = null } = {}) {
