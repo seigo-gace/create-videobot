@@ -1,5 +1,5 @@
 import { menuPage } from './menuPanel.mjs';
-import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorReviewPanel, myVideosPanel, videoInfoPanel } from './creatorUi.mjs';
+import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorReviewPanel, myVideosPanel, videoInfoPanel, creatorFieldPanel } from './creatorUi.mjs';
 import { randomUUID } from 'node:crypto';
 import {salesOverviewPanel,salesWithdrawalPanel,salesHistoryPanel} from './salesPanel.mjs';
 
@@ -62,10 +62,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       ...(old?.publishing==='needs_reconcile'?{publishing:'needs_reconcile'}:{})};
     const drawn=typeof panel==='function'?panel(next.revision):panel;
     // Keep the editable text screen visually attached to the owner's album preview.
-    if(['description','editor','price'].includes(next.screen) &&
+    if(next.screen==='editor' &&
        Number.isSafeInteger(next.previewMessageId) && next.previewMessageId>0)
       drawn.replyToMessageId=next.previewMessageId;
-    if(['editor','price'].includes(next.screen)&&
+    if(next.screen==='editor'&&
        Number.isSafeInteger(next.albumMessageId)&&next.albumMessageId>0 &&
        drawn.text.length<=1024)
       drawn.albumMessageId=next.albumMessageId;
@@ -113,22 +113,15 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const fields=['title','description','price','paidVideo','thumbnail','sample'];
     if(!fields.includes(field) || !Number.isSafeInteger(linkRevision) ||
       linkRevision<1 || old?.revision!==linkRevision ||
-      !['editor','price'].includes(old?.screen) || !old?.draft ||
+      old?.screen!=='editor' || !old?.draft ||
       !Number.isSafeInteger(old.screenMessageId) || old.screenMessageId<=0)
       return {handled:true,staleTextLink:true};
     const draft=old.draft;
     const registered=!!draft.paidVideo && !!draft.title;
     if(!registered)return {handled:true,staleTextLink:true};
     const isPrice=field==='price';
-    const patch={...old,screen:isPrice?'price':'editor',waiting:isPrice?null:field};
-    const note=field==='title'?'タイトルを1行で送信してください。':
-      field==='description'?'説明文を送信してください（最大800文字・省略可）。':
-      field==='thumbnail'?'変更するサムネ画像を送信してください。':
-      field==='sample'?'変更するサンプル動画を送信してください。':
-      field==='paidVideo'?'変更する本編動画を送信してください。':
-      'Stars価格を選択してください。';
-    const result=await persistAndRender(ownerId,old,patch,
-      rev=>statusPanel(draft,rev,note,isPrice?'price':'editor'));
+    const patch={...old,screen:'field',field,waiting:isPrice?null:field};
+    const result=await persistAndRender(ownerId,old,patch,rev=>creatorFieldPanel(draft,field,rev));
     // Telegram deep link generates a /start message; remove only that message.
     await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
     return result;
@@ -149,7 +142,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       return result;
     }
     const draft=openCreatorEditor({sellerId:String(ownerId),existing:owned});
-    const result=await persistAndRender(ownerId,old,{...old,draft,screen:'editor',waiting:null},
+    const result=await persistAndRender(ownerId,old,{...old,draft,originalDraft:draft,screen:'editor',waiting:null},
       rev=>statusPanel(draft,rev));
     await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
     return result;
@@ -358,9 +351,51 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       const value=action.slice(5);
       if(value==='cancel') {
         const items=await listingStore.listByOwner(ownerId);
-        // Cancel navigation, not the user's media or a destructive delete.
-        return persistAndRender(ownerId,old,{...old,screen:'my_videos',page:0,waiting:null},
+        return persistAndRender(ownerId,old,{...old,draft:null,originalDraft:null,
+          screen:'my_videos',page:0,waiting:null,field:null},
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
+      }
+      if(value==='return' && draft?.mode==='edit' &&
+         (!draft.dirtyFields || draft.dirtyFields.length===0)) {
+        const items=await listingStore.listByOwner(ownerId);
+        return persistAndRender(ownerId,old,{...old,draft:null,originalDraft:null,
+          screen:'my_videos',page:0,waiting:null},
+          rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
+      }
+      if(value==='save' && draft?.mode==='edit' && draft.listingId) {
+        if(typeof listingStore.updateDraft!=='function')throw Error('LISTING_UPDATE_UNAVAILABLE');
+        if(!draft.title || !draft.paidVideo)throw Error('INCOMPLETE_VIDEO_EDIT');
+        if(old.publishing==='needs_reconcile')throw Error('PUBLISH_NEEDS_RECONCILE');
+        const saved=await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,draft);
+        const items=await listingStore.listByOwner(ownerId);
+        return persistAndRender(ownerId,old,{...old,draft:null,originalDraft:null,
+          waiting:null,screen:'my_videos',page:0},
+          rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,
+            revision:rev,notice:'動画を編集／更新しました。',updatedId:saved.id}));
+      }
+      if(value==='delete' && draft?.mode==='edit' && draft.listingId) {
+        const v=await listingStore.getOwned(ownerId,draft.listingId);
+        if(!v)throw Error('LISTING_NOT_OWNED');
+        if(v.status==='published'||v.status==='paused')
+          return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},
+            rev=>statusPanel(draft,rev,'⚠️ 購入済み動画は取引履歴保護のため削除できません。'));
+        return persistAndRender(ownerId,old,{...old,screen:'delete_confirm',deleteId:v.id,waiting:null},
+          rev=>({text:'🗑 登録した動画を削除しますか？\n'+v.title,
+            reply_markup:{inline_keyboard:[[
+              {text:'🗑 削除する',callback_data:'video:confirmDelete:'+v.id+'|r'+rev},
+              {text:'🔙 戻る',callback_data:'video:cancelDelete:'+v.id+'|r'+rev}
+            ]]}}));
+      }
+      if(value.startsWith('clear:') && old.screen==='field') {
+        const field=value.slice(6);
+        const changed=field==='description'
+          ?editCreatorDraft(draft,{type:'descriptionInput',text:''})
+          :field==='thumbnail'||field==='sample'
+            ?editCreatorDraft(draft,{type:field==='thumbnail'?'removeThumbnail':'removeSample'})
+            :null;
+        if(!changed)throw Error('CREATOR_FIELD_DELETE_NOT_ALLOWED');
+        return persistAndRender(ownerId,old,{...old,draft:changed,screen:'editor',waiting:null,field:null},
+          rev=>statusPanel(changed,rev));
       }
       if(value==='back') {
         // Existing drafts from the former UI can be repaired by returning
@@ -374,17 +409,16 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           albumMessageId:recovery.previewMessageId??old.albumMessageId??null
         },rev=>statusPanel(recovery.draft,rev,recovery.warning));
       }
-      if(value==='price')return persistAndRender(ownerId,old,{...old,screen:'price',waiting:null},
-        rev=>statusPanel(draft,rev,'','price'));
+      if(value==='price')return persistAndRender(ownerId,old,{...old,screen:'field',field:'price',waiting:null},
+        rev=>creatorFieldPanel(draft,'price',rev));
       if(['thumbnail','sample','paidVideo','title','description'].includes(value)) {
-        return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:value},
-          rev=>statusPanel(draft,rev,'Telegramの通常入力欄へ'+
-            (value==='thumbnail'?'サムネ画像':value==='sample'?'サンプル動画':value==='paidVideo'?'販売用本編動画とキャプションタイトル':value==='description'?'説明文':'タイトル')+'を送信してください。'));
+        return persistAndRender(ownerId,old,{...old,screen:'field',field:value,waiting:value},
+          rev=>creatorFieldPanel(draft,value,rev));
       }
       if(value==='price:custom') {
         const changed=editCreatorDraft(draft,{type:'custom'});
         return persistAndRender(ownerId,old,{...old,draft:changed,waiting:'customPrice'},
-          rev=>statusPanel(changed,rev,'','price'));
+          rev=>creatorFieldPanel(changed,'price',rev));
       }
       if(/^price:(50|100|300|500|1000)$/.test(value)) {
         const changed=editCreatorDraft(draft,{type:'preset',stars:Number(value.slice(6))});
@@ -457,7 +491,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
               }]]}}));
         }
         const draft=openCreatorEditor({sellerId:String(ownerId),existing:v});
-        return persistAndRender(ownerId,old,{screenMessageId:messageId,draft,waiting:null,screen:'editor'},
+        return persistAndRender(ownerId,old,{...old,screenMessageId:messageId,draft,originalDraft:draft,waiting:null,screen:'editor'},
           rev=>statusPanel(draft,rev));
       }
       if(parts[1]==='delete'&&old.screen==='my_videos') {
@@ -616,7 +650,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       (previewWarning?'\n'+previewWarning:'')+
       (inputDeleteFailed?'\n入力メッセージを自動削除できませんでした。手動で削除してください。':'');
     return persistAndRender(ownerId,old,next,
-      rev=>statusPanel(draft,rev,note,nextScreen));
+      rev=>nextScreen==='field'
+        ?creatorFieldPanel(draft,old.field||old.waiting,rev,note)
+        :statusPanel(draft,rev,note,nextScreen));
   }
   return {
     openHome,
