@@ -400,6 +400,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         const field=value.slice(6);
         const changed=field==='description'
           ?editCreatorDraft(draft,{type:'descriptionInput',text:''})
+          :field==='title'?editCreatorDraft(draft,{type:'clearTitle'})
+          :field==='price'?editCreatorDraft(draft,{type:'clearPrice'})
           :field==='thumbnail'||field==='sample'
             ?editCreatorDraft(draft,{type:field==='thumbnail'?'removeThumbnail':'removeSample'})
             :null;
