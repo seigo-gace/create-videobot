@@ -460,3 +460,36 @@ test('obsolete register and cancel never act on newer draft',async()=>{
    assert.match(x.screens.at(-1).panel.text,/前の画面のボタン/);
  }
 });
+
+test('MP4 sent as a Telegram document is normalized into a video and reaches the private editor',async()=>{
+  const x=setup({mediaProcessorOverride:{
+    async normalizeVideoDocument(document,ownerId){
+      assert.equal(document.file_id,'document_mp4_001');
+      assert.equal(document.mime_type,'video/mp4');
+      assert.equal(ownerId,33);
+      return {file_id:'normalized_video_001'};
+    }
+  }});
+  await x.callback('menu:listing');
+  const result=await x.send({document:{file_id:'document_mp4_001',mime_type:'video/mp4',file_name:'sample.mp4'},caption:'撮影作品'},501);
+  assert.equal(result.handled,true);
+  const state=x.states.get(33);
+  assert.equal(state.draft.title,'撮影作品');
+  assert.equal(state.draft.paidVideo.fileId,'normalized_video_001');
+  assert.equal(state.screen,'editor');
+  assert.ok(x.screens.at(-1).panel.text.includes('［編集］タイトル：撮影作品'));
+});
+
+test('MP4 document without caption reports missing title instead of silently ignoring upload',async()=>{
+  const x=setup({mediaProcessorOverride:{
+    async normalizeVideoDocument(){throw Error('must not normalize untitled video');}
+  }});
+  await x.callback('menu:listing');
+  const result=await x.send({document:{file_id:'document_mp4_001',mime_type:'video/mp4',file_name:'sample.mp4'}},502);
+  assert.equal(result.handled,true);
+  assert.equal(x.states.get(33).screen,'await_video');
+  assert.equal(x.states.get(33).draft.paidVideo,null);
+  assert.ok(x.screens.at(-1).panel.text.includes('⚠️'));
+  assert.ok(x.calls.every(c=>!(c.method==='deleteMessage' && c.params.message_id===502)),
+    'keep original upload visible while asking for caption title');
+});
