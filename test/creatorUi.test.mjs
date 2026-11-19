@@ -115,11 +115,11 @@ test('preview has only inline edit links; fees appear only in consent review',()
  const review=creatorReviewPanel(d,3,'','https://example.test/terms.html');
  assert.match(review.text,/30%/);
  assert.match(review.text,/管理費90 Stars／投稿者分210 Stars/);
- assert.equal(review.reply_markup.inline_keyboard.flat().some(b=>b.callback_data.startsWith('review:publish')),false);
+ assert.equal(review.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:publish')),false);
  assert.match(review.text,/返品・返金は法令とTelegram/);
  d=editCreatorDraft(d,{type:'confirmTerms'});
  const ready=creatorReviewPanel(d,4,'','https://example.test/terms.html');
- assert.equal(ready.reply_markup.inline_keyboard.flat().some(b=>b.callback_data.startsWith('review:publish')),false,
+ assert.equal(ready.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:publish')),false,
    'missing thumbnail/sample block publication even if consent granted');
  const existing=openCreatorEditor({sellerId:'seller1',existing:{
    id:'abc123',sellerId:'seller1',revision:1,title:'sample',priceStars:101,
