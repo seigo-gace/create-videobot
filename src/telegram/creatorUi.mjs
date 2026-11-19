@@ -89,6 +89,11 @@ export function editCreatorDraft(draft, action) {
         throw new Error('rights, adult and performer consent required');
       return { ...draft, rightsVerified:true, adultConsentVerified:true,
         dirtyFields: [...new Set([...draft.dirtyFields,'rightsVerified','adultConsentVerified'])] };
+    case 'clearTitle':
+      field='title';value='';break;
+    case 'clearPrice':
+      return {...draft,priceStars:null,feeTermsAccepted:false,
+        dirtyFields:[...new Set([...draft.dirtyFields,'priceStars','feeTermsAccepted'])]};
     case 'removeThumbnail':
       field = 'thumbnail'; value = null; break;
     case 'removeSample':
@@ -193,8 +198,8 @@ export function creatorFieldPanel(draft,field,revision=0,notice='') {
     PRICE_PRESETS.slice(0,3).map(n=>btn(n+' ⭐','edit:price:'+n)),
     [...PRICE_PRESETS.slice(3).map(n=>btn(n+' ⭐','edit:price:'+n)),btn('自分で決める','edit:price:custom')]
   ]:[];
-  const removable=['description','thumbnail','sample'].includes(field)&&
-    Boolean(draft[field]);
+  const removable=['title','description','thumbnail','sample','price'].includes(field)&&
+    Boolean(field==='price'?draft.priceStars:draft[field]);
   const media=draft[field];
   const mediaPreview=['thumbnail','sample','paidVideo'].includes(field)&&media?.fileId
     ?{type:field==='thumbnail'?'photo':'video',fileId:media.fileId}:null;
