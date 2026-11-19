@@ -37,7 +37,7 @@ import {join} from 'node:path';
  */
 export function createVideoBotSourceModule({
   pool,telegramApi,screenTransport,gateOwner,mediaPorts,webhookSecret,
-  mediaRun,storageApproved=false,botToken,verifyPrivateMediaStore,fetchImpl,
+  mediaRun,mediaWorkRoot=null,storageApproved=false,botToken,verifyPrivateMediaStore,fetchImpl,
   stickerShopBaseUrl=null,termsUrl=''
 }={}) {
   if(typeof pool?.query!=='function'||typeof telegramApi!=='function'||
@@ -103,7 +103,7 @@ export function createVideoBotSourceModule({
     return ownEntryPin();
   };
   const mediaProcessor=createVideoMediaProcessor({
-    ...ports,run:mediaRun,storageApproved
+    ...ports,run:mediaRun,workRoot:mediaWorkRoot??undefined,storageApproved
   });
   const publishListing=listing=>publishVideoListing({
     listing,store:receiptStore,telegramApi,
