@@ -307,7 +307,7 @@ export function creatorReviewPanel(draft, revision = 0, note = '', termsUrl = ''
   const missing=['thumbnail','sample','paidVideo','title','priceStars'].filter(k=>!draft[k]);
   const agreed=draft.rightsVerified===true&&draft.adultConsentVerified===true&&
     draft.feeTermsAccepted===true&&draft.termsVersion===CREATOR_TERMS_VERSION &&
-    typeof draft.termsAcceptedAt==='string';
+    typeof draft.termsAcceptedAt==='string'&&draft.termsUrl===termsUrl;
   const text=[
     '📋 投稿前の規約・約款確認','',
     '投稿タイトル：'+(draft.title||'未登録'),
