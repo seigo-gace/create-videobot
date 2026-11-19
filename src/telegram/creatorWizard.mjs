@@ -75,7 +75,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const firstAlbumScreen=Number.isSafeInteger(next.previewMessageId) &&
       next.previewMessageId>0 && next.previewMessageId!==old?.previewMessageId &&
       ['description','editor'].includes(next.screen);
-    const previousScreenId=patch.screenMessageId??old?.screenMessageId;
+    // Editing a field must not turn the album's last video into a text
+    // screen or delete it as a fallback. Keep album messages as the
+    // owner's visual preview; a field-only screen is a separate message.
+    const albumToField=next.screen==='field' &&
+      Number.isSafeInteger(old?.albumMessageId) &&
+      old.screenMessageId===old.albumMessageId;
+    const previousScreenId=albumToField?null:(patch.screenMessageId??old?.screenMessageId);
     const result=await screenTransport.show(ownerId,firstAlbumScreen?null:previousScreenId,drawn);
     if(firstAlbumScreen && Number.isSafeInteger(previousScreenId) && previousScreenId>0 &&
        previousScreenId!==result.messageId)
