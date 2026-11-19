@@ -55,6 +55,8 @@ export function openCreatorEditor({ sellerId, existing = null } = {}) {
     rightsVerified: existing?.rightsVerified === true,
     adultConsentVerified: existing?.adultConsentVerified === true,
     feeTermsAccepted: existing?.feeTermsAccepted === true,
+    termsVersion: existing?.termsVersion??null,
+    termsAcceptedAt: existing?.termsAcceptedAt??null,
     dirtyFields: []
   };
 }
@@ -70,18 +72,20 @@ export function editCreatorDraft(draft, action) {
     case 'paidVideo':
       field = action.type;
       value = media(action.media, field);
-      if (field === 'paidVideo') return { ...draft, paidVideo: value, rightsVerified:false, adultConsentVerified:false, feeTermsAccepted:false,
+      if (field === 'paidVideo') return { ...draft, paidVideo: value, rightsVerified:false, adultConsentVerified:false, feeTermsAccepted:false,termsVersion:null,termsAcceptedAt:null,
         dirtyFields: [...new Set([...draft.dirtyFields,'paidVideo','rightsVerified','adultConsentVerified'])] };
-      if(draft.feeTermsAccepted) return {...draft,[field]:value,feeTermsAccepted:false,
+      if(draft.feeTermsAccepted) return {...draft,[field]:value,feeTermsAccepted:false,termsVersion:null,termsAcceptedAt:null,
         rightsVerified:false,adultConsentVerified:false,
         dirtyFields:[...new Set([...draft.dirtyFields,field,'feeTermsAccepted','rightsVerified','adultConsentVerified'])]};
       break;
     case 'confirmTerms':
       if(!draft.paidVideo)throw new Error('main video required before agreement');
       return {...draft,rightsVerified:true,adultConsentVerified:true,feeTermsAccepted:true,
+        termsVersion:CREATOR_TERMS_VERSION,termsAcceptedAt:new Date().toISOString(),
         dirtyFields:[...new Set([...draft.dirtyFields,'rightsVerified','adultConsentVerified','feeTermsAccepted'])]};
     case 'clearTerms':
       return {...draft,rightsVerified:false,adultConsentVerified:false,feeTermsAccepted:false,
+        termsVersion:null,termsAcceptedAt:null,
         dirtyFields:[...new Set([...draft.dirtyFields,'rightsVerified','adultConsentVerified','feeTermsAccepted'])]};
     case 'confirmRights':
       if (!draft.paidVideo) throw new Error('paid video required before rights confirmation');
@@ -92,7 +96,7 @@ export function editCreatorDraft(draft, action) {
     case 'clearTitle':
       field='title';value='';break;
     case 'clearPrice':
-      return {...draft,priceStars:null,feeTermsAccepted:false,
+      return {...draft,priceStars:null,feeTermsAccepted:false,termsVersion:null,termsAcceptedAt:null,
         dirtyFields:[...new Set([...draft.dirtyFields,'priceStars','feeTermsAccepted'])]};
     case 'removeThumbnail':
       field = 'thumbnail'; value = null; break;
@@ -100,7 +104,7 @@ export function editCreatorDraft(draft, action) {
       field = 'sample'; value = null; break;
     case 'preset':
       if (!PRICE_PRESETS.includes(action.stars)) throw new Error('unknown price preset');
-      return { ...draft, priceStars: action.stars, priceMode: 'preset', feeTermsAccepted:false, dirtyFields: [...new Set([...draft.dirtyFields, 'priceStars'])] };
+      return { ...draft, priceStars: action.stars, priceMode: 'preset', feeTermsAccepted:false,termsVersion:null,termsAcceptedAt:null, dirtyFields: [...new Set([...draft.dirtyFields, 'priceStars'])] };
     case 'custom':
       return { ...draft, priceMode: 'custom' };
     case 'captionTitle':
