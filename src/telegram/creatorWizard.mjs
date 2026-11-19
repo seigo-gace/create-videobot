@@ -163,7 +163,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           !!draft.title&&Number.isSafeInteger(draft.priceStars)&&
           draft.rightsVerified===true&&draft.adultConsentVerified===true&&
           draft.feeTermsAccepted===true&&draft.termsVersion===CREATOR_TERMS_VERSION&&
-           typeof draft.termsAcceptedAt==='string'&&verifiedTermsUrl;
+           typeof draft.termsAcceptedAt==='string'&&draft.termsUrl===termsUrl&&verifiedTermsUrl;
         if(!valid)return persistAndRender(ownerId,old,{...old},
           rev=>old.screen==='review'
             ?creatorReviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。')
@@ -474,8 +474,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       }
       if(action==='review:agree'||action==='review:rights') {
         if(!verifiedTermsUrl)throw new Error('CREATOR_PUBLISHED_TERMS_URL_REQUIRED');
-        const agreed=editCreatorDraft(draft,
+        const nextDraft=editCreatorDraft(draft,
           {type:draft.feeTermsAccepted?'clearTerms':'confirmTerms'});
+        const agreed=nextDraft.feeTermsAccepted
+          ?{...nextDraft,termsUrl}: {...nextDraft,termsUrl:null};
         return persistAndRender(ownerId,old,{...old,draft:agreed},
           rev=>reviewPanel(agreed,rev));
       }
