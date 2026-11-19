@@ -3,6 +3,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {prepareSampleVideo,probeDurationSeconds} from '../sales/sampleMedia.mjs';
 import {prepareMissingPreviewAssets} from '../sales/autoPreview.mjs';
+import {optimizePaidMp4} from '../sales/paidVideoOptimize.mjs';
 
 /** Bridges existing media processors with the trusted Telegram media store.
  * fetchSource returns {path,cleanup?}. saveGenerated returns a Telegram
@@ -52,10 +53,24 @@ export function createVideoMediaProcessor({
          typeof document.file_id!=='string' ||
          !Number.isSafeInteger(ownerId)||ownerId<=0)
         throw new Error('MP4動画ファイルを送信してください。');
-      return withSource(document.file_id,async(path)=>{
+      return withSource(document.file_id,async(path,dir)=>{
         await probeDurationSeconds(path,options);
-        const fileId=await uploadPrepared(path,'video',ownerId);
+        const optimized=await optimizePaidMp4({...options,inputPath:path,
+          outputPath:join(dir,'paid-optimized.mp4')});
+        const fileId=await uploadPrepared(optimized.path,'video',ownerId);
         return {file_id:fileId};
+      });
+    },
+    async optimizeMainVideo(video,ownerId) {
+      if(typeof video?.file_id!=='string'||!video.file_id.trim()||
+         !Number.isSafeInteger(ownerId)||ownerId<=0)
+        throw Error('MP4 video/owner missing');
+      return withSource(video.file_id,async(path,dir)=>{
+        const output=await optimizePaidMp4({...options,inputPath:path,
+          outputPath:join(dir,'paid-optimized.mp4')});
+        if(output.kind!=='optimized')return {file_id:video.file_id,optimized:false};
+        const fileId=await uploadPrepared(output.path,'video',ownerId);
+        return {file_id:fileId,optimized:true};
       });
     },
     async prepareUserSample(video) {
