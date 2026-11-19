@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {creatorOwnerUpdate} from './creatorOwnerUpdateJobs.mjs';
 
 /**
  * The SAME CreatorBot update handler is used for Webhook and for long polling.
@@ -6,7 +7,7 @@ import {createHash} from 'node:crypto';
  * A successful handler+DB receipt precedes offset advancement.
  */
 export function createCreatorPollingConsumer({telegramApi,handleTelegramWebhook,
-  webhookSecret,pool}={}){
+  webhookSecret,pool,ownerQueue=null}={}){
  if(typeof telegramApi!=='function'||typeof handleTelegramWebhook!=='function'||
     typeof webhookSecret!=='string'||webhookSecret.length<20||
     typeof pool?.query!=='function')
@@ -54,6 +55,13 @@ export function createCreatorPollingConsumer({telegramApi,handleTelegramWebhook,
    if(last!==null&&id<=last)continue;
    const buf=Buffer.from(JSON.stringify(update));
    if(buf.length>262144)throw Error('CREATOR_POLL_UPDATE_TOO_LARGE');
+   if(ownerQueue&&creatorOwnerUpdate(update)!==null){
+     // Persist before advancing offset; only one getUpdates poller exists.
+     await ownerQueue.enqueue(update);
+     await recordOffset(id);
+     accepted++;
+     continue;
+   }
    // The existing source module's webhook admission claims and commits
    // the same update receipt. It is NOT exposed as an HTTP listener here.
    let result;
