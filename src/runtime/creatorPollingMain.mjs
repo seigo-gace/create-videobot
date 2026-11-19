@@ -11,6 +11,8 @@ import {createTelegramVideoFetcher} from '../telegram/telegramFileFetch.mjs';
 import {createCreatorDmPreviewUploader} from '../telegram/privateMediaUpload.mjs';
 import {createVideoBotSourceModule} from '../telegram/creatorWiring.mjs';
 import {createCreatorPollingConsumer} from './creatorPollingConsumer.mjs';
+import {createPostgresOwnerUpdateQueue} from './creatorOwnerUpdateJobs.mjs';
+import {setTimeout as sleep} from 'node:timers/promises';
 import {applyCreatorSchema} from './creatorMigrate.mjs';
 import {createCreatorTelegramFetch} from './creatorEgress.mjs';
 import {createStickerShopPreview} from '../stickers/shopPreview.mjs';
@@ -100,7 +102,9 @@ export async function createCreatorPollingRuntime({
   if(env.VIDEOBOT_SCHEMA_MIGRATE!=='YES')
    throw Error('CREATOR_POLL_SCHEMA_OWNER_CONSENT_MISSING');
   const schema=await applySchema({pool});
-  if(schema.migrations!==19)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
+  if(schema.migrations!==20)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
+  const ownerQueue=env.VIDEOBOT_OWNER_JOBS==='YES'?createPostgresOwnerUpdateQueue(pool):null;
+  if(ownerQueue)await ownerQueue.recover();
   const pollAdmissionSecret=randomBytes(32).toString('hex');
   const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch,
     ...(localApi?{localFileRoot:env.VIDEOBOT_LOCAL_MEDIA_ROOT,maxBytes:2_000_000_000}:{})});
@@ -119,9 +123,10 @@ export async function createCreatorPollingRuntime({
    telegramApi:api,
    handleTelegramWebhook:source.handleTelegramWebhook,
    webhookSecret:pollAdmissionSecret,
-   pool
+   pool,ownerQueue
   });
   return {pool,source,api,poller,gateConnected,botToken:token,fetchSource,
+   ownerJobRunner:ownerQueue?()=>ownerQueue.runOne(source.handleTelegramWebhook,pollAdmissionSecret):null,
    async close(){await outbound.close();await pool.end();}};
  }catch(err){await outbound.close();await pool.end();throw err;}
 }
@@ -176,9 +181,26 @@ export async function runCreatorPollingMain({
   }
   onStatus('CREATOR_DM_POLL_READY=PASS');
   onStatus('CREATOR_GATE_PUBLIC_RELEASE='+(rt.gateConnected?'CONNECTED':'NOT_VERIFIED'));
-  let recoveryCursor=0,recoveryInFlight=null;
+  let recoveryCursor=0,recoveryInFlight=null,workerError=null;
+  const workers=[];
+  if(rt.ownerJobRunner){
+   for(let i=0;i<2;i++){
+    const worker=(async()=>{
+     while(!signal?.aborted){
+      const result=await rt.ownerJobRunner();
+      if(result.needsReconcile)onStatus('CREATOR_OWNER_JOB_NEEDS_RECONCILE=YES');
+      if(!result.hadWork){
+       try{await sleep(500,undefined,{signal});}
+       catch(e){if(signal?.aborted)return;throw e;}
+      }
+     }
+    })().catch(e=>{workerError=e;});
+    workers.push(worker);
+   }
+  }
   while(!signal?.aborted){
-   const outcome=await rt.poller.pollBatch({timeout:8});
+   if(workerError)throw workerError;
+   const outcome=await rt.poller.pollBatch({timeout:rt.ownerJobRunner?2:8});
    if(outcome.accepted>0)onStatus('CREATOR_DM_UPDATES_HANDLED='+outcome.accepted);
    if(outcome.quarantined>0)onStatus('CREATOR_UPDATES_QUARANTINED='+outcome.quarantined);
    if(!recoveryInFlight){
@@ -196,6 +218,7 @@ export async function runCreatorPollingMain({
    }
   }
   if(recoveryInFlight)await recoveryInFlight;
+  if(workers.length)await Promise.allSettled(workers);
  }finally{
   if(shopServer?.listening)await new Promise(resolve=>shopServer.close(()=>resolve()));
   await rt.close();
