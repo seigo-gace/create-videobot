@@ -1,4 +1,5 @@
-import {readFile,lstat} from 'node:fs/promises';
+import {readFile,lstat,realpath} from 'node:fs/promises';
+import {resolve,sep} from 'node:path';
 import {createReadStream} from 'node:fs';
 import {Readable} from 'node:stream';
 import {randomBytes} from 'node:crypto';
@@ -37,7 +38,31 @@ export function createTelegramPrivateMediaUploader({
     form.set('protect_content','true');
     form.set('has_spoiler','true');
     form.set(type,new Blob([bytes],{type:type==='photo'?'image/jpeg':'video/mp4'}),type==='photo'?'preview.jpg':'sample.mp4');
-    const method=type==='photo'?'sendPhoto':'sendVideo';
+    // Official --local mode accepts absolute paths visible to the Bot API
+   // process. Only trusted Telegram-owned source files under a verified
+   // read-only shared root may use this zero-copy route. FFmpeg outputs in
+   // temporary directories keep the existing bounded streaming upload.
+   if(localMediaRoot!==null){
+     if(baseUrl!=='http://telegram-bot-api:8081'||
+        localMediaRoot!=='/var/lib/telegram-bot-api')
+       throw Error('unverified local media root');
+     const base=await realpath(localMediaRoot);
+     const absolute=await realpath(path);
+     if(absolute.startsWith(base+sep) && absolute!==base){
+       const method=type==='photo'?'sendPhoto':'sendVideo';
+       const receipt=await telegramApi(method,{
+         chat_id:ownerId,[type]:absolute,disable_notification:true,
+         protect_content:true
+       });
+       const fileId=type==='photo'?receipt?.photo?.at(-1)?.file_id:receipt?.video?.file_id;
+       if(typeof fileId!=='string'||!fileId.trim()||
+          !Number.isSafeInteger(receipt?.message_id)||receipt.message_id<=0)
+         throw Error('creator local media handoff result unknown');
+       await telegramApi('deleteMessage',{chat_id:ownerId,message_id:receipt.message_id}).catch(()=>{});
+       return {fileId};
+     }
+   }
+   const method=type==='photo'?'sendPhoto':'sendVideo';
     const res=await fetchImpl('https://api.telegram.org/bot'+token+'/'+method,{
       method:'POST',body:form,redirect:'error',signal:AbortSignal.timeout(60000)
     });
@@ -61,7 +86,7 @@ export function createTelegramPrivateMediaUploader({
  */
 export function createCreatorDmPreviewUploader({
  token,fetchImpl=globalThis.fetch,telegramApi,maxBytes=20_000_000,
- baseUrl='https://api.telegram.org'
+ baseUrl='https://api.telegram.org',localMediaRoot=null
 }={}){
  if(typeof token!=='string'||!/^\d+:[A-Za-z0-9_-]{30,}$/.test(token)||
     typeof fetchImpl!=='function'||typeof telegramApi!=='function')
