@@ -9,7 +9,7 @@ function fakeDb(){
       price_mode:d[2],thumbnail_file_id:d[3],sample_file_id:d[4],
       sample_duration_seconds:d[5],paid_video_file_id:d[6],
       rights_verified:d[7],adult_consent_verified:d[8],fee_terms_accepted_at:d[9]?'CI-consented':null,
-      management_fee_bps:3000,description:d[10]??'',status:'draft'};
+      management_fee_bps:3000,description:d[10]??'',creator_terms_version:d[11]??null,creator_terms_url:d[12]??null,status:'draft'};
   }
   const query=async(sql,params)=>{
     queries.push({sql,params});
@@ -38,7 +38,8 @@ function fakeDb(){
       const receipt=receipts.get(id+':'+revision);
       if(!old||old.seller_user_id!==owner||old.revision!==revision||
          !['draft','ready'].includes(old.status)||!old.rights_verified||
-         !old.adult_consent_verified||!old.fee_terms_accepted_at||old.management_fee_bps!==3000||!old.title||!old.price_stars||
+         !old.adult_consent_verified||!old.fee_terms_accepted_at||
+         old.creator_terms_version!=='1.0'||!old.creator_terms_url||old.management_fee_bps!==3000||!old.title||!old.price_stars||
          !old.thumbnail_file_id||!old.sample_file_id||!old.paid_video_file_id||
          receipt?.status!=='sent'||
          JSON.stringify(receipt.freeMessageIds)!==JSON.stringify(freeMessageIds)||
@@ -60,7 +61,9 @@ function fakeDb(){
 function example(overrides={}){
   return {title:'夏の思い出',priceStars:300,priceMode:'preset',thumbnail:{fileId:'photo001'},
     sample:{fileId:'sample001',durationSeconds:30},paidVideo:{fileId:'paid001'},
-    rightsVerified:true,adultConsentVerified:true,...overrides};
+    rightsVerified:true,adultConsentVerified:true,
+    termsVersion:'1.0',termsUrl:'https://example.test/createvdobot-terms.html',
+    termsAcceptedAt:'2026-11-19T12:00:00.000Z',...overrides};
 }
 test('private video listing create/read/update retains other properties and seller ownership',async()=>{
   const db=fakeDb(),store=createPostgresListingStore(db);
@@ -149,4 +152,15 @@ test('optional video description persists with the existing owner listing and is
  assert.equal(changed.description,'差し替え説明');
  assert.equal((await store.getOwned(33,'description_video')).description,'差し替え説明');
  await assert.rejects(()=>store.createDraft(33,'overlong',example({description:'a'.repeat(801)})),/description/);
+});
+
+test('posting agreement keeps version and URL in database, and legacy unversioned approval cannot publish',async()=>{
+ const db=fakeDb(),store=createPostgresListingStore(db);
+ const initial=await store.createDraft(33,'terms_ok',example({feeTermsAccepted:true}));
+ assert.equal(initial.termsVersion,'1.0');
+ assert.equal(initial.termsUrl,'https://example.test/createvdobot-terms.html');
+ assert.ok(initial.termsAcceptedAt);
+ const invalid=example({feeTermsAccepted:true,termsVersion:null});
+ await assert.rejects(()=>store.createDraft(33,'terms_invalid',invalid),/versioned creator terms/);
+ assert.equal(db.rows.has('terms_invalid'),false);
 });
