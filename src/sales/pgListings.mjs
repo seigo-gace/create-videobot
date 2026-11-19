@@ -59,7 +59,7 @@ function validatedDraft(draft) {
      (!Number.isFinite(draft.sample.durationSeconds)||draft.sample.durationSeconds<=0||
       draft.sample.durationSeconds>30))throw new Error('sample longer than 30 seconds');
   if(draft.feeTermsAccepted===true &&
-     (typeof draft.termsVersion!=='string'||!/^[0-9]+(?:\\.[0-9]+){0,2}$/.test(draft.termsVersion)||
+     (typeof draft.termsVersion!=='string'||!/^[0-9]+(?:\.[0-9]+){0,2}$/.test(draft.termsVersion)||
       typeof draft.termsAcceptedAt!=='string'||!Number.isFinite(Date.parse(draft.termsAcceptedAt))||
       typeof draft.termsUrl!=='string'||!/^https:\/\/[A-Za-z0-9.-]+\/[A-Za-z0-9/_-]+\.html$/.test(draft.termsUrl)))
     throw new Error('versioned creator terms agreement required');
