@@ -142,7 +142,7 @@ test('local Bot API zero-copy path normalizes 23MB document without a second upl
    assert.deepEqual(await upload({path,type:'video',ownerId:33}),
      {fileId:'normalized_large_video_001'});
    assert.deepEqual(calls.map(x=>x.method),['sendVideo','deleteMessage']);
-   assert.equal(calls[0].params.video,path);
+   assert.equal(calls[0].params.video,new URL('file://'+path).href);
    assert.equal(calls[0].params.chat_id,33);
    assert.equal(calls[1].params.message_id,83);
  }finally{await rm(dir,{recursive:true,force:true});}
