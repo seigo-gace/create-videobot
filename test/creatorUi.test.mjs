@@ -58,6 +58,10 @@ test('My Videos displays ten owner-only inline edit links and back/new row',()=>
  const first=myVideosPanel({sellerId:'seller1',listings,page:0,revision:5});
  assert.equal(first.entities.length,10);
  assert.match(first.text,/［編集］🆕動画0/);
+ const changed=myVideosPanel({sellerId:'seller1',listings,page:0,revision:5,
+   notice:'動画を編集／更新しました。',updatedId:'vid1'});
+ assert.match(changed.text,/［編集］📝 動画1/);
+ assert.match(changed.text,/動画を編集／更新しました/);
  assert.equal(first.text.includes('他人'),false);
  assert.deepEqual(first.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る','🆕 新規投稿']);
  assert.equal(first.reply_markup.inline_keyboard[1][0].text,'次へ ▶');
