@@ -633,7 +633,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
             throw new Error('MP4ファイルの動画変換サービスは未接続です。');
           incomingVideo=await mediaProcessor.normalizeVideoDocument(document,ownerId);
         } else if(typeof mediaProcessor?.optimizeMainVideo==='function') {
-          incomingVideo=await mediaProcessor.optimizeMainVideo(incomingVideo,ownerId);
+          try{
+            incomingVideo=await mediaProcessor.optimizeMainVideo(incomingVideo,ownerId);
+          }catch(e){
+            // Optimization is non-destructive. Never reject an already valid
+            // Telegram video because the optional compression step failed.
+            previewWarning='⚠️ 本編圧縮は完了していません。元動画を保持します。';
+          }
         }
         draft=editCreatorDraft(withTitle,{type:'paidVideo',media:{fileId:incomingVideo.file_id}});
         // A replacement invalidates automatically-derived previews from the previous source video.
