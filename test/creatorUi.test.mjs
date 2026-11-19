@@ -99,7 +99,7 @@ test('seller consent is explicit, reversible and reset when video changes',()=>{
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main002'}});
  assert.deepEqual([d.rightsVerified,d.adultConsentVerified,d.feeTermsAccepted],[false,false,false]);
  panel=creatorReviewPanel(d,6,'','https://example.test/terms.html');
- assert.match(panel.text,/出演者全員が18歳以上/);
+ assert.match(panel.text,/出演者の年齢と必要な同意/);
 });
 
 test('preview has only inline edit links; fees appear only in consent review',()=>{
@@ -111,7 +111,7 @@ test('preview has only inline edit links; fees appear only in consent review',()
  assert.equal(editor.text.includes('管理費'),false);
  assert.equal(editor.entities.length,6);
  assert.deepEqual(editor.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
- assert.match(editor.text,/説明：\[未登録\]/);
+ assert.match(editor.text,/［未登録］ 説明：/);
  const review=creatorReviewPanel(d,3,'','https://example.test/terms.html');
  assert.match(review.text,/30%/);
  assert.match(review.text,/管理費90 Stars／投稿者分210 Stars/);
@@ -150,7 +150,7 @@ test('first video opens inline preview with six edit links and no extra descript
  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample123',durationSeconds:30}});
  const final=creatorEditorPanel(d,3,'editor');
  assert.match(final.text,/［編集］ タイトル：作品タイトル/);
- assert.match(final.text,/説明：\[未登録\]/);
+ assert.match(final.text,/［未登録］ 説明：/);
  assert.match(final.text,/［未登録］ 価格：/);
  assert.deepEqual(final.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
  assert.equal(final.entities.length,6);
@@ -173,7 +173,7 @@ test('terms summary has checkbox and only reveals publish after all content and 
  d=editCreatorDraft(d,{type:'confirmTerms'});
  const after=creatorReviewPanel(d,3,'','https://example.test/terms.html');
  assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),true);
- assert.match(after.text,/☑ 規約・約款に同意済み/);
+ assert.match(after.text,/☑ 同意済み/);
 });
 
 test('field editor isolates one requested item and shows only back/delete actions',()=>{
