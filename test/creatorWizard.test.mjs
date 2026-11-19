@@ -43,7 +43,7 @@ function setup({listingStoreOverride={},publishListing,salesProvider,mediaProces
       return {thumbnail:{fileId:'photo_auto_1'},sample:{fileId:'sample_auto_1',durationSeconds:30}};
     }
   };
-  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor:{...mediaProcessor,...mediaProcessorOverride},publishListing,salesProvider});
+  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor:{...mediaProcessor,...mediaProcessorOverride},publishListing,salesProvider,termsUrl:'https://example.test/createvdobot-terms.html'});
   const callback=(action,id=101,from=33)=>handler.handle({
     callback_query:{id:'cq_'+action,from:{id:from},data:action,
       message:{chat:{id:33,type:'private'},message_id:id}}
@@ -146,7 +146,7 @@ test('creator confirms rights and explicitly publishes only after verified store
  await x.callback('edit:price:300|r3');
  await x.callback('edit:preview|r4');
  assert.equal(x.states.get(33).screen,'review');
- assert.match(x.screens.at(-1).panel.text,/出演者全員が18歳以上/);
+ assert.match(x.screens.at(-1).panel.text,/出演者の年齢と必要な同意/);
  await x.callback('review:publish|r5');
  assert.equal(published.length,0);
  assert.match(x.screens.at(-1).panel.text,/未登録項目と権利/);
@@ -318,7 +318,7 @@ test('video upload -> inline edit -> explicit terms -> publish once -> personal 
  assert.equal(x.calls.filter(c=>c.method==='sendMediaGroup').length,1);
  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
    ['✅ 投稿する','❌ キャンセル']);
- assert.match(x.screens.at(-1).panel.text,/説明：\[未登録\]/);
+ assert.match(x.screens.at(-1).panel.text,/［未登録］ 説明：/);
  await x.callback('edit:description|r2');
  await x.send({text:'この動画の説明です'},1002);
  await x.callback('edit:price|r4');
