@@ -40,6 +40,26 @@ export function createVideoBotScreenTransport(telegramApi) {
     // A definitive refusal falls back to the existing text screen.
     if(panel.albumMessageId!==undefined)positive(panel.albumMessageId,'ALBUM_MESSAGE');
     const id=previousMessageId==null?null:positive(previousMessageId,'MESSAGE');
+    if(panel.mediaPreview) {
+      const media=panel.mediaPreview;
+      if(!['photo','video'].includes(media.type) ||
+         typeof media.fileId!=='string' ||
+         !/^[A-Za-z0-9_-]{3,256}$/.test(media.fileId) ||
+         panel.text.length>1024)
+        throw new Error('INVALID_CREATOR_FIELD_MEDIA');
+      // An individual edit shows the actual registered asset, never the
+      // entire album. No fallback resend after an unknown Telegram outcome.
+      const sent=await telegramApi(media.type==='photo'?'sendPhoto':'sendVideo',{
+        chat_id:chatId,[media.type]:media.fileId,caption:panel.text,
+        reply_markup:panel.reply_markup,protect_content:true,
+        disable_notification:true
+      });
+      if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0)
+        throw new Error('WIZARD_FIELD_MEDIA_SEND_UNKNOWN');
+      if(id!==null&&id!==sent.message_id)
+        await telegramApi('deleteMessage',{chat_id:chatId,message_id:id}).catch(()=>{});
+      return {messageId:sent.message_id,replaced:false,fieldMedia:true};
+    }
     if(panel.albumMessageId && panel.text.length<=1024) {
       try {
         await telegramApi('editMessageCaption',{
