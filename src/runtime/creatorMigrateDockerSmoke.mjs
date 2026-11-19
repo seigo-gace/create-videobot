@@ -13,13 +13,13 @@ if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
 const pool=new Pool({connectionString:process.env.CI_VIDEO_DB_DSN,max:1});
 try {
  const result=await applyCreatorSchema({pool});
- if(result.applied!==true||result.migrations!==19)throw new Error('nineteen migrations not confirmed');
+ if(result.applied!==true||result.migrations!==20)throw new Error('twenty migrations not confirmed');
  const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts, to_regclass('videobot_sticker_products') IS NOT NULL AS products, to_regclass('videobot_sticker_orders') IS NOT NULL AS orders, to_regclass('videobot_sticker_delivery_items') IS NOT NULL AS deliveries, to_regclass('videobot_sticker_payment_support') IS NOT NULL AS support, to_regclass('videobot_sticker_topic_posts') IS NOT NULL AS topic_posts, to_regclass('videobot_sticker_gifts') IS NOT NULL AS gifts, to_regclass('videobot_sticker_gift_delivery_items') IS NOT NULL AS gift_deliveries");
  if(q.rows.length!==1||!Object.values(q.rows[0]).every(v=>v===true))
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==19)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==20)throw new Error('schema re-application invalid');
  // Real PostgreSQL proof: exceptional update is retained privately,
  // reinsertions with the same fingerprint are idempotent, and mismatches fail.
  const unknown={update_id:88001,callback_query:{data:'review:publish|r3'}};
