@@ -38,19 +38,7 @@ export function createTelegramPrivateMediaUploader({
     form.set('protect_content','true');
     form.set('has_spoiler','true');
     form.set(type,new Blob([bytes],{type:type==='photo'?'image/jpeg':'video/mp4'}),type==='photo'?'preview.jpg':'sample.mp4');
-    // Official --local mode accepts absolute paths visible to the Bot API
-   // process. Only trusted Telegram-owned source files under a verified
-   // read-only shared root may use this zero-copy route. FFmpeg outputs in
-   // temporary directories keep the existing bounded streaming upload.
-   if(localMediaRoot!==null){
-     if(baseUrl!=='http://telegram-bot-api:8081'||
-        typeof localMediaRoot!=='string'||!localMediaRoot.startsWith('/')||
-        resolve(localMediaRoot)==='/'||localMediaRoot.split(sep).includes('..'))
-       throw Error('unverified local media root');
-     const base=await realpath(localMediaRoot);
-     const absolute=await realpath(path);
-     if(absolute.startsWith(base+sep) && absolute!==base){
-       const method=type==='photo'?'sendPhoto':'sendVideo';
+   const method=type==='photo'?'sendPhoto':'sendVideo';
        const receipt=await telegramApi(method,{
          chat_id:ownerId,[type]:absolute,disable_notification:true,
          protect_content:true
@@ -104,7 +92,19 @@ export function createCreatorDmPreviewUploader({
    const stat=await lstat(path);
    if(!stat.isFile()||stat.isSymbolicLink()||stat.size<1||stat.size>maxBytes)
      throw new Error('generated creator preview upload size invalid');
-   const method=type==='photo'?'sendPhoto':'sendVideo';
+    // Official --local mode accepts absolute paths visible to the Bot API
+   // process. Only trusted Telegram-owned source files under a verified
+   // read-only shared root may use this zero-copy route. FFmpeg outputs in
+   // temporary directories keep the existing bounded streaming upload.
+   if(localMediaRoot!==null){
+     if(baseUrl!=='http://telegram-bot-api:8081'||
+        typeof localMediaRoot!=='string'||!localMediaRoot.startsWith('/')||
+        resolve(localMediaRoot)==='/'||localMediaRoot.split(sep).includes('..'))
+       throw Error('unverified local media root');
+     const base=await realpath(localMediaRoot);
+     const absolute=await realpath(path);
+     if(absolute.startsWith(base+sep) && absolute!==base){
+       const method=type==='photo'?'sendPhoto':'sendVideo';
    const mime=type==='photo'?'image/jpeg':'video/mp4';
    const filename=type==='photo'?'creator-preview.jpg':'creator-sample.mp4';
    let request;
