@@ -1,4 +1,4 @@
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,statfs} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {prepareSampleVideo,probeDurationSeconds} from '../sales/sampleMedia.mjs';
@@ -11,11 +11,19 @@ import {prepareMissingPreviewAssets} from '../sales/autoPreview.mjs';
  */
 export function createVideoMediaProcessor({
   fetchSource, saveGenerated, storageApproved=false,
-  run, ffmpeg='ffmpeg', ffprobe='ffprobe', workRoot=tmpdir()
+  run, ffmpeg='ffmpeg', ffprobe='ffprobe', workRoot=tmpdir(),diskStat=statfs
 }={}) {
   if(typeof fetchSource!=='function'||typeof saveGenerated!=='function')
     throw new Error('trusted media storage adapters required');
   const options={...(run?{run}:{}),ffmpeg,ffprobe};
+  // Preflight the bounded thumbnail/sample scratch space before downloading
+  // media or invoking FFmpeg. The paid original remains untouched.
+  const checkScratchSpace=async()=>{
+    const fs=await diskStat(workRoot,{bigint:true});
+    const free=BigInt(fs?.bavail)*BigInt(fs?.bsize);
+    if(free<64n*1024n*1024n)
+      throw Error('CREATOR_PREVIEW_SCRATCH_SPACE_INSUFFICIENT');
+  };
   async function withSource(fileId,callback) {
     if(typeof fileId!=='string'||!fileId.trim())throw new Error('Telegram media file reference required');
     const dir=await mkdtemp(join(workRoot,'videobot-media-'));
@@ -62,6 +70,7 @@ export function createVideoMediaProcessor({
     async prepareMissingPreviews(draft) {
       if(!draft?.paidVideo?.fileId)throw new Error('paid video required for automatic preview');
       if(draft.thumbnail&&draft.sample)return {};
+      await checkScratchSpace();
       return withSource(draft.paidVideo.fileId,async(path,dir)=>{
         const prepared=await prepareMissingPreviewAssets({
           ...options,sourcePath:path,thumbnail:draft.thumbnail,sample:draft.sample,
