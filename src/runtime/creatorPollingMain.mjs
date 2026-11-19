@@ -100,7 +100,7 @@ export async function createCreatorPollingRuntime({
   if(env.VIDEOBOT_SCHEMA_MIGRATE!=='YES')
    throw Error('CREATOR_POLL_SCHEMA_OWNER_CONSENT_MISSING');
   const schema=await applySchema({pool});
-  if(schema.migrations!==18)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
+  if(schema.migrations!==19)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
   const pollAdmissionSecret=randomBytes(32).toString('hex');
   const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch,
     ...(localApi?{localFileRoot:env.VIDEOBOT_LOCAL_MEDIA_ROOT,maxBytes:2_000_000_000}:{})});
@@ -109,6 +109,7 @@ export async function createCreatorPollingRuntime({
   source=createSource({
    pool,telegramApi:api,gateOwner,botToken:token,
    stickerShopBaseUrl:env.VIDEOBOT_SHOP_PUBLIC_URL??null,
+   termsUrl:env.CREATEVDOBOT_TERMS_URL??'',
    webhookSecret:pollAdmissionSecret,
    storageApproved:true,
    mediaPorts:{fetchSource,saveGenerated}
