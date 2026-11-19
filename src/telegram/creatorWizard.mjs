@@ -474,8 +474,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       }
       if(action==='review:agree'||action==='review:rights') {
         if(!verifiedTermsUrl)throw new Error('CREATOR_PUBLISHED_TERMS_URL_REQUIRED');
+        const currentConsent=draft.feeTermsAccepted===true &&
+          draft.termsVersion===CREATOR_TERMS_VERSION&&draft.termsUrl===termsUrl &&
+          typeof draft.termsAcceptedAt==='string';
         const nextDraft=editCreatorDraft(draft,
-          {type:draft.feeTermsAccepted?'clearTerms':'confirmTerms'});
+          {type:currentConsent?'clearTerms':'confirmTerms'});
         const agreed=nextDraft.feeTermsAccepted
           ?{...nextDraft,termsUrl}: {...nextDraft,termsUrl:null};
         return persistAndRender(ownerId,old,{...old,draft:agreed},
