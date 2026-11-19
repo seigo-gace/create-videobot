@@ -210,3 +210,22 @@ test('clearing title or price is reversible in an edit draft but cannot authoriz
  assert.equal(noPrice.priceStars,null);
  assert.equal(original.priceStars,300);
 });
+
+test('missing Cloudflare legal-page URL cannot offer consent or Stars publish',()=>{
+ let draft=openCreatorEditor({sellerId:'seller1'});
+ draft=editCreatorDraft(draft,{type:'captionTitle',text:'作品'});
+ draft=editCreatorDraft(draft,{type:'paidVideo',media:{fileId:'main001'}});
+ draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:'photo001'}});
+ draft=editCreatorDraft(draft,{type:'sample',media:{fileId:'sample001',durationSeconds:30}});
+ draft=editCreatorDraft(draft,{type:'preset',stars:300});
+ draft=editCreatorDraft(draft,{type:'confirmTerms'});
+ const unavailable=creatorReviewPanel(draft,8);
+ assert.match(unavailable.text,/規約本文の公開先が未確認/);
+ assert.ok(unavailable.reply_markup.inline_keyboard.flat().every(b=>
+   !String(b.callback_data||'').startsWith('review:agree') &&
+   !String(b.callback_data||'').startsWith('review:publish')));
+ const available=creatorReviewPanel(draft,9,'','https://example.test/createvdobot-terms.html');
+ assert.equal(available.reply_markup.inline_keyboard[0][0].url,
+   'https://example.test/createvdobot-terms.html');
+ assert.match(available.text,/投稿者は自らの責任で作品を公開/);
+});
