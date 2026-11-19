@@ -111,3 +111,23 @@ test('HTTP 400 edit denial replaces the DM screen once; HTTP 503 never does',asy
  const safe=createVideoBotScreenTransport(unavailable);
  await assert.rejects(()=>safe.show(33,8,panel),/WIZARD_EDIT_RESULT_UNKNOWN/);
 });
+
+test('local Bot API supports zero-copy sendVideo with the same bot and bounded request',async()=>{
+ let observed=null;
+ const api=createTelegramBotApi({
+   token:'1234:'+'A'.repeat(36),
+   baseUrl:'http://telegram-bot-api:8081',
+   fetchImpl:async(url,params)=>{
+     observed={url,params};
+     return {status:200,json:async()=>({ok:true,result:{
+       message_id:101,video:{file_id:'local_video_101'}
+     }})};
+   }
+ });
+ const result=await api('sendVideo',{chat_id:33,video:'/var/lib/telegram-bot-api/bot/file.mp4'});
+ assert.equal(result.video.file_id,'local_video_101');
+ assert.match(observed.url,/\/sendVideo$/);
+ assert.equal(JSON.parse(observed.params.body).chat_id,33);
+ assert.equal(JSON.parse(observed.params.body).video,'/var/lib/telegram-bot-api/bot/file.mp4');
+ assert.ok(observed.params.signal instanceof AbortSignal);
+});
