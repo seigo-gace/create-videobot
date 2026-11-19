@@ -1,4 +1,4 @@
-import {mkdtemp,rm,statfs} from 'node:fs/promises';
+import {mkdtemp,rm,statfs,lstat} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {prepareSampleVideo,probeDurationSeconds} from '../sales/sampleMedia.mjs';
@@ -17,16 +17,22 @@ export function createVideoMediaProcessor({
   if(typeof fetchSource!=='function'||typeof saveGenerated!=='function')
     throw new Error('trusted media storage adapters required');
   const options={...(run?{run}:{}),ffmpeg,ffprobe};
-  // Preflight the bounded thumbnail/sample scratch space before downloading
-  // media or invoking FFmpeg. The paid original remains untouched.
+  // This workspace is a dedicated disk-backed bind mount in production.
+  // 512 MiB is the minimum *operational reserve*, not a claim that it can
+  // hold a multi-GB output. optimizePaidMp4 separately checks full source
+  // size before beginning its bounded FFmpeg second-copy generation.
   const checkScratchSpace=async()=>{
+    const st=await lstat(workRoot);
+    if(!st.isDirectory()||st.isSymbolicLink())
+      throw Error('CREATOR_MEDIA_WORK_ROOT_INVALID');
     const fs=await diskStat(workRoot,{bigint:true});
     const free=BigInt(fs?.bavail)*BigInt(fs?.bsize);
-    if(free<64n*1024n*1024n)
+    if(free<512n*1024n*1024n)
       throw Error('CREATOR_PREVIEW_SCRATCH_SPACE_INSUFFICIENT');
   };
   async function withSource(fileId,callback) {
     if(typeof fileId!=='string'||!fileId.trim())throw new Error('Telegram media file reference required');
+    await checkScratchSpace();
     const dir=await mkdtemp(join(workRoot,'videobot-media-'));
     let opened=null;
     try {
