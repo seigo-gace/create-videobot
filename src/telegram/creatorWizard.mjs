@@ -632,6 +632,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           if(typeof mediaProcessor?.normalizeVideoDocument!=='function')
             throw new Error('MP4ファイルの動画変換サービスは未接続です。');
           incomingVideo=await mediaProcessor.normalizeVideoDocument(document,ownerId);
+        } else if(typeof mediaProcessor?.optimizeMainVideo==='function') {
+          incomingVideo=await mediaProcessor.optimizeMainVideo(incomingVideo,ownerId);
         }
         draft=editCreatorDraft(withTitle,{type:'paidVideo',media:{fileId:incomingVideo.file_id}});
         // A replacement invalidates automatically-derived previews from the previous source video.
