@@ -64,3 +64,19 @@ test('unapproved storage refuses generation upload and cleans downloaded media',
  assert.equal(f.calls.length,0);
  assert.deepEqual(await readdir(f.base),[]);
 }));
+
+test('insufficient scratch space stops before source download, transcoding and Telegram sends',()=>setup(async f=>{
+ let fetched=0,uploaded=0,processed=0;
+ const p=createVideoMediaProcessor({
+   fetchSource:async()=>{fetched++;return f.fetchSource('main',f.base);},
+   saveGenerated:async()=>{uploaded++;return {fileId:'should_not_exist'};},
+   storageApproved:true,workRoot:f.base,
+   diskStat:async()=>{processed++;return {bavail:1n,bsize:4096n};}
+ });
+ await assert.rejects(()=>p.prepareMissingPreviews({paidVideo:{fileId:'main'}}),
+   /CREATOR_PREVIEW_SCRATCH_SPACE_INSUFFICIENT/);
+ assert.equal(processed,1);
+ assert.equal(fetched,0);
+ assert.equal(uploaded,0);
+ assert.deepEqual(await readdir(f.base),[]);
+}));
