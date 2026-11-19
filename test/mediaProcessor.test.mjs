@@ -19,7 +19,11 @@ async function setup(fn){
  };
  function fakeRun(duration){
    return async(command,args)=>{
-     if(command==='ffprobe')return {stdout:String(args.at(-1).includes('.sample-')?(duration>30?30:Math.floor(duration/3*100)/100):duration)};
+     if(command==='ffprobe'){
+       if(args.includes('json'))return {stdout:JSON.stringify({format:{duration:String(duration),bit_rate:'1000000'},
+         streams:[{codec_type:'video',codec_name:'h264',width:640,height:360}]})};
+       return {stdout:String(args.at(-1).includes('.sample-')?(duration>30?30:Math.floor(duration/3*100)/100):duration)};
+     }
      if(command==='ffmpeg') {
        await writeFile(args.at(-1),'generated data');
        return {stdout:''};
