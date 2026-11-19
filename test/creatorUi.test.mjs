@@ -184,7 +184,7 @@ test('field editor isolates one requested item and shows only back/delete action
  assert.match(titlePanel.text,/タイトル：サンプル作品/);
  assert.equal(titlePanel.text.includes('説明：'),false);
  assert.equal(titlePanel.text.includes('管理費'),false);
- assert.deepEqual(titlePanel.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る']);
+ assert.deepEqual(titlePanel.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る','🗑 削除']);
  const description=creatorFieldPanel(d,'description',8);
  assert.deepEqual(description.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る','🗑 削除']);
 });
@@ -196,4 +196,17 @@ test('registered video editor uses four actions, return only when unchanged and 
  const changed=editCreatorDraft(original,{type:'titleInput',text:'改題'});
  assert.deepEqual(creatorEditorPanel(changed,3).reply_markup.inline_keyboard[0].map(b=>b.text),
  ['✅ 変更','❌ キャンセル','🗑 削除']);
+});
+
+test('clearing title or price is reversible in an edit draft but cannot authorize publication',()=>{
+ const owned={id:'mine1',sellerId:'seller1',revision:2,title:'元タイトル',priceStars:300,
+   paidVideo:{fileId:'video001'}};
+ const original=openCreatorEditor({sellerId:'seller1',existing:owned});
+ const noTitle=editCreatorDraft(original,{type:'clearTitle'});
+ assert.equal(noTitle.title,'');
+ assert.equal(original.title,'元タイトル');
+ assert.ok(creatorEditorPanel(noTitle,3).text.includes('タイトル：未登録'));
+ const noPrice=editCreatorDraft(original,{type:'clearPrice'});
+ assert.equal(noPrice.priceStars,null);
+ assert.equal(original.priceStars,300);
 });
