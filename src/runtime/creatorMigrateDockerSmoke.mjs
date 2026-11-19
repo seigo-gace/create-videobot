@@ -51,9 +51,9 @@ try {
    throw Error('OWNER_JOB_SAFE_CRASH_REQUEUE_FAILED');
  const reclaimed=await queue.claim();
  if(reclaimed?.id!==90104)throw Error('OWNER_JOB_RECLAIM_FAILED');
- const digest=createHash('sha256').update(JSON.stringify(updates[3])).digest('hex');
+ const ownerJobDigest=createHash('sha256').update(JSON.stringify(updates[3])).digest('hex');
  await pool.query("INSERT INTO videobot_webhook_updates(update_id,payload_sha256,status) VALUES($1,$2,'processing')",
-   [reclaimed.id,digest]);
+   [reclaimed.id,ownerJobDigest]);
  const uncertain=await queue.recover();
  if(uncertain.needsReconcile!==1)
    throw Error('OWNER_JOB_UNCERTAIN_WRITE_MUST_NOT_REPLAY');
