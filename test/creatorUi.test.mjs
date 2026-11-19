@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   openCreatorEditor, editCreatorDraft, creatorEditorPanel, myVideosPanel,
-  validateWithdrawalText, withdrawalPrompt, confirmedWithdrawal, WithdrawalInputError, creatorReviewPanel
+  validateWithdrawalText, withdrawalPrompt, confirmedWithdrawal, WithdrawalInputError, creatorReviewPanel, creatorFieldPanel
 } from '../src/telegram/creatorUi.mjs';
 
 test('new and existing listing share field editor, edit protects existing fields', () => {
@@ -26,8 +26,8 @@ test('sticker and video use numeric-only custom Stars price without changing tit
   d = editCreatorDraft(d,{type:'preset',stars:300});
   d = editCreatorDraft(d,{type:'captionTitle',text:'夏の思い出動画'});
   d = editCreatorDraft(d,{type:'custom'});
-  const view=creatorEditorPanel(d,1,'price');
-  assert.match(view.text,/数字のみ（1〜25000）/);
+  const view=creatorFieldPanel(d,'price',1);
+  assert.match(view.text,/1〜25000/);
   assert.equal(view.reply_markup.inline_keyboard[1].length,3);
   d=editCreatorDraft(d,{type:'customPriceInput',text:'250'});
   assert.equal(d.title,'夏の思い出動画');
@@ -102,18 +102,19 @@ test('seller consent is explicit, reversible and reset when video changes',()=>{
  assert.match(panel.text,/出演者全員が18歳以上/);
 });
 
-test('preview uses inline edit links and fee disclosure, review gates publication on consent',()=>{
+test('preview has only inline edit links; fees appear only in consent review',()=>{
  let d=openCreatorEditor({sellerId:'seller1'});
  d=editCreatorDraft(d,{type:'preset',stars:300});
  d=editCreatorDraft(d,{type:'captionTitle',text:'テストタイトル'});
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'vid001'}});
  const editor=creatorEditorPanel(d,2);
- assert.match(editor.text,/管理費90 Stars／投稿者分210 Stars/);
+ assert.equal(editor.text.includes('管理費'),false);
  assert.equal(editor.entities.length,6);
  assert.deepEqual(editor.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
  assert.match(editor.text,/説明：\[未登録\]/);
  const review=creatorReviewPanel(d,3);
  assert.match(review.text,/30%/);
+ assert.match(review.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.equal(review.reply_markup.inline_keyboard.flat().some(b=>b.callback_data.startsWith('review:publish')),false);
  assert.match(review.text,/原則として返金を行いません/);
  d=editCreatorDraft(d,{type:'confirmTerms'});
@@ -134,7 +135,7 @@ test('video-caption title is accepted atomically without custom-price title pars
  d=editCreatorDraft(d,{type:'captionTitle',text:'キャプション題名'});
  assert.equal(d.title,'キャプション題名');
  assert.throws(()=>editCreatorDraft(d,{type:'captionTitle',text:'複数\n行'}),/one line/);
- const pricePanel=creatorEditorPanel(d,5,'price');
+ const pricePanel=creatorFieldPanel(d,'price',5);
  assert.deepEqual(pricePanel.reply_markup.inline_keyboard[2].map(b=>b.text),['🔙 戻る']);
 });
 
@@ -173,4 +174,26 @@ test('terms summary has checkbox and only reveals publish after all content and 
  const after=creatorReviewPanel(d,3);
  assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),true);
  assert.match(after.text,/☑ 規約・約款に同意済み/);
+});
+
+test('field editor isolates one requested item and shows only back/delete actions',()=>{
+ let d=openCreatorEditor({sellerId:'seller1'});
+ d=editCreatorDraft(d,{type:'titleInput',text:'サンプル作品'});
+ d=editCreatorDraft(d,{type:'descriptionInput',text:'紹介文'});
+ const titlePanel=creatorFieldPanel(d,'title',7);
+ assert.match(titlePanel.text,/タイトル：サンプル作品/);
+ assert.equal(titlePanel.text.includes('説明：'),false);
+ assert.equal(titlePanel.text.includes('管理費'),false);
+ assert.deepEqual(titlePanel.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る']);
+ const description=creatorFieldPanel(d,'description',8);
+ assert.deepEqual(description.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る','🗑 削除']);
+});
+test('registered video editor uses four actions, return only when unchanged and never shows publish',()=>{
+ const existing={id:'mine_1',sellerId:'seller1',revision:2,title:'作品',paidVideo:{fileId:'main123'}};
+ const original=openCreatorEditor({sellerId:'seller1',existing});
+ assert.deepEqual(creatorEditorPanel(original,2).reply_markup.inline_keyboard[0].map(b=>b.text),
+ ['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
+ const changed=editCreatorDraft(original,{type:'titleInput',text:'改題'});
+ assert.deepEqual(creatorEditorPanel(changed,3).reply_markup.inline_keyboard[0].map(b=>b.text),
+ ['✅ 変更','❌ キャンセル','🗑 削除']);
 });
