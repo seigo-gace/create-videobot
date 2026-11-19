@@ -41,6 +41,9 @@ export function createTelegramVideoFetcher({
       // Owned by the local Bot API service; never unlink its shared media.
       return {path:resolved,cleanup:async()=>{}};
     }
+    // --local must return its owned absolute path. Never silently downgrade a
+    // multi-GB video to the public 20MB file endpoint.
+    if(local)throw Error('CREATOR_LOCAL_FILE_PATH_NOT_AVAILABLE');
     if(typeof path!=='string' || !/^[A-Za-z0-9_.\/-]+$/.test(path)||
        path.startsWith('/')||path.split('/').some(segment=>segment===''||segment==='.'||segment==='..'))
       throw new Error('Telegram file path invalid');
