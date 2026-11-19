@@ -92,6 +92,7 @@ test('seller consent is explicit, reversible and reset when video changes',()=>{
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main001'}});
  assert.equal(d.feeTermsAccepted,false);
  d=editCreatorDraft(d,{type:'confirmTerms'});
+ d={...d,termsUrl:'https://example.test/terms.html'};
  assert.deepEqual([d.rightsVerified,d.adultConsentVerified,d.feeTermsAccepted],[true,true,true]);
  let panel=creatorReviewPanel(d,5,'','https://example.test/terms.html');
  assert.match(panel.text,/同意済み/);
@@ -118,6 +119,7 @@ test('preview has only inline edit links; fees appear only in consent review',()
  assert.equal(review.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:publish')),false);
  assert.match(review.text,/返品・返金は法令とTelegram/);
  d=editCreatorDraft(d,{type:'confirmTerms'});
+ d={...d,termsUrl:'https://example.test/terms.html'};
  const ready=creatorReviewPanel(d,4,'','https://example.test/terms.html');
  assert.equal(ready.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:publish')),false,
    'missing thumbnail/sample block publication even if consent granted');
@@ -171,6 +173,7 @@ test('terms summary has checkbox and only reveals publish after all content and 
  const before=creatorReviewPanel(d,2,'','https://example.test/terms.html');
  assert.equal(before.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),false);
  d=editCreatorDraft(d,{type:'confirmTerms'});
+ d={...d,termsUrl:'https://example.test/terms.html'};
  const after=creatorReviewPanel(d,3,'','https://example.test/terms.html');
  assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),true);
  assert.match(after.text,/☑ 同意済み/);
@@ -228,4 +231,19 @@ test('missing Cloudflare legal-page URL cannot offer consent or Stars publish',(
  assert.equal(available.reply_markup.inline_keyboard[0][0].url,
    'https://example.test/createvdobot-terms.html');
  assert.match(available.text,/投稿者は自らの責任で作品を公開/);
+});
+
+test('a changed legal page is not treated as previously accepted by the preview',()=>{
+ let d=openCreatorEditor({sellerId:'seller1'});
+ d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main001'}});
+ d=editCreatorDraft(d,{type:'captionTitle',text:'タイトル'});
+ d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb001'}});
+ d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample001',durationSeconds:30}});
+ d=editCreatorDraft(d,{type:'preset',stars:300});
+ d=editCreatorDraft(d,{type:'confirmTerms'});
+ d={...d,termsUrl:'https://example.test/old-terms.html'};
+ const p=creatorReviewPanel(d,8,'','https://example.test/new-terms.html');
+ assert.ok(p.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='review:agree|r8'));
+ assert.ok(p.reply_markup.inline_keyboard.flat().every(b=>b.callback_data!=='review:publish|r8'));
+ assert.match(p.text,/☐ 規約内容を確認して同意する/);
 });
