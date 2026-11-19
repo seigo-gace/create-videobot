@@ -56,7 +56,7 @@ export function createTelegramBotApi({token, fetchImpl=globalThis.fetch, timeout
    body,signal:AbortSignal.timeout(
      baseUrl==='http://telegram-bot-api:8081' && method==='sendVideo' &&
      typeof params.video==='string' &&
-     params.video.startsWith('/var/lib/telegram-bot-api/')
+     params.video.startsWith('file:///var/lib/telegram-bot-api/')
        ?900000:timeoutMs),redirect:'error'
   });
   if(!response)throw new Error('Telegram API request failed');
