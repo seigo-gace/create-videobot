@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCreatorPollingConsumer} from '../src/runtime/creatorPollingConsumer.mjs';
+import {creatorOwnerUpdate,creatorUpdateJobKind} from '../src/runtime/creatorOwnerUpdateJobs.mjs';
 
 function fixture({webhook='',updates=[],failOn=null,reconcileOn=null,quarantineFail=false,initial=null}={}){
  let cursor=initial,calls=[],seen=[],quarantined=new Map();
@@ -83,4 +84,46 @@ test('quarantine write rejection never advances cursor or discards update',async
  assert.equal(f.cursor,101);
  assert.deepEqual(f.seen,[101,102]);
  assert.equal(f.quarantined.size,0);
+});
+
+test('durable media enqueue never blocks Telegram payment updates and commits cursor only after save',async()=>{
+ let cursor=0,handled=[],queued=[];
+ const msg=(id,body)=>({update_id:id,message:{message_id:id,chat:{id, type:'private'},from:{id},...body}});
+ const updates=[
+  msg(101,{video:{file_id:'large_video'}}),
+  {update_id:102,purchased_paid_media:{paid_media_payload:'test'}},
+  msg(103,{successful_payment:{currency:'XTR',total_amount:1}}),
+  msg(104,{text:'owner DM'})
+ ];
+ // The valid message sender is a Telegram user, unrelated to update ID.
+ updates[0].message.chat.id=9;updates[0].message.from.id=9;
+ updates[2].message.chat.id=10;updates[2].message.from.id=10;
+ updates[3].message.chat.id=11;updates[3].message.from.id=11;
+ const pool={query:async(sql,args)=>{
+   if(sql.startsWith('SELECT last_update_id'))return {rows:[{last_update_id:cursor}]};
+   if(sql.includes('INSERT INTO videobot_poll_cursor')){
+     cursor=args[0];return {rowCount:1,rows:[{last_update_id:cursor}]};
+   }
+   throw Error('unknown query');
+ }};
+ const api=async(method)=>{
+   if(method==='getWebhookInfo')return {url:''};
+   if(method==='getUpdates')return updates;
+   throw Error('unexpected method');
+ };
+ const poller=createCreatorPollingConsumer({
+   telegramApi:api,pool,webhookSecret:'a'.repeat(32),
+   ownerQueue:{enqueue:async update=>{queued.push(update.update_id);return {enqueued:true};}},
+   handleTelegramWebhook:async({body})=>{
+     const u=JSON.parse(body);handled.push(u.update_id);
+     return {accepted:true,handled:true,updateId:u.update_id};
+   }
+ });
+ const result=await poller.pollBatch({timeout:0});
+ assert.equal(result.accepted,4);
+ assert.equal(cursor,104);
+ assert.deepEqual(queued,[101,104]);
+ assert.deepEqual(handled,[102,103]);
+ assert.equal(creatorUpdateJobKind(updates[0]),'heavy');
+ assert.equal(creatorOwnerUpdate(updates[1]),null);
 });
