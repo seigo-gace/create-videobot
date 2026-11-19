@@ -22,6 +22,7 @@ services:
       VIDEOBOT_PRIVATE_INGRESS_ONLY: "true"
       VIDEOBOT_SCHEMA_MIGRATE: "YES"
       VIDEOBOT_OWNER_JOBS: "YES"
+      VIDEOBOT_VIDEO_WORK_ROOT: /var/lib/videobot/media-work
       VIDEOBOT_SHOP_HTTP_PORT: "8766"
       VIDEOBOT_SHOP_PUBLIC_URL: ${VIDEOBOT_SHOP_PUBLIC_URL:-}
       CREATEVDOBOT_TERMS_URL: ${CREATEVDOBOT_TERMS_URL:-https://tgtumbler-docs.pages.dev/createvdobot-terms.html}
@@ -38,6 +39,7 @@ services:
       - ${VIDEOBOT_TELEGRAM_TOKEN_SOURCE:?createvdobot_existing_token_required}:/run/secrets/videobot_telegram_token:ro
       - ${VIDEOBOT_DB_PASSWORD_SOURCE:?gserver_db_password_source_required}:/run/secrets/videobot_db_password:ro
       - ${VIDEOBOT_STICKER_PIN_STATE_SOURCE:?verified_existing_CreateVdobot_pin_receipt_required}:/var/lib/videobot/sticker-entry:ro
+      - ${VIDEOBOT_VIDEO_WORK_SOURCE:?verified_disk_backed_video_scratch_required}:/var/lib/videobot/media-work:rw
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     tmpfs:
