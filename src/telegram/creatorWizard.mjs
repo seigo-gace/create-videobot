@@ -135,19 +135,24 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   }
 
   async function openOwnedVideo(update,listingId,linkRevision) {
-    const {ownerId}=privateUser(update);
+    const {ownerId,messageId}=privateUser(update);
     const old=await sessionStore.read(ownerId);
     if(!old || old.revision!==linkRevision || old.screen!=='my_videos')
       return {handled:true,staleTextLink:true};
     const owned=await listingStore.getOwned(ownerId,listingId);
     if(!owned)return {handled:true,staleTextLink:true};
     // Publicly sold media are immutable. Never silently overwrite purchases.
-    if(owned.status==='published'||owned.status==='paused')
-      return persistAndRender(ownerId,old,{...old,screen:'video_detail',detailId:listingId},
+    if(owned.status==='published'||owned.status==='paused') {
+      const result=await persistAndRender(ownerId,old,{...old,screen:'video_detail',detailId:listingId},
         rev=>videoInfoPanel(owned,rev));
+      await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
+      return result;
+    }
     const draft=openCreatorEditor({sellerId:String(ownerId),existing:owned});
-    return persistAndRender(ownerId,old,{...old,draft,screen:'editor',waiting:null},
+    const result=await persistAndRender(ownerId,old,{...old,draft,screen:'editor',waiting:null},
       rev=>statusPanel(draft,rev));
+    await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
+    return result;
   }
 
   async function registerVideo(ownerId,old,draft) {
