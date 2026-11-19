@@ -159,6 +159,7 @@ export async function runCreatorPollingMain({
 }={}){
  const rt=await createRuntime();
  let shopServer=null;
+ const workerStop=new AbortController(),workers=[];
  try{
   const port=process.env.VIDEOBOT_SHOP_HTTP_PORT;
   if(port!==undefined&&port!==''){
@@ -182,19 +183,18 @@ export async function runCreatorPollingMain({
   onStatus('CREATOR_DM_POLL_READY=PASS');
   onStatus('CREATOR_GATE_PUBLIC_RELEASE='+(rt.gateConnected?'CONNECTED':'NOT_VERIFIED'));
   let recoveryCursor=0,recoveryInFlight=null,workerError=null;
-  const workers=[];
   if(rt.ownerJobRunner){
    for(let i=0;i<2;i++){
     const worker=(async()=>{
-     while(!signal?.aborted){
+     while(!signal?.aborted&&!workerStop.signal.aborted){
       const result=await rt.ownerJobRunner();
       if(result.needsReconcile)onStatus('CREATOR_OWNER_JOB_NEEDS_RECONCILE=YES');
       if(!result.hadWork){
-       try{await sleep(500,undefined,{signal});}
-       catch(e){if(signal?.aborted)return;throw e;}
+       try{await sleep(500,undefined,{signal:workerStop.signal});}
+       catch(e){if(signal?.aborted||workerStop.signal.aborted)return;throw e;}
       }
      }
-    })().catch(e=>{workerError=e;});
+    })().catch(e=>{workerError=e;workerStop.abort();});
     workers.push(worker);
    }
   }
@@ -218,8 +218,9 @@ export async function runCreatorPollingMain({
    }
   }
   if(recoveryInFlight)await recoveryInFlight;
-  if(workers.length)await Promise.allSettled(workers);
  }finally{
+  workerStop.abort();
+  if(workers.length)await Promise.allSettled(workers);
   if(shopServer?.listening)await new Promise(resolve=>shopServer.close(()=>resolve()));
   await rt.close();
  }
