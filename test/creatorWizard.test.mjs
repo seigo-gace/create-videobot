@@ -494,3 +494,28 @@ test('MP4 document without caption reports missing title instead of silently ign
   assert.ok(x.calls.every(c=>!(c.method==='deleteMessage' && c.params.message_id===502)),
     'keep original upload visible while asking for caption title');
 });
+
+test('owner-only title edit shows one field and cancel restores saved video without writing',async()=>{
+  let updates=0;
+  const x=setup({listingStoreOverride:{
+    async updateDraft(){updates++;throw Error('cancel must not save');}
+  }});
+  await x.callback('menu:manage');
+  await x.callback('video:edit:my1|r1');
+  assert.equal(x.states.get(33).draft.mode,'edit');
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+    ['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
+  await x.callback('edit:title|r2');
+  assert.equal(x.states.get(33).screen,'field');
+  assert.equal(x.screens.at(-1).panel.text.includes('［編集］価格'),false);
+  assert.equal(x.screens.at(-1).panel.text.includes('管理費'),false);
+  await x.send({text:'編集したタイトル'},901);
+  assert.equal(x.states.get(33).draft.title,'編集したタイトル');
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+    ['✅ 変更','❌ キャンセル','🗑 削除']);
+  await x.callback('edit:cancel|r4');
+  assert.equal(x.states.get(33).screen,'my_videos');
+  assert.equal(x.states.get(33).draft,null);
+  assert.equal(updates,0);
+  assert.match(x.screens.at(-1).panel.text,/自分の動画/);
+});
