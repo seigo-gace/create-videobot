@@ -38,20 +38,7 @@ export function createTelegramPrivateMediaUploader({
     form.set('protect_content','true');
     form.set('has_spoiler','true');
     form.set(type,new Blob([bytes],{type:type==='photo'?'image/jpeg':'video/mp4'}),type==='photo'?'preview.jpg':'sample.mp4');
-   const method=type==='photo'?'sendPhoto':'sendVideo';
-       const receipt=await telegramApi(method,{
-         chat_id:ownerId,[type]:absolute,disable_notification:true,
-         protect_content:true
-       });
-       const fileId=type==='photo'?receipt?.photo?.at(-1)?.file_id:receipt?.video?.file_id;
-       if(typeof fileId!=='string'||!fileId.trim()||
-          !Number.isSafeInteger(receipt?.message_id)||receipt.message_id<=0)
-         throw Error('creator local media handoff result unknown');
-       await telegramApi('deleteMessage',{chat_id:ownerId,message_id:receipt.message_id}).catch(()=>{});
-       return {fileId};
-     }
-   }
-   const method=type==='photo'?'sendPhoto':'sendVideo';
+    const method=type==='photo'?'sendPhoto':'sendVideo';
     const res=await fetchImpl('https://api.telegram.org/bot'+token+'/'+method,{
       method:'POST',body:form,redirect:'error',signal:AbortSignal.timeout(60000)
     });
@@ -92,19 +79,29 @@ export function createCreatorDmPreviewUploader({
    const stat=await lstat(path);
    if(!stat.isFile()||stat.isSymbolicLink()||stat.size<1||stat.size>maxBytes)
      throw new Error('generated creator preview upload size invalid');
-    // Official --local mode accepts absolute paths visible to the Bot API
-   // process. Only trusted Telegram-owned source files under a verified
-   // read-only shared root may use this zero-copy route. FFmpeg outputs in
-   // temporary directories keep the existing bounded streaming upload.
+   // --local mode can send a file by absolute path when the same verified
+   // directory is mounted into the official Bot API server.
+   // User-supplied paths and FFmpeg temp files never get this privilege.
    if(localMediaRoot!==null){
-     if(baseUrl!=='http://telegram-bot-api:8081'||
-        typeof localMediaRoot!=='string'||!localMediaRoot.startsWith('/')||
-        resolve(localMediaRoot)==='/'||localMediaRoot.split(sep).includes('..'))
+     if(baseUrl!=='http://telegram-bot-api:8081' ||
+        typeof localMediaRoot!=='string' || !localMediaRoot.startsWith('/') ||
+        resolve(localMediaRoot)==='/' || localMediaRoot.split(sep).includes('..'))
        throw Error('unverified local media root');
      const base=await realpath(localMediaRoot);
      const absolute=await realpath(path);
      if(absolute.startsWith(base+sep) && absolute!==base){
-       const method=type==='photo'?'sendPhoto':'sendVideo';
+       const result=await telegramApi(type==='photo'?'sendPhoto':'sendVideo',{
+         chat_id:ownerId,[type]:absolute,disable_notification:true,protect_content:true
+       });
+       const fileId=type==='photo'?result?.photo?.at(-1)?.file_id:result?.video?.file_id;
+       if(typeof fileId!=='string'||!fileId.trim()||
+          !Number.isSafeInteger(result?.message_id)||result.message_id<=0)
+         throw Error('creator local media handoff result unknown');
+       await telegramApi('deleteMessage',{chat_id:ownerId,message_id:result.message_id}).catch(()=>{});
+       return {fileId};
+     }
+   }
+   const method=type==='photo'?'sendPhoto':'sendVideo';
    const mime=type==='photo'?'image/jpeg':'video/mp4';
    const filename=type==='photo'?'creator-preview.jpg':'creator-sample.mp4';
    let request;
