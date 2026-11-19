@@ -5,6 +5,8 @@ import {createPostgresStickerSales} from '../stickers/pgStickerSales.mjs';
 import {createPostgresStickerGifts} from '../stickers/pgStickerGifts.mjs';
 import {createPostgresStickerTopicPosts} from '../stickers/pgStickerTopicPosts.mjs';
 import {createPostgresStickerPaidPhoto} from '../stickers/pgStickerPaidPhoto.mjs';
+import {createPostgresOwnerUpdateQueue} from './creatorOwnerUpdateJobs.mjs';
+import {createHash} from 'node:crypto';
 const {Pool}=pg;
 if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
    !/^postgres:\/\/videobot_ci:ci_only_not_a_secret@127\.0\.0\.1:5432\/videobot_migration_ci$/.test(process.env.CI_VIDEO_DB_DSN||'')){
@@ -20,6 +22,43 @@ try {
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
  if(repeat.applied!==true||repeat.migrations!==20)throw new Error('schema re-application invalid');
+ // Verify the durable owner-ordered inbox against REAL PostgreSQL.
+ const queue=createPostgresOwnerUpdateQueue(pool);
+ const updates=[
+  {update_id:90101,message:{chat:{id:111,type:'private'},from:{id:111},video:{file_id:'heavy101'}}},
+  {update_id:90102,message:{chat:{id:111,type:'private'},from:{id:111},text:'title'}},
+  {update_id:90103,message:{chat:{id:222,type:'private'},from:{id:222},text:'other user'}},
+  {update_id:90104,message:{chat:{id:333,type:'private'},from:{id:333},document:{mime_type:'video/mp4',file_id:'heavy104'}}}
+ ];
+ for(const update of updates)await queue.enqueue(update);
+ const repeated=await queue.enqueue(updates[0]);
+ if(repeated.duplicate!==true)throw Error('OWNER_JOB_DUPLICATE_NOT_IDEMPOTENT');
+ const firstJob=await queue.claim();
+ const concurrentJob=await queue.claim();
+ if(firstJob?.id!==90101||concurrentJob?.id!==90103)
+   throw Error('OWNER_JOB_SAME_OWNER_OR_HEAVY_CONCURRENCY_BROKEN');
+ await queue.completed(concurrentJob);
+ const blocked=await queue.claim();
+ if(blocked!==null)throw Error('OWNER_JOB_SAME_OWNER_OR_HEAVY_LOCK_BROKEN');
+ await queue.completed(firstJob);
+ const secondJob=await queue.claim();
+ if(secondJob?.id!==90102)throw Error('OWNER_JOB_OWNER_FIFO_BROKEN');
+ await queue.completed(secondJob);
+ const fourthJob=await queue.claim();
+ if(fourthJob?.id!==90104)throw Error('OWNER_JOB_HEAVY_QUOTA_BROKEN');
+ const recovery=await queue.recover();
+ if(recovery.unstarted!==1||recovery.needsReconcile!==0)
+   throw Error('OWNER_JOB_SAFE_CRASH_REQUEUE_FAILED');
+ const reclaimed=await queue.claim();
+ if(reclaimed?.id!==90104)throw Error('OWNER_JOB_RECLAIM_FAILED');
+ const digest=createHash('sha256').update(JSON.stringify(updates[3])).digest('hex');
+ await pool.query("INSERT INTO videobot_webhook_updates(update_id,payload_sha256,status) VALUES($1,$2,'processing')",
+   [reclaimed.id,digest]);
+ const uncertain=await queue.recover();
+ if(uncertain.needsReconcile!==1)
+   throw Error('OWNER_JOB_UNCERTAIN_WRITE_MUST_NOT_REPLAY');
+ if(await queue.claim()!==null)throw Error('OWNER_JOB_UNCERTAIN_REPLAY_ALLOWED');
+ process.stdout.write('DOCKER_NODE_POSTGRES_CREATOR_OWNER_QUEUE=PASS\\n');
  // Real PostgreSQL proof: exceptional update is retained privately,
  // reinsertions with the same fingerprint are idempotent, and mismatches fail.
  const unknown={update_id:88001,callback_query:{data:'review:publish|r3'}};
