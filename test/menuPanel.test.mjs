@@ -10,7 +10,7 @@ test('shared creator home selects existing video and sticker/emoji menus',()=>{
  ]);
  assert.ok(!p.text.includes('/start'));
  assert.match(p.text,/Telegram Stars/);
- assert.match(p.text,/30%/);
+ assert.equal(p.text.includes('30%'),false,'fee explanation belongs to terms');
  assert.equal(p.reply_markup.inline_keyboard[1][0].url,'https://t.me/c/2373696859/1613');
  const video=menuPage('video');
  assert.deepEqual(video.reply_markup.inline_keyboard[0][0],{text:'🎬 動画を投稿',callback_data:'menu:listing'});
