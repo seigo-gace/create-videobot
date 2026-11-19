@@ -246,7 +246,8 @@ test('caption without title does not store video, retry accepts same captioned v
  await x.send({video:{file_id:'main001'},caption:'動画とタイトル'},402);
  assert.equal(x.states.get(33).draft.paidVideo.fileId,'main001');
  assert.equal(x.states.get(33).draft.title,'動画とタイトル');
- assert.ok(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===401));
+ assert.ok(x.calls.every(c=>!(c.method==='deleteMessage'&&c.params.message_id===401)),
+    'the original upload must remain visible when its title is missing');
 });
 
 test('my videos new-listing shortcut returns to existing editor',async()=>{
