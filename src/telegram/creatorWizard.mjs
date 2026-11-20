@@ -185,9 +185,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           // Explicit tapping of 登録 records fee
           // acceptance; no extra button or user command is introduced.
           const acceptedDraft=draft;
+          // Reuse the persisted draft after a proven pre-send denial.
+          const pending=old.pendingVideoDraft;
           stored=draft.mode==='edit'
             ? await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,acceptedDraft)
-            : await listingStore.createDraft(ownerId,randomUUID(),acceptedDraft);
+            : pending?.listingId
+              ? await listingStore.updateDraft(ownerId,pending.listingId,pending.revision,acceptedDraft)
+              : await listingStore.createDraft(ownerId,randomUUID(),acceptedDraft);
           const published=await publishListing({
             ...stored,ownerConfirmedPublish:true,
             rightsVerified:draft.rightsVerified,
@@ -199,16 +203,26 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           const current=await sessionStore.read(ownerId);
           const items=await listingStore.listByOwner(ownerId);
           return persistAndRender(ownerId,current,{...current,draft:null,
-            screen:'my_videos',page:0,publishing:null,waiting:null},
+            screen:'my_videos',page:0,publishing:null,waiting:null,pendingVideoDraft:null},
             rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,
               revision:rev,notice:draft.mode==='edit'?
                 '動画を編集／更新しました。':'新規動画を登録しました。',
               updatedId:draft.mode==='edit'?stored.id:null}));
         } catch(e) {
           const current=await sessionStore.read(ownerId);
+          const pending=stored&&draft.mode==='create'
+            ?{listingId:stored.id,revision:stored.revision}
+            :current.pendingVideoDraft??null;
+          if(e?.code==='VIDEO_PUBLICATION_PRE_SEND_REJECTED'&&stored){
+            return persistAndRender(ownerId,current,{
+              ...current,publishing:null,waiting:null,screen:'review',draft,
+              pendingVideoDraft:pending
+            },rev=>reviewPanel(draft,rev,
+              '⚠️ 公開先または投稿審査を確認できないため、Telegramへ投稿していません。下書きは保存済みです。設定の復旧後、同じ下書きから投稿できます。'));
+          }
           return persistAndRender(ownerId,current,{
             ...current,publishing:'needs_reconcile',waiting:null,
-            screen:'review',draft
+            screen:'review',draft,pendingVideoDraft:pending
           },rev=>reviewPanel(draft,rev,
             '⚠️ 送信または保存結果の照合が必要です。重複投稿を防止するため、再投稿しません。'));
         }
@@ -271,7 +285,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         previewMessageId:recovery.previewMessageId??old?.previewMessageId??null,
         albumMessageId:recovery.previewMessageId??old?.albumMessageId??null,
         screen:recovery.draft.paidVideo?'editor':'await_video',
-        draft:recovery.draft,waiting:recovery.draft.paidVideo?null:'paidVideo'
+        draft:recovery.draft,waiting:recovery.draft.paidVideo?null:'paidVideo',
+        pendingVideoDraft:old?.screen==='my_videos'?null:old?.pendingVideoDraft??null
       },rev=>statusPanel(recovery.draft,rev,recovery.warning));
     }
     if(code==='menu:manage') {
@@ -365,7 +380,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(value==='cancel') {
         const items=await listingStore.listByOwner(ownerId);
         return persistAndRender(ownerId,old,{...old,draft:null,originalDraft:null,
-          screen:'my_videos',page:0,waiting:null,field:null},
+          screen:'my_videos',page:0,waiting:null,field:null,pendingVideoDraft:null},
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
       }
       if(value==='return' && draft?.mode==='edit' &&
@@ -469,7 +484,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(action==='review:cancel') {
         const items=await listingStore.listByOwner(ownerId);
         return persistAndRender(ownerId,old,
-          {...old,waiting:null,screen:'my_videos',page:0},
+          {...old,waiting:null,screen:'my_videos',page:0,pendingVideoDraft:null},
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
       }
       if(action==='review:agree'||action==='review:rights') {
