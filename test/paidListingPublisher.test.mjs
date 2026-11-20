@@ -71,6 +71,14 @@ test('denied GATE, review, release or topic prevents any send',async()=>{
     assert.equal(d.store.map.size,0);
   }
 });
+test('unconnected video GATE is marked as a definitive pre-send refusal',async()=>{
+ const d=deps({getVerifiedVideoTopic:async()=>{throw new Error('VIDEO_TOPIC_NOT_CONNECTED');}});
+ await assert.rejects(()=>publishVideoListing(d),e=>
+   e.code==='VIDEO_PUBLICATION_PRE_SEND_REJECTED'&&/VIDEO_TOPIC_NOT_CONNECTED/.test(e.message));
+ assert.equal(d.calls.length,0);
+ assert.equal(d.store.map.size,0);
+});
+
 test('paid failure after free album is kept unknown and cannot automatically resend',async()=>{
   const d=deps({telegramApi:async (method)=>{
     d.calls.push({method});
