@@ -210,11 +210,11 @@ export async function runCreatorPollingMain({
    if(outcome.accepted>0)onStatus('CREATOR_DM_UPDATES_HANDLED='+outcome.accepted);
    if(outcome.quarantined>0)onStatus('CREATOR_UPDATES_QUARANTINED='+outcome.quarantined);
    if(!refundInFlight && Date.now()>=nextRefundSweepAt &&
-      typeof rt.source?.creatorRefundReconciler?.reconcileRecent==='function') {
+      typeof rt.source?.creatorRefundReconciler?.reconcileIncremental==='function') {
      // Bounded single-process scan, never a second Telegram poller. Do not
      // block purchase updates on potentially slow Stars history paging.
      nextRefundSweepAt=Date.now()+5*60*1000;
-     refundInFlight=rt.source.creatorRefundReconciler.reconcileRecent({maxPages:3})
+     refundInFlight=rt.source.creatorRefundReconciler.reconcileIncremental({maxPages:3})
        .then(result=>{
          if(result.recorded>0)onStatus('STARS_REFUNDS_VERIFIED='+result.recorded);
          if(!result.coverageComplete)onStatus('STARS_REFUND_HISTORY_PARTIAL=YES');
