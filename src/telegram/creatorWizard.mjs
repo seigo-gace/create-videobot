@@ -467,6 +467,12 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
             } catch(e) {warning='自動生成に失敗しました：'+(e instanceof Error?e.message:'処理できません');}
           } else warning='自動生成サービスが未接続です。';
         }
+        if(prepared.mode==='edit'){
+          // An existing listing preview is an editor, never a new-sale review.
+          // Do not expose a second publish path for a previously saved item.
+          return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null,screen:'editor'},
+            rev=>statusPanel(prepared,rev,warning));
+        }
         const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!prepared[k]);
         const note=missing.length ? warning : '本人が［登録］を押すまでは公開されません。';
         return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null,screen:'review'},
@@ -500,6 +506,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           rev=>reviewPanel(agreed,rev));
       }
       if(action==='review:publish'&&!verifiedTermsUrl)throw new Error('CREATOR_PUBLISHED_TERMS_URL_REQUIRED');
+      if(action==='review:publish'&&draft?.mode==='edit'){
+        // A stale review created by an older runtime must not republish an edit.
+        return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},
+          rev=>statusPanel(draft,rev,'既存動画は［変更］で保存してください。新規投稿は行っていません。'));
+      }
       if(action==='review:publish')return registerVideo(ownerId,old,draft);
       throw new Error('UNKNOWN_REVIEW_ACTION');
     }
