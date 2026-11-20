@@ -134,7 +134,10 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     return {text:'🎬 新規動画を投稿\n\nタイトルと動画を投稿してください。\n動画のキャプションへタイトルを入力し、一緒に送信してください。',
       reply_markup:{inline_keyboard:[[btn('🔙 戻る','menu:manage'),btn('❌ キャンセル','edit:cancel')]]}};
   }
-  const rows=['👁 プレビュー',''];
+  const guide=draft.mode==='edit'
+    ?'変更したい項目の［編集］をタップして内容を変更し、最後に［変更］をタップしてください。'
+    :'変更したい項目の［編集］をタップして内容を変更し、最後に［投稿する］をタップしてください。';
+  const rows=['👁 プレビュー','',guide,''];
   const definitions=[
     ['title','タイトル',draft.title,draft.title],
     ['description','説明',draft.description,draft.description],
