@@ -64,7 +64,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       ...(old?.publishing==='needs_reconcile'?{publishing:'needs_reconcile'}:{})};
     const drawn=typeof panel==='function'?panel(next.revision):panel;
     // Keep the editable text screen visually attached to the owner's album preview.
-    if(next.screen==='editor' &&
+    if(['editor','description'].includes(next.screen) &&
        Number.isSafeInteger(next.previewMessageId) && next.previewMessageId>0)
       drawn.replyToMessageId=next.previewMessageId;
     if(next.screen==='editor'&&
