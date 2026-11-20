@@ -152,10 +152,13 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     return {text:'🎬 新規動画を投稿\n\nタイトルと動画を投稿してください。\n動画のキャプションへタイトルを入力し、一緒に送信してください。',
       reply_markup:{inline_keyboard:[[btn('🔙 戻る','menu:manage'),btn('❌ キャンセル','edit:cancel')]]}};
   }
+  // The preview is solely a registration/editing workspace. Fee, revenue
+  // share, payout and financial examples belong to their existing dedicated
+  // terms/sales screens, never to the preview's bottom instruction slot.
   const guide=draft.mode==='edit'
-    ?'変更したい項目の［編集］をタップして内容を変更し、最後に［変更］をタップしてください。'
-    :'変更したい項目の［編集］をタップして内容を変更し、最後に［投稿する］をタップしてください。';
-  const rows=['👁 プレビュー','',guide,''];
+    ?['📝 編集方法','変更したい項目の［編集］をタップして修正してください。','変更が終わったら［変更］をタップしてください。']
+    :['📝 登録方法','変更したい項目の［編集］をタップして修正できます。','内容を確認したら［投稿する］をタップして登録手続きに進んでください。'];
+  const rows=['👁 プレビュー',''];
   const definitions=[
     ['title','タイトル',draft.title,draft.title],
     ['description','説明',draft.description,draft.description],
@@ -172,6 +175,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   }
   if(draft.mode==='edit'&&draft.rightsVerified&&draft.adultConsentVerified&&draft.feeTermsAccepted)
     rows.push('☑ 規約約款同意済み');
+  rows.push('',...guide);
   const text=rows.join('\n');
   const entities=[];
   for(const {field,index,mark} of fields) {
