@@ -1,5 +1,5 @@
 import { menuPage } from './menuPanel.mjs';
-import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorReviewPanel, myVideosPanel, videoInfoPanel, creatorFieldPanel, CREATOR_TERMS_VERSION } from './creatorUi.mjs';
+import { openCreatorEditor, editCreatorDraft, creatorEditorPanel, creatorDescriptionPanel, creatorReviewPanel, myVideosPanel, videoInfoPanel, creatorFieldPanel, CREATOR_TERMS_VERSION } from './creatorUi.mjs';
 import { randomUUID } from 'node:crypto';
 import {salesOverviewPanel,salesWithdrawalPanel,salesHistoryPanel} from './salesPanel.mjs';
 
@@ -700,9 +700,12 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       try{await api('deleteMessage',{chat_id:ownerId,message_id:messageId});}
       catch{inputDeleteFailed=true;}
     }
-    const nextScreen=error?old.screen:'editor';
+    // Initial upload always offers the optional description *after* the
+    // real private album. A replacement of an already registered main video
+    // returns to the existing field/editor, not the create-only entry step.
+    const nextScreen=error?old.screen:firstVideo?'description':'editor';
     const next={...old,draft,previewMessageId,albumMessageId,
-      waiting:error?old.waiting:null,
+      waiting:error?old.waiting:firstVideo?'description':null,
       screen:nextScreen,
       ...(nextScreen==='editor'&&old.waiting==='description'?{descriptionEntered:true}:{})};
     const note=(error?'⚠️ '+error:firstVideo?'': '✅ 反映しました。')+
@@ -711,7 +714,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     return persistAndRender(ownerId,old,next,
       rev=>nextScreen==='field'
         ?creatorFieldPanel(draft,old.field||old.waiting,rev,note)
-        :statusPanel(draft,rev,note,nextScreen));
+        :nextScreen==='description'
+          ?creatorDescriptionPanel(draft,rev,note)
+          :statusPanel(draft,rev,note,nextScreen));
   }
   return {
     openHome,
