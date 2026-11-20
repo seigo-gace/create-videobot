@@ -12,7 +12,7 @@ const invoiceRefund=()=>official(invoice,50,81,'invoice_payment','stk:'+order);
 const photoRefund=()=>official(photo,100,82,'paid_media_payment','stkmedia_'+product);
 const videoRefund=()=>official(video,300,83,'paid_media_payment','video001:1');
 function fixture(transactions=[],options={}){
- const recorded=new Map(),calls=[],videoCalls=[],purchased={
+ const recorded=new Map(),calls=[],videoCalls=[];let cursor=0;const purchased={
   [invoice]:[{source:'sticker_pack',order_id:order,sale_id:null,buyer_user_id:'81',
     stars:50,product_id:product,fee_ok:true}],
   [photo]:[{source:'sticker_paid_photo',order_id:null,sale_id:9,buyer_user_id:'82',
@@ -21,6 +21,13 @@ function fixture(transactions=[],options={}){
  const videoSales={[video]:[{buyer_user_id:'83',stars:300}]};
  const pool={async query(sql,params){
   calls.push({sql,params});
+  if(sql.startsWith('SELECT next_offset FROM videobot_stars_refund_audit_cursor'))
+   return {rows:[{next_offset:cursor}]};
+  if(sql.startsWith('INSERT INTO videobot_stars_refund_audit_cursor')){
+   const [next,previous]=params;
+   if(cursor!==previous)return {rowCount:0,rows:[]};
+   cursor=next;return {rowCount:1,rows:[{next_offset:cursor}]};
+  }
   if(sql.includes("SELECT 'sticker_pack'::text AS source"))
    return {rows:purchased[params[0]]??[]};
   if(sql.startsWith('SELECT buyer_user_id,stars FROM videobot_stars_ledger'))
@@ -51,7 +58,8 @@ function fixture(transactions=[],options={}){
   videoCalls.push(txid);return {recorded:true,duplicate:videoCalls.length>1};
  }};
  return {reconciler:createPostgresCreatorRefundReconciler({
-   pool,telegramApi,videoLedger}),recorded,calls,videoCalls,purchased};
+   pool,telegramApi,videoLedger}),recorded,calls,videoCalls,purchased,videoSales,
+   get cursor(){return cursor;}};
 }
 test('official invoice refund reverses sticker seller shares once, no refund API',async()=>{
  const f=fixture([invoiceRefund()]);
@@ -97,12 +105,9 @@ test('unrelated official negative transaction is never credited to another selle
 });
 test('exact charge ownership collision refuses ambiguous VIDEO/STK booking',async()=>{
  const f=fixture([invoiceRefund()]);
- // fixture mock does not expose videoSales; cross-source collision is
- // represented by the original charge appearing through the video reader.
- const orig=f.reconciler;
- const b=fixture([videoRefund()]);
- assert.equal(typeof orig.reconcileRecent,'function');
- assert.equal((await b.reconciler.reconcileRecent()).recorded,1);
+ f.videoSales[invoice]=[{buyer_user_id:'81',stars:50}];
+ await assert.rejects(()=>f.reconciler.reconcileRecent(),/CHARGE_OWNER_COLLISION/);
+ assert.equal(f.recorded.size,0);
 });
 test('bounded pagination makes no false claim of complete all-time audit',async()=>{
  const f=fixture(Array.from({length:101},(_,i)=>({
@@ -112,6 +117,21 @@ test('bounded pagination makes no false claim of complete all-time audit',async(
  assert.equal(result.coverageComplete,false);
  assert.equal(f.recorded.size,0);
  assert.deepEqual((await f.reconciler.reconcileRecent({maxPages:2})).scanned,101);
+});
+test('durable audit cursor walks beyond the newest page and restarts at zero',async()=>{
+ const entries=Array.from({length:101},(_,i)=>({
+  id:'outside_'+i,amount:1,source:{type:'user',user:{id:5}}}));
+ const f=fixture(entries);
+ const first=await f.reconciler.reconcileIncremental({maxPages:1});
+ assert.equal(first.scanned,100);assert.equal(first.nextOffset,100);
+ assert.equal(first.coverageComplete,false);assert.equal(f.cursor,100);
+ const second=await f.reconciler.reconcileIncremental({maxPages:1});
+ assert.equal(second.scanned,1);assert.equal(second.nextOffset,0);
+ assert.equal(second.coverageComplete,true);assert.equal(f.cursor,0);
+ const third=await f.reconciler.reconcileIncremental({maxPages:1});
+ assert.equal(third.scanned,100);assert.equal(third.nextOffset,100);
+ assert.equal(f.calls.filter(x=>x.sql.includes('videobot_stars_refund_audit_cursor')&&
+   x.sql.startsWith('INSERT INTO')).length,3);
 });
 test('official malformed history and invalid dependencies fail closed',async()=>{
  assert.throws(()=>createPostgresCreatorRefundReconciler(),/DEPENDENCIES/);
