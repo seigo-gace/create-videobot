@@ -54,8 +54,8 @@ function fixture(transactions=[],options={}){
   const start=args.offset;
   return {transactions:transactions.slice(start,start+args.limit)};
  };
- const videoLedger={async confirmRefund(txid){
-  videoCalls.push(txid);return {recorded:true,duplicate:videoCalls.length>1};
+ const videoLedger={async confirmRefund(txid,maxPages,startOffset){
+  videoCalls.push({txid,maxPages,startOffset});return {recorded:true,duplicate:videoCalls.length>1};
  }};
  return {reconciler:createPostgresCreatorRefundReconciler({
    pool,telegramApi,videoLedger}),recorded,calls,videoCalls,purchased,videoSales,
@@ -76,7 +76,7 @@ test('sticker paid-photo refund and video refund share the same official sweep',
  const f=fixture([photoRefund(),videoRefund(),invoiceRefund()]);
  const done=await f.reconciler.reconcileRecent();
  assert.equal(done.recorded,3);
- assert.deepEqual(f.videoCalls,[video]);
+ assert.deepEqual(f.videoCalls,[{txid:video,maxPages:1,startOffset:0}]);
  assert.equal(f.recorded.get(photo).source,'sticker_paid_photo');
  assert.equal(f.recorded.get(invoice).source,'sticker_pack');
 });
@@ -132,6 +132,16 @@ test('durable audit cursor walks beyond the newest page and restarts at zero',as
  assert.equal(third.scanned,100);assert.equal(third.nextOffset,100);
  assert.equal(f.calls.filter(x=>x.sql.includes('videobot_stars_refund_audit_cursor')&&
    x.sql.startsWith('INSERT INTO')).length,3);
+});
+test('older video refund follows exactly the official audit page, not a stale first-page scan',async()=>{
+ const events=Array.from({length:100},(_,i)=>({
+   id:'positive_'+i,amount:1,source:{type:'user',user:{id:5}}}));
+ events.push(videoRefund());
+ const f=fixture(events);
+ const result=await f.reconciler.reconcileIncremental({maxPages:2});
+ assert.equal(result.recorded,1);
+ assert.deepEqual(f.videoCalls,[{txid:video,maxPages:1,startOffset:100}]);
+ assert.equal(result.coverageComplete,true);
 });
 test('official malformed history and invalid dependencies fail closed',async()=>{
  assert.throws(()=>createPostgresCreatorRefundReconciler(),/DEPENDENCIES/);
