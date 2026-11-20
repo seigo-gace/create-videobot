@@ -34,7 +34,11 @@ export async function publishVideoListing({
     if (typeof store?.[name] !== 'function') throw new Error('durable receipt store required');
   }
 
-  const topic = await getVerifiedVideoTopic({purpose:'video_sale', sellerId:listing.sellerId, listingId:listing.id});
+  // Until the durable delivery claim, no Telegram send is possible. Distinguish
+  // these definitive prerequisites from an unknown post-send result.
+  let topic;
+  try {
+    topic = await getVerifiedVideoTopic({purpose:'video_sale', sellerId:listing.sellerId, listingId:listing.id});
   if (!topic || topic.purpose !== 'video_sale' || topic.board !== 'video_chat' ||
       topic.enabled !== true || topic.verified !== true ||
       !Number.isSafeInteger(topic.chatId) || topic.chatId >= 0 ||
@@ -50,6 +54,11 @@ export async function publishVideoListing({
   if (await verifyRelease({ purpose:'video_sale', chatId:topic.chatId, threadId:topic.threadId }) !== true)
     throw new Error('video sale release not verified');
 
+  } catch (cause) {
+    const failure=new Error(cause instanceof Error?cause.message:'video publication prerequisites unavailable',{cause});
+    failure.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
+    throw failure;
+  }
   const base={chatId:topic.chatId,messageThreadId:topic.threadId};
   // Both free previews and locked video carry the same optional description.
   const caption=listing.title+(listing.description?'\n'+listing.description:'');
