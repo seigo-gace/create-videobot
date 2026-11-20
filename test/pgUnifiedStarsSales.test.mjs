@@ -16,7 +16,7 @@ function fixture({summary,history}={}){
  const pool={async query(sql,args){
   calls.push({sql,args});
   if(!sql.startsWith('WITH events AS ('))throw Error('unapproved accounting SQL');
-  if(sql.includes('BOOL_AND(fee_ok)'))return {rows:[data]};
+  if(sql.includes('BOOL_AND(COALESCE(fee_ok,FALSE))'))return {rows:[data]};
   if(sql.includes('ORDER BY happened_at DESC'))return {rows:events};
   throw Error('unrecognized accounting projection');
  }};
