@@ -125,6 +125,24 @@ export function editCreatorDraft(draft, action) {
   return { ...draft, [field]: value, dirtyFields: [...new Set([...draft.dirtyFields, field])] };
 }
 
+/** After the first video upload, keep the real private album above this prompt.
+ * Description is optional, and no public posting or charge occurs at this step. */
+export function creatorDescriptionPanel(draft,revision,notice='') {
+  expectDraft(draft);
+  if(draft.mode!=='create'||!draft.paidVideo||!Number.isSafeInteger(revision)||revision<1)
+    throw new Error('invalid optional description step');
+  return {text:[
+    '📝 動画の説明',
+    '',
+    '動画を受け付けました。次に、動画の説明を入力してください。',
+    '説明は省略できます。登録前に［編集］から変更することもできます。',
+    notice
+  ].filter(Boolean).join('\\n'),reply_markup:{inline_keyboard:[
+    [{text:'⏭ スキップ',callback_data:'entry:skip|r'+revision}],
+    [{text:'❌ キャンセル',callback_data:'edit:cancel|r'+revision}]
+  ]}};
+}
+
 /** Telegram creator registration: upload -> automatic private preview -> optional description -> registration. */
 export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   expectDraft(draft);
@@ -320,7 +338,7 @@ export function creatorReviewPanel(draft, revision = 0, note = '', termsUrl = ''
     '・違法作品、無断撮影・転載、第三者の権利を侵害する作品の販売は禁止します。',
     '・規約違反による損害は投稿者の責任に応じて対応し、運営者の法令上の責任を免除するものではありません。',
     '・決済はTelegram公式Starsのみ。管理費30%、投稿者の計算上の取り分70%です。',
-    '・返品・返金は法令とTelegramの公式手続に従います。',
+    '・購入者都合の通常返金はありません（法令・Telegram公式の正当な例外を除く）。',
     '規約バージョン：'+CREATOR_TERMS_VERSION,
     validTerms?'全文リンクから規約を確認してください。':'⚠️ 規約本文の公開先が未確認のため、同意・投稿できません。',
     agreed?'☑ 同意済み':'☐ 規約内容を確認して同意する',
