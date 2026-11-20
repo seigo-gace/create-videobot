@@ -8,6 +8,18 @@ test('getMe uses HTTPS Telegram endpoint and returns result without logging',asy
  assert.equal(called.url,'https://api.telegram.org/bot'+token+'/getMe');
  assert.equal(called.options.redirect,'error');
 });
+test('official bot Stars balance is readable without disclosure or seller payout',async()=>{
+ let observed=null;
+ const api=createTelegramBotApi({token,fetchImpl:async(url,params)=>{
+   observed={url,params};return {status:200,json:async()=>({
+     ok:true,result:{amount:173,nanostar_amount:0}
+   })};
+ }});
+ assert.deepEqual(await api('getMyStarBalance',{}),{amount:173,nanostar_amount:0});
+ assert.match(observed.url,/\/getMyStarBalance$/);
+ assert.equal(observed.params.body,'{}');
+ assert.equal(observed.params.redirect,'error');
+});
 test('arbitrary Telegram methods cannot execute',async()=>{
  let called=false;const api=createTelegramBotApi({token,fetchImpl:async()=>{called=true}});
  await assert.rejects(()=>api('deleteWebhook'));
