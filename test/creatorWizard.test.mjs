@@ -58,18 +58,19 @@ test('creator DM callback/standard input/price flow uses one existing screen and
   await x.callback('menu:listing');
   assert.equal(x.states.get(33).revision,1);
   await x.send({video:{file_id:'main001',duration:90},caption:'夏の思い出動画'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
   assert.equal(x.states.get(33).draft.paidVideo.fileId,'main001');
   assert.equal(x.states.get(33).draft.title,'夏の思い出動画');
-  await x.callback('edit:sample|r2');
+  await x.callback('edit:sample|r3');
   await x.send({video:{file_id:'upload001',duration:75}},212);
   assert.equal(x.states.get(33).draft.sample.durationSeconds,30);
-  await x.callback('edit:price|r4');
-  await x.callback('edit:price:300|r5');
-  await x.callback('edit:title|r6');
+  await x.callback('edit:price|r5');
+  await x.callback('edit:price:300|r6');
+  await x.callback('edit:title|r7');
   await x.send({text:'夏の思い出'},213);
   assert.equal(x.states.get(33).draft.priceStars,300);
   assert.equal(x.states.get(33).draft.title,'夏の思い出');
-  await x.callback('edit:preview|r8');
+  await x.callback('edit:preview|r9');
   const draft=x.states.get(33).draft;
   assert.equal(draft.thumbnail.fileId,'photo_auto_1');
   assert.equal(draft.sample.fileId,'prepared_sample_001');
@@ -185,17 +186,18 @@ test('creator confirms rights and explicitly publishes only after verified store
  });
  await x.callback('menu:listing');
  await x.send({video:{file_id:'main001'},caption:'動画タイトル'},301);
- await x.callback('edit:price|r2');
- await x.callback('edit:price:300|r3');
- await x.callback('edit:preview|r4');
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ await x.callback('edit:price|r3');
+ await x.callback('edit:price:300|r4');
+ await x.callback('edit:preview|r5');
  assert.equal(x.states.get(33).screen,'review');
  assert.match(x.screens.at(-1).panel.text,/出演者の年齢と必要な同意/);
- await x.callback('review:publish|r5');
+ await x.callback('review:publish|r6');
  assert.equal(published.length,0);
  assert.match(x.screens.at(-1).panel.text,/未登録項目と権利/);
- await x.callback('review:rights|r6');
+ await x.callback('review:rights|r7');
  assert.equal(x.states.get(33).draft.rightsVerified,true);
- await x.callback('review:publish|r7');
+ await x.callback('review:publish|r8');
  assert.equal(saved.length,1);
  assert.equal(published.length,1);
  assert.equal(calls.length,1);
@@ -203,7 +205,7 @@ test('creator confirms rights and explicitly publishes only after verified store
  assert.equal(saved[0].owner,33);
  assert.equal(x.states.get(33).draft,null);
  assert.match(x.screens.at(-1).panel.text,/新規動画を登録しました/);
- await x.callback('review:publish|r7');
+ await x.callback('review:publish|r8');
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(published.length,1);
 });
@@ -230,11 +232,12 @@ test('definitive pre-send GATE refusal retains one draft and permits safe retry'
  });
  await x.callback('menu:listing');
  await x.send({video:{file_id:'main001'},caption:'動画タイトル'},301);
- await x.callback('edit:price|r2');
- await x.callback('edit:price:300|r3');
- await x.callback('edit:preview|r4');
- await x.callback('review:rights|r5');
- await x.callback('review:publish|r6');
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ await x.callback('edit:price|r3');
+ await x.callback('edit:price:300|r4');
+ await x.callback('edit:preview|r5');
+ await x.callback('review:rights|r6');
+ await x.callback('review:publish|r7');
  const stopped=x.states.get(33);
  assert.equal(stopped.publishing,null);
  assert.equal(stopped.pendingVideoDraft.revision,1);
@@ -259,11 +262,12 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
  });
  await x.callback('menu:listing');
  await x.send({video:{file_id:'main001'},caption:'動画タイトル'},301);
- await x.callback('edit:price|r2');
- await x.callback('edit:price:300|r3');
- await x.callback('edit:preview|r4');
- await x.callback('review:rights|r5');
- await x.callback('review:publish|r6');
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ await x.callback('edit:price|r3');
+ await x.callback('edit:price:300|r4');
+ await x.callback('edit:preview|r5');
+ await x.callback('review:rights|r6');
+ await x.callback('review:publish|r7');
  const revision=x.states.get(33).revision;
  assert.equal(x.states.get(33).publishing,'needs_reconcile');
  assert.equal(attempts,1);
@@ -327,6 +331,7 @@ test('caption without title does not store video, retry accepts same captioned v
  assert.equal(x.states.get(33).draft.paidVideo,null);
  assert.equal(x.states.get(33).waiting,'paidVideo');
  await x.send({video:{file_id:'main001'},caption:'動画とタイトル'},402);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
  assert.equal(x.states.get(33).draft.paidVideo.fileId,'main001');
  assert.equal(x.states.get(33).draft.title,'動画とタイトル');
  assert.ok(x.calls.every(c=>!(c.method==='deleteMessage'&&c.params.message_id===401)),
@@ -345,13 +350,14 @@ test('changing paid main refreshes the private album while preserving price and 
  const x=setup();
  await x.callback('menu:listing');
  await x.send({video:{file_id:'first001'},caption:'一作目'},451);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
  assert.equal(x.states.get(33).screen,'editor');
  assert.equal(x.states.get(33).draft.sample.durationSeconds,30);
- await x.callback('edit:description|r2');
+ await x.callback('edit:description|r3');
  await x.send({text:'追加説明'},452);
- await x.callback('edit:price|r4');
- await x.callback('edit:price:500|r5');
- await x.callback('edit:paidVideo|r6');
+ await x.callback('edit:price|r5');
+ await x.callback('edit:price:500|r6');
+ await x.callback('edit:paidVideo|r7');
  await x.send({video:{file_id:'second002'},caption:'二作目'},453);
  const draft=x.states.get(33).draft;
  assert.equal(draft.title,'二作目');
@@ -367,12 +373,13 @@ test('one-line title edit retains custom Stars price without demanding two-line 
  const x=setup();
  await x.callback('menu:listing');
  await x.send({video:{file_id:'main001'},caption:'旧題名'},501);
- await x.callback('edit:price|r2');
- await x.callback('edit:price:custom|r3');
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ await x.callback('edit:price|r3');
+ await x.callback('edit:price:custom|r4');
  await x.send({text:'250'},502);
  assert.equal(x.states.get(33).draft.priceStars,250);
  assert.equal(x.states.get(33).draft.title,'旧題名');
- await x.callback('edit:title|r5');
+ await x.callback('edit:title|r6');
  await x.send({text:'新題名'},503);
  assert.equal(x.states.get(33).draft.title,'新題名');
  assert.equal(x.states.get(33).draft.priceStars,250);
@@ -393,6 +400,7 @@ test('video upload -> inline edit -> explicit terms -> publish once -> personal 
  });
  await x.callback('menu:listing');
  await x.send({video:{file_id:'original_001'},caption:'旅の動画'},1001);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
  let state=x.states.get(33);
  assert.equal(state.screen,'editor');
  assert.equal(state.waiting,null);
@@ -402,17 +410,17 @@ test('video upload -> inline edit -> explicit terms -> publish once -> personal 
  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
    ['✅ 投稿する','❌ キャンセル']);
  assert.match(x.screens.at(-1).panel.text,/［未登録］ 説明：/);
- await x.callback('edit:description|r2');
+ await x.callback('edit:description|r3');
  await x.send({text:'この動画の説明です'},1002);
- await x.callback('edit:price|r4');
- await x.callback('edit:price:300|r5');
- await x.callback('entry:register|r6');
+ await x.callback('edit:price|r5');
+ await x.callback('edit:price:300|r6');
+ await x.callback('entry:register|r7');
  assert.equal(x.states.get(33).screen,'review');
  assert.equal(published.length,0,'entering review cannot publish');
  assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),false);
- await x.callback('review:agree|r7');
+ await x.callback('review:agree|r8');
  assert.equal(x.states.get(33).draft.feeTermsAccepted,true);
- await x.callback('review:publish|r8');
+ await x.callback('review:publish|r9');
  assert.equal(saved.length,1);
  assert.equal(saved[0].description,'この動画の説明です');
  assert.deepEqual([saved[0].rightsVerified,saved[0].adultConsentVerified,saved[0].feeTermsAccepted],[true,true,true]);
@@ -427,6 +435,7 @@ test('description remains optional and editable through inline text only',async(
  const x=setup();
  await x.callback('menu:listing');
  await x.send({video:{file_id:'original_001'},caption:'タイトル'},1101);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
  assert.equal(x.states.get(33).screen,'editor');
  assert.equal(x.states.get(33).draft.description,'');
  const panel=x.screens.at(-1).panel;
@@ -438,11 +447,12 @@ test('existing draft recovers missing automatic media on editor re-entry without
   const x=setup();
   await x.callback('menu:listing');
   await x.send({video:{file_id:'main001',duration:90},caption:'保存済み動画'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
   const prior=x.states.get(33);
   x.states.set(33,{...prior,
     draft:{...prior.draft,thumbnail:null,sample:null},
     previewMessageId:null});
-  await x.callback('menu:listing|r2');
+  await x.callback('menu:listing|r3');
   const restored=x.states.get(33);
   assert.equal(restored.draft.paidVideo.fileId,'main001');
   assert.equal(restored.draft.thumbnail.fileId,'photo_auto_1');
@@ -456,10 +466,11 @@ test('Stars settings back regenerates missing media for an old registered draft'
   const x=setup();
   await x.callback('menu:listing');
   await x.send({video:{file_id:'main001',duration:90},caption:'既存作品'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
   const old=x.states.get(33);
   x.states.set(33,{...old,draft:{...old.draft,thumbnail:null,sample:null}});
-  await x.callback('edit:price|r2');
-  await x.callback('edit:back|r3');
+  await x.callback('edit:price|r3');
+  await x.callback('edit:back|r4');
   const restored=x.states.get(33);
   assert.equal(restored.screen,'editor');
   assert.equal(restored.draft.paidVideo.fileId,'main001');
@@ -473,11 +484,12 @@ test('obsolete pre-deploy Stars button redraws owner current draft and recovers 
   const x=setup();
   await x.callback('menu:listing');
   await x.send({video:{file_id:'main001',duration:90},caption:'旧画面作品'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
   const current=x.states.get(33);
   x.states.set(33,{...current,
     draft:{...current.draft,thumbnail:null,sample:null},
     screenMessageId:999,previewMessageId:null});
-  const result=await x.callback('edit:price|r1',101);
+  const result=await x.callback('edit:price|r2',101);
   const state=x.states.get(33);
   assert.equal(result.handled,true);
   assert.equal(state.screen,'editor');
@@ -493,9 +505,10 @@ test('stale review buttons refresh current draft without publishing or canceling
   const x=setup({publishListing:async x=>{published.push(x);return {posted:true,paidMessageId:99};}});
   await x.callback('menu:listing');
   await x.send({video:{file_id:'main001',duration:90},caption:'守る作品'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
   const original=x.states.get(33);
   x.states.set(33,{...original,screen:'editor',screenMessageId:999});
-  for(const action of ['review:publish|r1','review:edit|r1','review:cancel|r1']){
+  for(const action of ['review:publish|r2','review:edit|r2','review:cancel|r2']){
     await x.callback(action,101);
     assert.equal(x.states.get(33).draft.title,'守る作品');
     assert.equal(x.states.get(33).screen,'review');
@@ -534,9 +547,10 @@ test('obsolete register and cancel never act on newer draft',async()=>{
  const x=setup();
  await x.callback('menu:listing');
  await x.send({video:{file_id:'main001',duration:90},caption:'下書き'},210);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
  const current=x.states.get(33);
  x.states.set(33,{...current,screen:'editor',screenMessageId:999});
- for(const code of ['entry:register|r1','edit:cancel|r1']){
+ for(const code of ['entry:register|r2','edit:cancel|r2']){
    const result=await x.callback(code,101);
    assert.equal(result.handled,true);
    assert.equal(x.states.get(33).draft.paidVideo.fileId,'main001');
@@ -556,6 +570,7 @@ test('MP4 sent as a Telegram document is normalized into a video and reaches the
   }});
   await x.callback('menu:listing');
   const result=await x.send({document:{file_id:'document_mp4_001',mime_type:'video/mp4',file_name:'sample.mp4'},caption:'撮影作品'},501);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
   assert.equal(result.handled,true);
   const state=x.states.get(33);
   assert.equal(state.draft.title,'撮影作品');
@@ -601,4 +616,42 @@ test('owner-only title edit shows one field and cancel restores saved video with
   assert.equal(x.states.get(33).draft,null);
   assert.equal(updates,0);
   assert.match(x.screens.at(-1).panel.text,/自分の動画/);
+});
+
+test('initial video upload asks for optional description after private preview and accepts direct text',async()=>{
+  const x=setup();
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main_desc_001'},caption:'動画タイトル'},1101);
+  const pending=x.states.get(33);
+  assert.equal(pending.screen,'description');
+  assert.equal(pending.waiting,'description');
+  assert.equal(pending.draft.title,'動画タイトル');
+  assert.equal(pending.draft.sample.fileId,'sample_auto_1');
+  assert.equal(pending.draft.thumbnail.fileId,'photo_auto_1');
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.map(row=>row[0].text),
+    ['⏭ スキップ','❌ キャンセル']);
+  assert.match(x.screens.at(-1).panel.text,/説明は省略できます/);
+  await x.send({text:'次に表示される説明'},1102);
+  assert.equal(x.states.get(33).screen,'editor');
+  assert.equal(x.states.get(33).waiting,null);
+  assert.equal(x.states.get(33).draft.description,'次に表示される説明');
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+    ['✅ 投稿する','❌ キャンセル']);
+  assert.equal(x.calls.filter(c=>c.method==='sendPaidMedia').length,0);
+});
+
+test('skip on optional description keeps the real album and reaches the ordinary editor once',async()=>{
+  const x=setup();
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main_skip_001'},caption:'説明なしの作品'},1105);
+  assert.equal(x.states.get(33).screen,'description');
+  await x.callback('entry:skip|r2');
+  const state=x.states.get(33);
+  assert.equal(state.screen,'editor');
+  assert.equal(state.waiting,null);
+  assert.equal(state.descriptionEntered,true);
+  assert.equal(state.draft.description,'');
+  assert.equal(state.draft.paidVideo.fileId,'main_skip_001');
+  assert.equal(state.draft.sample.fileId,'sample_auto_1');
+  await assert.rejects(()=>x.callback('entry:skip|r2'),/STALE_CREATOR_BUTTON/);
 });
