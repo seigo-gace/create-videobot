@@ -89,7 +89,7 @@ export function createPostgresCreatorRefundReconciler({pool,telegramApi,videoLed
  if(typeof pool?.query!=='function'||typeof telegramApi!=='function'||
     typeof videoLedger?.confirmRefund!=='function')
   throw Error('STARS_REFUND_TRUSTED_DEPENDENCIES_REQUIRED');
- async function reconcileTransaction(tx){
+ async function reconcileTransaction(tx,officialOffset=0){
   if(!validRefundCandidate(tx))return {processed:false};
   const originals=rows(await pool.query(ORIGINALS_SQL,[tx.id]));
   const video=rows(await pool.query(
@@ -103,7 +103,7 @@ export function createPostgresCreatorRefundReconciler({pool,telegramApi,videoLed
       positive(sale.stars,'VIDEO_PRICE')!==-tx.amount||
       String(sale.buyer_user_id)!==String(tx.receiver.user.id))
     throw Error('STARS_REFUND_VIDEO_EVIDENCE_CONFLICT');
-   const outcome=await videoLedger.confirmRefund(tx.id);
+   const outcome=await videoLedger.confirmRefund(tx.id,1,officialOffset);
    return {processed:true,recorded:outcome.recorded===true,duplicate:outcome.duplicate===true,source:'video'};
   }
   if(!originals.length)return {processed:false};
@@ -151,7 +151,7 @@ export function createPostgresCreatorRefundReconciler({pool,telegramApi,videoLed
     if(!validRefundCandidate(tx))continue;
     if(seen.has(tx.id))continue;
     seen.add(tx.id);candidates++;
-    const outcome=await reconcileTransaction(tx);
+    const outcome=await reconcileTransaction(tx,offset);
     if(outcome.recorded){if(outcome.duplicate)duplicates++;else recorded++;}
    }
    if(transactions.length<100){hasMore=false;break;}
