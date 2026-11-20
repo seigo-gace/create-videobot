@@ -81,9 +81,9 @@ const INSERT_PHOTO=`INSERT INTO videobot_sticker_refunds
  * Read-only Telegram transaction reconciliation; it NEVER initiates a refund,
  * transfers Stars, changes delivery rights, or invents seller payouts.
  *
- * Polling uses a bounded recent window. A scan of N pages never proves that
- * older transactions have been audited; refunds beyond the window stay
- * unreconciled pending an authorized full-history audit.
+ * The one existing poller persists a paginated audit cursor. It restarts from
+ * offset zero after a complete traversal; partial scans never assert full
+ * coverage. Failed scans do not advance the cursor.
  */
 export function createPostgresCreatorRefundReconciler({pool,telegramApi,videoLedger}={}){
  if(typeof pool?.query!=='function'||typeof telegramApi!=='function'||
@@ -132,32 +132,56 @@ export function createPostgresCreatorRefundReconciler({pool,telegramApi,videoLed
    throw Error('STARS_REFUND_REPLAY_CONFLICT');
   return {processed:true,recorded:true,duplicate:true,source:sale.source};
  }
+ async function scan({maxPages=3,startOffset=0}={}){
+  if(!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>20)
+   throw Error('STARS_REFUND_PAGE_LIMIT_INVALID');
+  if(!Number.isSafeInteger(startOffset)||startOffset<0||startOffset>2_000_000_000)
+   throw Error('STARS_REFUND_CURSOR_INVALID');
+  let scanned=0,candidates=0,recorded=0,duplicates=0,hasMore=false;
+  const seen=new Set();
+  for(let page=0;page<maxPages;page++){
+   const offset=startOffset+page*100;
+   if(offset>2_000_000_000)throw Error('STARS_REFUND_CURSOR_EXHAUSTED');
+   const result=await telegramApi('getStarTransactions',{offset,limit:100});
+   const transactions=result?.transactions;
+   if(!Array.isArray(transactions)||transactions.length>100)
+    throw Error('STARS_REFUND_OFFICIAL_HISTORY_UNAVAILABLE');
+   for(const tx of transactions){
+    scanned++;
+    if(!validRefundCandidate(tx))continue;
+    if(seen.has(tx.id))continue;
+    seen.add(tx.id);candidates++;
+    const outcome=await reconcileTransaction(tx);
+    if(outcome.recorded){if(outcome.duplicate)duplicates++;else recorded++;}
+   }
+   if(transactions.length<100){hasMore=false;break;}
+   hasMore=page===maxPages-1;
+  }
+  return {scanned,candidates,recorded,duplicates,coverageComplete:!hasMore};
+ }
  return Object.freeze({
   async reconcileTransaction(tx){return reconcileTransaction(tx);},
-  async reconcileRecent({maxPages=3}={}){
-   if(!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>20)
-    throw Error('STARS_REFUND_PAGE_LIMIT_INVALID');
-   let scanned=0,candidates=0,recorded=0,duplicates=0,hasMore=false;
-   const seen=new Set();
-   for(let page=0;page<maxPages;page++){
-    const result=await telegramApi('getStarTransactions',{offset:page*100,limit:100});
-    const transactions=result?.transactions;
-    if(!Array.isArray(transactions)||transactions.length>100)
-     throw Error('STARS_REFUND_OFFICIAL_HISTORY_UNAVAILABLE');
-    for(const tx of transactions){
-     scanned++;
-     if(!validRefundCandidate(tx))continue;
-     // Same original charge may appear twice when pages overlap; never
-     // create a second refund or mistake pagination overlap for new income.
-     if(seen.has(tx.id))continue;
-     seen.add(tx.id);candidates++;
-     const outcome=await reconcileTransaction(tx);
-     if(outcome.recorded){if(outcome.duplicate)duplicates++;else recorded++;}
-    }
-    if(transactions.length<100){hasMore=false;break;}
-    hasMore=page===maxPages-1;
-   }
-   return {scanned,candidates,recorded,duplicates,coverageComplete:!hasMore};
+  async reconcileRecent({maxPages=3}={}){return scan({maxPages});},
+  async reconcileIncremental({maxPages=3}={}){
+   const fetched=rows(await pool.query(
+    'SELECT next_offset FROM videobot_stars_refund_audit_cursor WHERE cursor_id=1'));
+   if(fetched.length>1)throw Error('STARS_REFUND_CURSOR_DUPLICATE');
+   const startOffset=fetched.length?Number(fetched[0].next_offset):0;
+   const result=await scan({maxPages,startOffset});
+   const nextOffset=result.coverageComplete?0:startOffset+maxPages*100;
+   if(nextOffset>2_000_000_000)throw Error('STARS_REFUND_CURSOR_EXHAUSTED');
+   // CAS also rejects a second poller overwriting another running audit.
+   const saved=await pool.query(`INSERT INTO videobot_stars_refund_audit_cursor
+    (cursor_id,next_offset,last_complete_at) VALUES (1,$1,CASE WHEN $3 THEN NOW() ELSE NULL END)
+    ON CONFLICT (cursor_id) DO UPDATE SET next_offset=EXCLUDED.next_offset,
+      last_complete_at=CASE WHEN $3 THEN NOW()
+        ELSE videobot_stars_refund_audit_cursor.last_complete_at END,
+      updated_at=NOW()
+    WHERE videobot_stars_refund_audit_cursor.next_offset=$2
+    RETURNING next_offset`,[nextOffset,startOffset,result.coverageComplete]);
+   if(saved?.rowCount!==1||Number(saved.rows?.[0]?.next_offset)!==nextOffset)
+    throw Error('STARS_REFUND_CURSOR_CAS_CONFLICT');
+   return {...result,nextOffset};
   }
  });
 }
