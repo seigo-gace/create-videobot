@@ -121,3 +121,17 @@ test('optional video description appears on both free gallery and official tap-t
  assert.match(d.calls[1].params.caption,/30秒の無料見本/);
  assert.equal(d.calls[1].params.payload,'sale001:1');
 });
+
+test('buyer can read no-voluntary-refund notice before the official Stars unlock',async()=>{
+  const d=deps();
+  d.listing.description='見本の説明';
+  await publishVideoListing(d);
+  for(const caption of [d.calls[0].params.media[0].caption,d.calls[1].params.caption]){
+    assert.match(caption,/見本の説明/);
+    assert.match(caption,/300 Stars/);
+    assert.match(caption,/購入者都合の通常返金なし/);
+    assert.match(caption,/法令・Telegram公式の正当な例外/);
+    assert.ok(caption.length<=1024);
+  }
+  assert.deepEqual(d.calls.map(c=>c.method),['sendMediaGroup','sendPaidMedia']);
+});
