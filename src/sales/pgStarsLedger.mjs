@@ -70,10 +70,11 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
      * negative transaction only after the Bot API confirms a matching outgoing
      * reversal for a previously credited purchase.
      */
-    async confirmRefund(telegramTransactionId,maxPages=3) {
+    async confirmRefund(telegramTransactionId,maxPages=3,startOffset=0) {
       if(typeof telegramTransactionId!=='string'||telegramTransactionId.length<1||
          telegramTransactionId.length>256||!Number.isSafeInteger(maxPages)||
-         maxPages<1||maxPages>20)throw new Error('invalid refund reconciliation request');
+         maxPages<1||maxPages>20||!Number.isSafeInteger(startOffset)||
+         startOffset<0||startOffset>2_000_000_000)throw new Error('invalid refund reconciliation request');
       const paid=await pool.query(
         "SELECT delivery_key,listing_id,seller_user_id,buyer_user_id,stars FROM videobot_stars_ledger WHERE telegram_transaction_id=$1 AND kind='paid'",
         [telegramTransactionId]
@@ -83,7 +84,7 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
       const sale=rows[0],expected=safeAmount(sale.stars);
       let refunds=[];
       for(let page=0;page<maxPages;page++) {
-        const tx=await telegramApi('getStarTransactions',{offset:page*100,limit:100});
+        const tx=await telegramApi('getStarTransactions',{offset:startOffset+page*100,limit:100});
         if(!Array.isArray(tx?.transactions))throw new Error('Telegram refund history unavailable');
         for(const item of tx.transactions) {
           if(item?.id!==telegramTransactionId)continue;
