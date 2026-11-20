@@ -66,7 +66,7 @@ SELECT COALESCE(SUM(CASE WHEN type='sale' THEN stars ELSE 0 END),0) AS gross_sta
        COALESCE(SUM(CASE WHEN type='sale' THEN stars ELSE -stars END),0) AS net_stars,
        COALESCE(SUM(CASE WHEN type='sale' AND source='video' THEN stars ELSE 0 END),0) AS video_gross_stars,
        COALESCE(SUM(CASE WHEN type='sale' AND source<>'video' THEN stars ELSE 0 END),0) AS sticker_gross_stars,
-       COALESCE(BOOL_AND(fee_ok),TRUE) AS fees_valid
+       COALESCE(BOOL_AND(COALESCE(fee_ok,FALSE)),TRUE) AS fees_valid
 FROM events`;
 const HISTORY_SQL=`WITH events AS (${CREATOR_STARS_EVENTS_SQL})
 SELECT source,type,stars,fee_ok FROM events
