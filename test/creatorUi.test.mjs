@@ -196,16 +196,23 @@ test('shared preview guide follows create/edit mode and preserves action buttons
  fresh=editCreatorDraft(fresh,{type:'captionTitle',text:'作品'});
  fresh=editCreatorDraft(fresh,{type:'paidVideo',media:{fileId:'video123'}});
  const newPanel=creatorEditorPanel(fresh,3);
- assert.match(newPanel.text,/変更したい項目の［編集］をタップして内容を変更し、最後に［投稿する］をタップしてください。/);
+ assert.match(newPanel.text,/📝 登録方法\n変更したい項目の［編集］をタップして修正できます。\n内容を確認したら［投稿する］をタップして登録手続きに進んでください。/);
  assert.doesNotMatch(newPanel.text,/販売手数料|管理費30%|投稿者の取り分/);
+ assert.match(newPanel.text,/［未登録］ 説明：/);
+ assert.ok(newPanel.text.indexOf('📝 登録方法')>newPanel.text.indexOf('有料本編：'));
+ assert.doesNotMatch(newPanel.text,/販売手数料|管理費|投稿者の取り分|30%|70%|出金|払出|引き出し可能/);
+ assert.ok(newPanel.entities.every(e=>newPanel.text.slice(e.offset,e.offset+e.length)==='［編集］'||newPanel.text.slice(e.offset,e.offset+e.length)==='［未登録］'));
  assert.deepEqual(newPanel.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
  for(const e of newPanel.entities)assert.equal(newPanel.text.slice(e.offset,e.offset+e.length), '［編集］'.includes(newPanel.text.slice(e.offset,e.offset+e.length))?'［編集］':'［未登録］');
  const existing=openCreatorEditor({sellerId:'seller1',existing:{
    id:'mine_1',sellerId:'seller1',revision:2,title:'既存作品',paidVideo:{fileId:'main123'}
  }});
  const unchanged=creatorEditorPanel(existing,4);
- assert.match(unchanged.text,/変更したい項目の［編集］をタップして内容を変更し、最後に［変更］をタップしてください。/);
- assert.doesNotMatch(unchanged.text,/最後に［投稿する］/);
+ assert.match(unchanged.text,/📝 編集方法\n変更したい項目の［編集］をタップして修正してください。\n変更が終わったら［変更］をタップしてください。/);
+ assert.doesNotMatch(unchanged.text,/📝 登録方法|登録手続き|［投稿する］/);
+ assert.ok(unchanged.text.indexOf('📝 編集方法')>unchanged.text.indexOf('有料本編：'));
+ assert.doesNotMatch(unchanged.text,/販売手数料|管理費|投稿者の取り分|30%|70%|出金|払出|引き出し可能/);
+ assert.ok(unchanged.entities.every(e=>unchanged.text.slice(e.offset,e.offset+e.length)==='［編集］'||unchanged.text.slice(e.offset,e.offset+e.length)==='［未登録］'));
  assert.deepEqual(unchanged.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
  const modified=creatorEditorPanel(editCreatorDraft(existing,{type:'titleInput',text:'変更後'}),5);
  assert.deepEqual(modified.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 変更','❌ キャンセル','🗑 削除']);
