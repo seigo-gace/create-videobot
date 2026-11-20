@@ -107,7 +107,7 @@ export async function createCreatorPollingRuntime({
   if(env.VIDEOBOT_SCHEMA_MIGRATE!=='YES')
    throw Error('CREATOR_POLL_SCHEMA_OWNER_CONSENT_MISSING');
   const schema=await applySchema({pool});
-  if(schema.migrations!==20)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
+  if(schema.migrations!==21)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
   const ownerQueue=env.VIDEOBOT_OWNER_JOBS==='YES'?createPostgresOwnerUpdateQueue(pool):null;
   if(ownerQueue)await ownerQueue.recover();
   const pollAdmissionSecret=randomBytes(32).toString('hex');
@@ -188,6 +188,7 @@ export async function runCreatorPollingMain({
   onStatus('CREATOR_DM_POLL_READY=PASS');
   onStatus('CREATOR_GATE_PUBLIC_RELEASE='+(rt.gateConnected?'CONNECTED':'NOT_VERIFIED'));
   let recoveryCursor=0,recoveryInFlight=null,workerError=null;
+  let refundInFlight=null,nextRefundSweepAt=0;
   if(rt.ownerJobRunner){
    for(let i=0;i<2;i++){
     const worker=(async()=>{
@@ -208,6 +209,22 @@ export async function runCreatorPollingMain({
    const outcome=await rt.poller.pollBatch({timeout:rt.ownerJobRunner?2:8});
    if(outcome.accepted>0)onStatus('CREATOR_DM_UPDATES_HANDLED='+outcome.accepted);
    if(outcome.quarantined>0)onStatus('CREATOR_UPDATES_QUARANTINED='+outcome.quarantined);
+   if(!refundInFlight && Date.now()>=nextRefundSweepAt &&
+      typeof rt.source?.creatorRefundReconciler?.reconcileRecent==='function') {
+     // Bounded single-process scan, never a second Telegram poller. Do not
+     // block purchase updates on potentially slow Stars history paging.
+     nextRefundSweepAt=Date.now()+5*60*1000;
+     refundInFlight=rt.source.creatorRefundReconciler.reconcileRecent({maxPages:3})
+       .then(result=>{
+         if(result.recorded>0)onStatus('STARS_REFUNDS_VERIFIED='+result.recorded);
+         if(!result.coverageComplete)onStatus('STARS_REFUND_HISTORY_PARTIAL=YES');
+       })
+       .catch(()=>{
+         nextRefundSweepAt=Date.now()+60*1000;
+         onStatus('STARS_REFUND_RECONCILE_RETRY=YES');
+       })
+       .finally(()=>{refundInFlight=null;});
+   }
    if(!recoveryInFlight){
      // Never await a slow getStickerSet inside update polling.
      // Only one bounded scan runs at a time in the SAME process.
@@ -223,6 +240,7 @@ export async function runCreatorPollingMain({
    }
   }
   if(recoveryInFlight)await recoveryInFlight;
+  if(refundInFlight)await refundInFlight;
  }finally{
   workerStop.abort();
   if(workers.length)await Promise.allSettled(workers);
