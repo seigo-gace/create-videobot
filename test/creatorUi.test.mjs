@@ -191,6 +191,27 @@ test('field editor isolates one requested item and shows only back/delete action
  const description=creatorFieldPanel(d,'description',8);
  assert.deepEqual(description.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る','🗑 削除']);
 });
+test('shared preview guide follows create/edit mode and preserves action buttons and link ranges',()=>{
+ let fresh=openCreatorEditor({sellerId:'seller1'});
+ fresh=editCreatorDraft(fresh,{type:'captionTitle',text:'作品'});
+ fresh=editCreatorDraft(fresh,{type:'paidVideo',media:{fileId:'video123'}});
+ const newPanel=creatorEditorPanel(fresh,3);
+ assert.match(newPanel.text,/変更したい項目の［編集］をタップして内容を変更し、最後に［投稿する］をタップしてください。/);
+ assert.doesNotMatch(newPanel.text,/販売手数料|管理費30%|投稿者の取り分/);
+ assert.deepEqual(newPanel.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
+ for(const e of newPanel.entities)assert.equal(newPanel.text.slice(e.offset,e.offset+e.length), '［編集］'.includes(newPanel.text.slice(e.offset,e.offset+e.length))?'［編集］':'［未登録］');
+ const existing=openCreatorEditor({sellerId:'seller1',existing:{
+   id:'mine_1',sellerId:'seller1',revision:2,title:'既存作品',paidVideo:{fileId:'main123'}
+ }});
+ const unchanged=creatorEditorPanel(existing,4);
+ assert.match(unchanged.text,/変更したい項目の［編集］をタップして内容を変更し、最後に［変更］をタップしてください。/);
+ assert.doesNotMatch(unchanged.text,/最後に［投稿する］/);
+ assert.deepEqual(unchanged.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
+ const modified=creatorEditorPanel(editCreatorDraft(existing,{type:'titleInput',text:'変更後'}),5);
+ assert.deepEqual(modified.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 変更','❌ キャンセル','🗑 削除']);
+ for(const e of modified.entities)assert.match(modified.text.slice(e.offset,e.offset+e.length),/^［(編集|未登録)］$/);
+});
+
 test('registered video editor uses four actions, return only when unchanged and never shows publish',()=>{
  const existing={id:'mine_1',sellerId:'seller1',revision:2,title:'作品',paidVideo:{fileId:'main123'}};
  const original=openCreatorEditor({sellerId:'seller1',existing});
