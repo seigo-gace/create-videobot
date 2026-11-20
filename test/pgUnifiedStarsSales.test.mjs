@@ -64,7 +64,7 @@ test('combined sales history labels video, sticker pack and sticker photo withou
  assert.match(panel.text,/〔🎨 ステッカー写真ロック〕/);
  assert.match(panel.text,/〔🎨 ステッカー・絵文字〕/);
  assert.match(panel.text,/〔🎬 動画〕/);
- assert.match(panel.text,/返金：−50 Stars/);
+ assert.match(panel.text,/公式決済取消：−50 Stars/);
  assert.match(panel.text,/返金：−50 Stars.*〔🎨 ステッカー・絵文字〕/);
  assert.equal(panel.reply_markup.inline_keyboard.length,1);
  assert.equal(panel.reply_markup.inline_keyboard[0][0].callback_data,'sales:back|r5');
