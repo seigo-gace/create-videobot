@@ -6,6 +6,7 @@ import {createPostgresListingStore} from '../sales/pgListings.mjs';
 import {createPostgresPostingReceiptStore} from '../sales/pgPostingReceipts.mjs';
 import {createPostgresStarsLedger} from '../sales/pgStarsLedger.mjs';
 import {createPostgresUnifiedStarsSales} from '../sales/pgUnifiedStarsSales.mjs';
+import {createPostgresCreatorRefundReconciler} from '../sales/pgCreatorRefundReconciler.mjs';
 import {createPostgresWebhookUpdateStore} from '../sales/pgWebhookUpdates.mjs';
 import {createVideoMediaProcessor} from './mediaProcessor.mjs';
 import {createVideoBotScreenTransport} from './creatorScreenTransport.mjs';
@@ -68,6 +69,7 @@ export function createVideoBotSourceModule({
   const stickerInventory=createPostgresStickerInventory(pool);
   const stickerSalesStore=createPostgresStickerSales(pool);
   const stickerPaidPhoto=createPostgresStickerPaidPhoto({pool,telegramApi});
+  const creatorRefundReconciler=createPostgresCreatorRefundReconciler({pool,telegramApi,videoLedger:starsLedger});
   const stickerGifts=createPostgresStickerGifts(pool);
   const stickerTopicPosts=createPostgresStickerTopicPosts(pool);
   // GateApp-Bot owns live topic verification; never fabricate a Topic ID
@@ -355,7 +357,7 @@ export function createVideoBotSourceModule({
   return Object.freeze({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
-    listingStore,sessionStore,receiptStore,starsLedger,unifiedStarsSales,updateStore,
+    listingStore,sessionStore,receiptStore,starsLedger,unifiedStarsSales,creatorRefundReconciler,updateStore,
     stickerInventory,stickerSalesStore,stickerPaidPhoto,stickerGifts,stickerTopicPosts,stickerWizard,ensureStickerEntryPin,publishListing,handleCreatorUpdate
   });
 }
