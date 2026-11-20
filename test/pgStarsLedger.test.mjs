@@ -163,6 +163,21 @@ test('refund with unknown sale, wrong buyer, or wrong amount fails closed',async
  assert.equal(x.rows.filter(r=>r.kind==='refunded').length,0);
 });
 
+test('a video refund on an older official history page is still verified',async()=>{
+ const f=fixture();
+ await createPostgresStarsLedger(f).confirmPurchase(purchase);
+ const offsets=[];
+ f.telegramApi=async(method,params)=>{
+  offsets.push(params.offset);
+  return {transactions:[{id:'transaction-true-123',amount:-300,
+   receiver:{type:'user',user:{id:77}}}]};
+ };
+ const ledger=createPostgresStarsLedger(f);
+ assert.deepEqual(await ledger.confirmRefund('transaction-true-123',1,600),
+  {recorded:true,duplicate:false});
+ assert.deepEqual(offsets,[600]);
+ await assert.rejects(()=>ledger.confirmRefund('transaction-true-123',1,-1),/invalid/);
+});
 test('sales record is rejected without seller acceptance of the 30 percent management fee',async()=>{
  const x=fixture();x.state.fee_terms_accepted_at=null;
  await assert.rejects(()=>createPostgresStarsLedger(x).confirmPurchase(purchase),/management-fee acceptance missing/);
