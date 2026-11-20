@@ -24,3 +24,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS videobot_sticker_refund_photo
  ON videobot_sticker_refunds(sale_id) WHERE sale_id IS NOT NULL;
 -- Refunded products remain in immutable purchase ledgers and existing delivery
 -- records; a later entitlement-policy change requires separate adopted scope.
+
+-- Keep progress across polling restarts when the bot has more than 300
+-- Stars transactions. A full traversal restarts at offset zero so newer
+-- transactions are also rechecked. No second polling process is created.
+CREATE TABLE IF NOT EXISTS videobot_stars_refund_audit_cursor (
+ cursor_id SMALLINT PRIMARY KEY DEFAULT 1 CHECK(cursor_id=1),
+ next_offset INTEGER NOT NULL DEFAULT 0 CHECK(next_offset>=0),
+ last_complete_at TIMESTAMPTZ NULL,
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
