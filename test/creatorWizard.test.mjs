@@ -297,7 +297,7 @@ test('existing sales summary and history are shown through injected owner ledger
  assert.match(x.screens.at(-1).panel.text,/累計売上：850 Stars/);
  await x.callback('sales:history|r1');
  assert.equal(x.states.get(33).screen,'sales_history');
- assert.match(x.screens.at(-1).panel.text,/返金：−100 Stars/);
+ assert.match(x.screens.at(-1).panel.text,/公式決済取消：−100 Stars/);
  await x.callback('sales:back|r2');
  assert.equal(x.states.get(33).screen,'sales');
  await x.callback('sales:withdraw|r3');
