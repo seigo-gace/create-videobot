@@ -117,7 +117,7 @@ test('preview has only inline edit links; fees appear only in consent review',()
  assert.match(review.text,/30%/);
  assert.match(review.text,/管理費90 Stars／投稿者分210 Stars/);
  assert.equal(review.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:publish')),false);
- assert.match(review.text,/返品・返金は法令とTelegram/);
+ assert.match(review.text,/購入者都合の通常返金はありません/);
  d=editCreatorDraft(d,{type:'confirmTerms'});
  d={...d,termsUrl:'https://example.test/terms.html'};
  const ready=creatorReviewPanel(d,4,'','https://example.test/terms.html');
