@@ -6,6 +6,8 @@ import {createPostgresStickerGifts} from '../stickers/pgStickerGifts.mjs';
 import {createPostgresStickerTopicPosts} from '../stickers/pgStickerTopicPosts.mjs';
 import {createPostgresStickerPaidPhoto} from '../stickers/pgStickerPaidPhoto.mjs';
 import {createPostgresOwnerUpdateQueue} from './creatorOwnerUpdateJobs.mjs';
+import {createPostgresCreatorRefundReconciler} from '../sales/pgCreatorRefundReconciler.mjs';
+import {createPostgresUnifiedStarsSales} from '../sales/pgUnifiedStarsSales.mjs';
 import {createHash} from 'node:crypto';
 const {Pool}=pg;
 if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
@@ -15,13 +17,13 @@ if(process.env.CI_DOCKER_DB_TEST_ONLY!=='YES' ||
 const pool=new Pool({connectionString:process.env.CI_VIDEO_DB_DSN,max:1});
 try {
  const result=await applyCreatorSchema({pool});
- if(result.applied!==true||result.migrations!==20)throw new Error('twenty migrations not confirmed');
- const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts, to_regclass('videobot_sticker_products') IS NOT NULL AS products, to_regclass('videobot_sticker_orders') IS NOT NULL AS orders, to_regclass('videobot_sticker_delivery_items') IS NOT NULL AS deliveries, to_regclass('videobot_sticker_payment_support') IS NOT NULL AS support, to_regclass('videobot_sticker_topic_posts') IS NOT NULL AS topic_posts, to_regclass('videobot_sticker_gifts') IS NOT NULL AS gifts, to_regclass('videobot_sticker_gift_delivery_items') IS NOT NULL AS gift_deliveries");
+ if(result.applied!==true||result.migrations!==21)throw new Error('twenty-one migrations not confirmed');
+ const q=await pool.query("SELECT to_regclass('videobot_webhook_updates') IS NOT NULL AS webhook, to_regclass('videobot_stars_ledger') IS NOT NULL AS ledger, to_regclass('videobot_sticker_packs') IS NOT NULL AS packs, to_regclass('videobot_sticker_items') IS NOT NULL AS items, to_regclass('videobot_sticker_registration_receipts') IS NOT NULL AS receipts, to_regclass('videobot_sticker_products') IS NOT NULL AS products, to_regclass('videobot_sticker_orders') IS NOT NULL AS orders, to_regclass('videobot_sticker_delivery_items') IS NOT NULL AS deliveries, to_regclass('videobot_sticker_payment_support') IS NOT NULL AS support, to_regclass('videobot_sticker_topic_posts') IS NOT NULL AS topic_posts, to_regclass('videobot_sticker_gifts') IS NOT NULL AS gifts, to_regclass('videobot_sticker_gift_delivery_items') IS NOT NULL AS gift_deliveries, to_regclass('videobot_sticker_refunds') IS NOT NULL AS sticker_refunds");
  if(q.rows.length!==1||!Object.values(q.rows[0]).every(v=>v===true))
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==20)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==21)throw new Error('schema re-application invalid');
  // Verify the durable owner-ordered inbox against REAL PostgreSQL.
  const queue=createPostgresOwnerUpdateQueue(pool);
  const updates=[
@@ -350,6 +352,46 @@ try {
    throw new Error('STICKER_TOPIC_DELETE_RECEIPT_BROKEN');
  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_TOPIC=PASS\n');
 
+ // Finance proof on REAL PostgreSQL: invoice + native photo each
+ // receive their independent official negative transaction. There is no
+ // refundStarPayment call; no old entitlement ledger is edited.
+ const sharedStars=createPostgresUnifiedStarsSales({pool});
+ const beforeRefunds=await sharedStars.getSummary(42);
+ if(beforeRefunds.grossStars!==100||beforeRefunds.netRecordedStars!==100||
+    beforeRefunds.managementFeeTenths!==300||beforeRefunds.creatorShareTenths!==700)
+   throw Error('STARS_UNIFIED_BEFORE_REFUND_INVALID');
+ const refundTransactions=[
+   {id:'ci_stk_charge_1',amount:-50,receiver:{type:'user',
+     transaction_type:'invoice_payment',user:{id:99},
+     invoice_payload:'stk:'+order.order_id}},
+   {id:'ci_native_sticker_tx_1',amount:-50,receiver:{type:'user',
+     transaction_type:'paid_media_payment',user:{id:198},
+     paid_media_payload:'stkmedia_'+sold.productId}}
+ ];
+ const creatorRefunds=createPostgresCreatorRefundReconciler({
+   pool,telegramApi:async(method)=>{
+    if(method!=='getStarTransactions')throw Error('STARS_REFUND_UNEXPECTED_METHOD');
+    return {transactions:refundTransactions};
+   },
+   videoLedger:{confirmRefund:async()=>{throw Error('VIDEO_UNEXPECTED_REFUND');}}
+ });
+ const refundFirst=await creatorRefunds.reconcileRecent();
+ const refundSecond=await creatorRefunds.reconcileRecent();
+ const afterRefunds=await sharedStars.getSummary(42);
+ const refundHistory=await sharedStars.getHistory(42);
+ if(refundFirst.recorded!==2||refundSecond.recorded!==0||
+    refundSecond.duplicates!==2||afterRefunds.grossStars!==100||
+    afterRefunds.netRecordedStars!==0||
+    afterRefunds.managementFeeTenths!==0||afterRefunds.creatorShareTenths!==0||
+    refundHistory.filter(x=>x.type==='refund').length!==2)
+   throw Error('STARS_UNIFIED_REFUND_DB_REVERSAL_FAILED');
+ const refundRows=await pool.query(
+   'SELECT source,stars FROM videobot_sticker_refunds ORDER BY refund_id');
+ if(refundRows.rowCount!==2||
+    refundRows.rows[0].source!=='sticker_pack'||
+    refundRows.rows[1].source!=='sticker_paid_photo')
+   throw Error('STICKER_OFFICIAL_REFUND_RECEIPTS_NOT_DURABLE');
+ process.stdout.write('DOCKER_NODE_POSTGRES_STARS_REFUNDS=PASS\\n');
  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_STARS=PASS\n');
 
  process.stdout.write('DOCKER_NODE_POSTGRES_STICKER_INVENTORY=PASS\n');
