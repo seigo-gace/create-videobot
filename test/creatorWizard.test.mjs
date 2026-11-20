@@ -168,10 +168,10 @@ test('definitive pre-send GATE refusal retains one draft and permits safe retry'
  let creates=0,updates=0,attempts=0,published=0;
  const x=setup({
    listingStoreOverride:{
-     async createDraft(owner,id,draft){creates++;return {id,revision:1,sellerId:String(owner),...draft};},
+     async createDraft(owner,id,draft){creates++;return {...draft,id,revision:1,sellerId:String(owner)};}
      async updateDraft(owner,id,revision,draft){
        updates++;assert.equal(revision,1);
-       return {id,revision:2,sellerId:String(owner),...draft};
+       return {...draft,id,revision:2,sellerId:String(owner)};
      },
      async markPublished(){published++;}
    },
