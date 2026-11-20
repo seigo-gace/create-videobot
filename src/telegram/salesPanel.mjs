@@ -32,7 +32,7 @@ export function salesOverviewPanel(summary,revision) {
       '動画売上：'+nonnegative(summary.videoGrossStars,'video gross Stars')+' Stars',
       'ステッカー・絵文字売上：'+nonnegative(summary.stickerGrossStars,'sticker gross Stars')+' Stars'
     ]:[]),
-    '返金控除後売上：'+(netKnown?net+' Stars':'未確認'),
+    '公式決済訂正反映後売上：'+(netKnown?net+' Stars':'未確認'),
     '運営管理費（30%）：'+(split?formatTenths(split.managementFeeTenths)+' Stars（計算上）':'未確認'),
     '投稿者分（70%）：'+(split?formatTenths(split.creatorShareTenths)+' Stars（計算上）':'未確認'),
     '引き出し可能：'+(payoutReady?summary.availableStars+' Stars':'未確認（出品者への公式Stars移転手段は未検証）'),
@@ -50,7 +50,7 @@ export function salesHistoryPanel(history,revision) {
     if(!row||!['sale','refund','withdrawal'].includes(row.type)||
        !Number.isSafeInteger(row.stars)||row.stars<1)
       throw new Error('invalid ledger history event');
-    const label=(row.type==='sale'?'売上':row.type==='refund'?'返金':'引き出し')+
+    // A negative official transaction is a ledger correction, not a buyer-facing\n    // voluntary refund option. Preserve the immutable internal event type.\n    const label=(row.type==='sale'?'売上':row.type==='refund'?'公式決済取消':'引き出し')+
       '：'+(row.type==='sale'?'+':'−')+row.stars+' Stars';
     if(row.type==='withdrawal')return label;
     const split=splitStarsExact(row.stars);
