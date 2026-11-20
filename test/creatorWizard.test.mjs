@@ -440,7 +440,7 @@ test('description remains optional and editable through inline text only',async(
  assert.equal(x.states.get(33).draft.description,'');
  const panel=x.screens.at(-1).panel;
  assert.match(panel.text,/［未登録］ 説明：/);
- assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r2')));
+ assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r3')));
 });
 
 test('existing draft recovers missing automatic media on editor re-entry without re-upload',async()=>{
