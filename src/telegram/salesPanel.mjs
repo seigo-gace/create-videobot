@@ -50,7 +50,9 @@ export function salesHistoryPanel(history,revision) {
     if(!row||!['sale','refund','withdrawal'].includes(row.type)||
        !Number.isSafeInteger(row.stars)||row.stars<1)
       throw new Error('invalid ledger history event');
-    // A negative official transaction is a ledger correction, not a buyer-facing\n    // voluntary refund option. Preserve the immutable internal event type.\n    const label=(row.type==='sale'?'売上':row.type==='refund'?'公式決済取消':'引き出し')+
+    // A negative official transaction is a ledger correction, not a buyer-facing
+    // voluntary refund option. Preserve the immutable internal event type.
+    const label=(row.type==='sale'?'売上':row.type==='refund'?'公式決済取消':'引き出し')+
       '：'+(row.type==='sale'?'+':'−')+row.stars+' Stars';
     if(row.type==='withdrawal')return label;
     const split=splitStarsExact(row.stars);
