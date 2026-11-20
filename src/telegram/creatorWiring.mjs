@@ -5,6 +5,7 @@ import {createPostgresCreatorSessionStore} from '../sales/pgCreatorSessions.mjs'
 import {createPostgresListingStore} from '../sales/pgListings.mjs';
 import {createPostgresPostingReceiptStore} from '../sales/pgPostingReceipts.mjs';
 import {createPostgresStarsLedger} from '../sales/pgStarsLedger.mjs';
+import {createPostgresUnifiedStarsSales} from '../sales/pgUnifiedStarsSales.mjs';
 import {createPostgresWebhookUpdateStore} from '../sales/pgWebhookUpdates.mjs';
 import {createVideoMediaProcessor} from './mediaProcessor.mjs';
 import {createVideoBotScreenTransport} from './creatorScreenTransport.mjs';
@@ -63,6 +64,7 @@ export function createVideoBotSourceModule({
   const receiptStore=createPostgresPostingReceiptStore(pool);
   const updateStore=createPostgresWebhookUpdateStore(pool);
   const starsLedger=createPostgresStarsLedger({pool,telegramApi});
+  const unifiedStarsSales=createPostgresUnifiedStarsSales({pool});
   const stickerInventory=createPostgresStickerInventory(pool);
   const stickerSalesStore=createPostgresStickerSales(pool);
   const stickerPaidPhoto=createPostgresStickerPaidPhoto({pool,telegramApi});
@@ -341,7 +343,7 @@ export function createVideoBotSourceModule({
   const handleCreatorUpdate=createCreatorBotUpdateHandler({
     api:telegramApi,sessionStore,listingStore,
     screenTransport:screen,mediaProcessor,publishListing,
-    salesProvider:starsLedger,starsLedger,termsUrl,
+    salesProvider:unifiedStarsSales,starsLedger,termsUrl,
     stickerHandler:stickerWizard.handle,
     stickerSalesHandler:stickerSales.handle,
     stickerSalesPayments:stickerSales.payments,
@@ -353,7 +355,7 @@ export function createVideoBotSourceModule({
   return Object.freeze({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
-    listingStore,sessionStore,receiptStore,starsLedger,updateStore,
+    listingStore,sessionStore,receiptStore,starsLedger,unifiedStarsSales,updateStore,
     stickerInventory,stickerSalesStore,stickerPaidPhoto,stickerGifts,stickerTopicPosts,stickerWizard,ensureStickerEntryPin,publishListing,handleCreatorUpdate
   });
 }
