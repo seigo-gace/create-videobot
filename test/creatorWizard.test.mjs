@@ -133,7 +133,7 @@ test('VIDEO existing edit preview keeps change buttons, never enables new paid p
  assert.match(x.screens.at(-1).panel.text,/変更したい項目の［編集］/);
  assert.doesNotMatch(x.screens.at(-1).panel.text,/📋 投稿前の規約・約款確認/);
  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
-   ['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
+   ['✅ 変更','❌ キャンセル','🗑 削除']);
  assert.equal(publications,0);
  await x.callback('edit:save|r3');
  assert.equal(updates,1);
