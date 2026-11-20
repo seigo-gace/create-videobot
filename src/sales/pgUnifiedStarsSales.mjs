@@ -15,7 +15,7 @@ function rowsOf(result){
  return result.rows;
 }
 /**
- * Read-only projection over THREE immutable payment owners.
+ * Read-only projection over three immutable payment owners and verified refunds.
  * Video PaidMedia, sticker/emoji XTR invoices and sticker PaidPhoto retain their
  * separate charge keys, ownership checks, refund/fulfilment and delivery logs.
  * This is a creator-wide accounting VIEW, not a new payment ledger or wallet.
@@ -59,7 +59,37 @@ export const CREATOR_STARS_EVENTS_SQL=`
          AND p.fee_terms_accepted_at IS NOT NULL) AS fee_ok
  FROM videobot_sticker_paid_photo_sales s
  JOIN videobot_sticker_products p ON p.product_id=s.product_id
- WHERE p.seller_user_id=$1`;
+ WHERE p.seller_user_id=$1
+ UNION ALL
+ SELECT 'sticker_pack'::text AS source,'refund'::text AS type,
+        r.stars,r.recorded_at AS happened_at,
+        'sticker_refund:'||r.refund_id::text AS event_key,
+        (r.management_fee_tenths=r.stars*3
+         AND r.creator_share_tenths=r.stars*7
+         AND r.stars=o.price_stars
+         AND r.buyer_user_id=o.buyer_user_id
+         AND r.telegram_transaction_id=o.telegram_payment_charge_id
+         AND o.management_fee_bps=${MANAGEMENT_FEE_BASIS_POINTS}
+         AND o.fee_policy_id='${STICKER_MANAGEMENT_FEE_POLICY_ID}') AS fee_ok
+ FROM videobot_sticker_refunds r
+ JOIN videobot_sticker_orders o ON o.order_id=r.order_id
+ JOIN videobot_sticker_products p ON p.product_id=o.product_id
+ WHERE r.source='sticker_pack' AND p.seller_user_id=$1
+ UNION ALL
+ SELECT 'sticker_paid_photo'::text AS source,'refund'::text AS type,
+        r.stars,r.recorded_at AS happened_at,
+        'sticker_refund:'||r.refund_id::text AS event_key,
+        (r.management_fee_tenths=r.stars*3
+         AND r.creator_share_tenths=r.stars*7
+         AND r.stars=s.stars
+         AND r.buyer_user_id=s.buyer_user_id
+         AND r.telegram_transaction_id=s.telegram_transaction_id
+         AND s.management_fee_bps=${MANAGEMENT_FEE_BASIS_POINTS}
+         AND s.fee_policy_id='${STICKER_MANAGEMENT_FEE_POLICY_ID}') AS fee_ok
+ FROM videobot_sticker_refunds r
+ JOIN videobot_sticker_paid_photo_sales s ON s.sale_id=r.sale_id
+ JOIN videobot_sticker_products p ON p.product_id=s.product_id
+ WHERE r.source='sticker_paid_photo' AND p.seller_user_id=$1`;
 
 const SUMMARY_SQL=`WITH events AS (${CREATOR_STARS_EVENTS_SQL})
 SELECT COALESCE(SUM(CASE WHEN type='sale' THEN stars ELSE 0 END),0) AS gross_stars,
@@ -95,8 +125,7 @@ export function createPostgresUnifiedStarsSales({pool}={}){
    return found.map(row=>{
     if(row.fee_ok!==true)throw Error('unified Stars fee agreement requires reconciliation');
     if(!['video','sticker_pack','sticker_paid_photo'].includes(row.source)||
-       !['sale','refund'].includes(row.type)||
-       (row.type==='refund'&&row.source!=='video'))
+       !['sale','refund'].includes(row.type))
       throw Error('unified Stars history event invalid');
     const stars=amount(row.stars);
     if(stars<1)throw Error('unified Stars history amount invalid');
