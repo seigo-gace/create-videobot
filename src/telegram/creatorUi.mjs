@@ -137,7 +137,7 @@ export function creatorDescriptionPanel(draft,revision,notice='') {
     '動画を受け付けました。次に、動画の説明を入力してください。',
     '説明は省略できます。登録前に［編集］から変更することもできます。',
     notice
-  ].filter(Boolean).join('\\n'),reply_markup:{inline_keyboard:[
+  ].filter(Boolean).join('\n'),reply_markup:{inline_keyboard:[
     [{text:'⏭ スキップ',callback_data:'entry:skip|r'+revision}],
     [{text:'❌ キャンセル',callback_data:'edit:cancel|r'+revision}]
   ]}};
