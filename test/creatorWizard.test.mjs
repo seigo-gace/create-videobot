@@ -112,6 +112,49 @@ test('my videos uses owner-filtered existing listing store; edit uses original',
   assert.equal(x.states.get(33).draft.title,'自分の動画');
   await assert.rejects(()=>x.callback('video:edit:other|r2'),/VIDEO_SCREEN_STALE|LISTING_NOT_OWNED/);
 });
+test('VIDEO existing edit preview keeps change buttons, never enables new paid publish',async()=>{
+ let publications=0,updates=0;
+ const x=setup({
+   listingStoreOverride:{
+     async updateDraft(owner,id,rev,draft){
+       updates++;
+       assert.equal(id,'my1');
+       assert.equal(rev,7);
+       return {...draft,id,revision:8,sellerId:String(owner)};
+     }
+   },
+   publishListing:async()=>{publications++;throw new Error('existing editing must not publish');}
+ });
+ await x.callback('menu:manage');
+ await x.callback('video:edit:my1|r1');
+ assert.equal(x.states.get(33).draft.mode,'edit');
+ await x.callback('edit:preview|r2');
+ assert.equal(x.states.get(33).screen,'editor');
+ assert.match(x.screens.at(-1).panel.text,/変更したい項目の［編集］/);
+ assert.doesNotMatch(x.screens.at(-1).panel.text,/📋 投稿前の規約・約款確認/);
+ assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+   ['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
+ assert.equal(publications,0);
+ await x.callback('edit:save|r3');
+ assert.equal(updates,1);
+ assert.equal(publications,0);
+ assert.equal(x.states.get(33).screen,'my_videos');
+});
+
+test('older VIDEO edit review cannot be submitted through new paid publication',async()=>{
+ let publications=0;
+ const x=setup({publishListing:async()=>{publications++;throw Error('must not publish');}});
+ await x.callback('menu:manage');
+ await x.callback('video:edit:my1|r1');
+ const current=x.states.get(33);
+ x.states.set(33,{...current,screen:'review'});
+ await x.callback('review:publish|r2');
+ assert.equal(publications,0);
+ assert.equal(x.states.get(33).screen,'editor');
+ assert.equal(x.states.get(33).draft.mode,'edit');
+ assert.match(x.screens.at(-1).panel.text,/新規投稿は行っていません/);
+});
+
 test('cannot silently publish on preview or create an external Stars payout',async()=>{
   const x=setup();
   await x.callback('menu:listing');
