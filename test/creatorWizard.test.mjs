@@ -164,6 +164,46 @@ test('creator confirms rights and explicitly publishes only after verified store
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(published.length,1);
 });
+test('definitive pre-send GATE refusal retains one draft and permits safe retry',async()=>{
+ let creates=0,updates=0,attempts=0,published=0;
+ const x=setup({
+   listingStoreOverride:{
+     async createDraft(owner,id,draft){creates++;return {id,revision:1,sellerId:String(owner),...draft};},
+     async updateDraft(owner,id,revision,draft){
+       updates++;assert.equal(revision,1);
+       return {id,revision:2,sellerId:String(owner),...draft};
+     },
+     async markPublished(){published++;}
+   },
+   publishListing:async()=>{
+     attempts++;
+     if(attempts===1){
+       const error=new Error('VIDEO_TOPIC_NOT_CONNECTED');
+       error.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
+       throw error;
+     }
+     return {posted:true,freeMessageIds:[301,302],paidMessageId:303};
+   }
+ });
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'main001'},caption:'動画タイトル'},301);
+ await x.callback('edit:price|r2');
+ await x.callback('edit:price:300|r3');
+ await x.callback('edit:preview|r4');
+ await x.callback('review:rights|r5');
+ await x.callback('review:publish|r6');
+ const stopped=x.states.get(33);
+ assert.equal(stopped.publishing,null);
+ assert.equal(stopped.pendingVideoDraft.revision,1);
+ assert.match(x.screens.at(-1).panel.text,/Telegramへ投稿していません/);
+ assert.deepEqual([creates,updates,published],[1,0,0]);
+ await x.callback('review:publish|r'+stopped.revision);
+ assert.deepEqual([creates,updates,published],[1,1,1]);
+ assert.equal(x.states.get(33).pendingVideoDraft,null);
+ assert.equal(x.states.get(33).publishing,null);
+ assert.equal(x.states.get(33).screen,'my_videos');
+});
+
 test('unknown paid-media send result locks creator flow for explicit reconciliation',async()=>{
  let attempts=0;
  const x=setup({
