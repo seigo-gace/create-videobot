@@ -28,6 +28,10 @@ export function salesOverviewPanel(summary,revision) {
     '⭐ 売上・引き出し',
     '',
     '累計売上：'+summary.grossStars+' Stars',
+    ...(summary.videoGrossStars!==undefined&&summary.stickerGrossStars!==undefined?[
+      '動画売上：'+nonnegative(summary.videoGrossStars,'video gross Stars')+' Stars',
+      'ステッカー・絵文字売上：'+nonnegative(summary.stickerGrossStars,'sticker gross Stars')+' Stars'
+    ]:[]),
     '返金控除後売上：'+(netKnown?net+' Stars':'未確認'),
     '運営管理費（30%）：'+(split?formatTenths(split.managementFeeTenths)+' Stars（計算上）':'未確認'),
     '投稿者分（70%）：'+(split?formatTenths(split.creatorShareTenths)+' Stars（計算上）':'未確認'),
@@ -50,9 +54,13 @@ export function salesHistoryPanel(history,revision) {
       '：'+(row.type==='sale'?'+':'−')+row.stars+' Stars';
     if(row.type==='withdrawal')return label;
     const split=splitStarsExact(row.stars);
+    const source=row.source===undefined?'':row.source==='video'?'〔🎬 動画〕':
+      row.source==='sticker_pack'?'〔🎨 ステッカー・絵文字〕':
+      row.source==='sticker_paid_photo'?'〔🎨 ステッカー写真ロック〕':null;
+    if(source===null)throw new Error('invalid Stars sale source');
     return label+'（管理費'+(row.type==='refund'?'戻し':'')+'30% '+
       formatTenths(split.managementFeeTenths)+' / 投稿者'+(row.type==='refund'?'戻し':'分')+'70% '+
-      formatTenths(split.creatorShareTenths)+' Stars・計算上）';
+      formatTenths(split.creatorShareTenths)+' Stars・計算上）'+source;
   });
   return {text:'📋 売上・引き出し履歴\n\n'+(list.join('\n')||'履歴はありません。'),
     reply_markup:{inline_keyboard:[[{
