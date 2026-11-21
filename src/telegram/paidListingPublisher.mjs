@@ -12,9 +12,6 @@ import { buildPaidMediaRequest } from './paidMedia.mjs';
 export async function publishVideoListing({
   listing,
   getVerifiedVideoTopic,
-  verifyMembership,
-  verifyReview,
-  verifyRelease,
   store,
   telegramApi
 } = {}) {
@@ -27,14 +24,18 @@ export async function publishVideoListing({
       listing.ownerConfirmedPublish !== true ||
       listing.feeTermsAccepted !== true || listing.managementFeeBps !== 3000)
       throw new Error('listing not ready for publication: seller fee agreement required');
-  for (const fn of [getVerifiedVideoTopic,verifyMembership,verifyReview,verifyRelease,telegramApi]) {
+  for (const fn of [getVerifiedVideoTopic,telegramApi]) {
     if (typeof fn !== 'function') throw new Error('trusted provider missing');
   }
   for (const name of ['claim','recordFree','recordPaid','markUnknown','read']) {
     if (typeof store?.[name] !== 'function') throw new Error('durable receipt store required');
   }
 
-  const topic = await getVerifiedVideoTopic({purpose:'video_sale', sellerId:listing.sellerId, listingId:listing.id});
+  // Until the durable delivery claim, no Telegram send is possible. Distinguish
+  // these definitive prerequisites from an unknown post-send result.
+  let topic;
+  try {
+    topic = await getVerifiedVideoTopic({purpose:'video_sale', sellerId:listing.sellerId, listingId:listing.id});
   if (!topic || topic.purpose !== 'video_sale' || topic.board !== 'video_chat' ||
       topic.enabled !== true || topic.verified !== true ||
       !Number.isSafeInteger(topic.chatId) || topic.chatId >= 0 ||
@@ -43,21 +44,25 @@ export async function publishVideoListing({
     throw new Error('verified sale topic unavailable');
   }
 
-  if (await verifyMembership({ sellerId: listing.sellerId, chatId: topic.chatId }) !== true)
-    throw new Error('GATE membership not verified');
-  if (await verifyReview({ sellerId: listing.sellerId, listingId: listing.id, revision:listing.revision }) !== true)
-    throw new Error('listing review not approved');
-  if (await verifyRelease({ purpose:'video_sale', chatId:topic.chatId, threadId:topic.threadId }) !== true)
-    throw new Error('video sale release not verified');
-
+  } catch (cause) {
+    const failure=new Error(cause instanceof Error?cause.message:'video publication prerequisites unavailable',{cause});
+    failure.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
+    throw failure;
+  }
   const base={chatId:topic.chatId,messageThreadId:topic.threadId};
+  // The buyer sees the no-voluntary-refund rule before Telegram's native
+  // Stars purchase confirmation. Never offer a Bot refund workflow here;
+  // mandatory legal/Telegram payment corrections remain independent.
+  const buyerNotice='購入前に内容と価格（'+listing.priceStars+' Stars）を確認してください。購入者都合の通常返金なし（法令・Telegram公式の正当な例外を除く）。';
+  const caption=listing.title+(listing.description?'\n'+listing.description:'')+'\n\n'+buyerNotice;
+  if(caption.length>1024)throw new Error('video caption too long');
   const free=buildFreeAlbumRequest({ ...base, thumbnailFileId:listing.thumbnail.fileId,
-    sampleFileId:listing.sample.fileId,caption:listing.title });
+    sampleFileId:listing.sample.fileId,caption });
   const key=listing.id + ':' + listing.revision;
   // Telegram's purchased_paid_media update identifies the sale by payload.
   // No payload means no useful paid-media purchase notification.
   const paid=buildPaidMediaRequest({ ...base,mediaFileId:listing.paidVideo.fileId,
-    priceStars:listing.priceStars,caption:listing.title,payload:key });
+    priceStars:listing.priceStars,caption,payload:key });
   const claim=await store.claim({key,listingId:listing.id,revision:listing.revision,topicId:topic.id});
   if (!claim || claim.claimed !== true) {
     const prior=await store.read(key);
