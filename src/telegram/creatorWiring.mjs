@@ -111,8 +111,7 @@ export function createVideoBotSourceModule({
   });
   const publishListing=listing=>publishVideoListing({
     listing,store:receiptStore,telegramApi,
-    getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic,
-    verifyMembership:gateOwner.verifyMembership
+    getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic
   });
   const stickerPublisher=async({owner,draft,onUploaded,onBeforeMutation})=>{
     if(!Number.isSafeInteger(owner)||owner<=0||!draft?.fileId||!draft?.title)
