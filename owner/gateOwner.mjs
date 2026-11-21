@@ -24,11 +24,27 @@ export function verifyPinnedStickerReceipt(row,me){
    throw Error('STICKER_TOPIC_VERIFIED_PIN_RECEIPT_REQUIRED');
  return {...ROUTE};
 }
+
+// Video publishing is a creator action, not an engineering CI/release approval.
+// The topic must be explicitly configured with its REAL Telegram thread ID;
+// a t.me/c message link is never accepted as a substitute.
+export function configuredVideoSaleTopic(env=process.env){
+ const raw=env.VIDEOBOT_VIDEO_SALE_THREAD_ID;
+ const title=env.VIDEOBOT_VIDEO_SALE_TOPIC_TITLE;
+ if(typeof raw!=='string'||!/^[1-9][0-9]*$/.test(raw)||
+    !Number.isSafeInteger(Number(raw))||typeof title!=='string'||
+    !title.trim()||title.length>100)
+   throw Error('VIDEO_SALE_TOPIC_CONFIGURATION_MISSING');
+ return Object.freeze({id:Number(raw),board:'video_chat',purpose:'video_sale',
+   chatId:ROUTE.chatId,threadId:Number(raw),title:title.trim(),
+   enabled:true,verified:true});
+}
+
 function same(arg){
  return Number(arg?.chatId)===ROUTE.chatId&&
    Number(arg?.threadId??ROUTE.threadId)===ROUTE.threadId;
 }
-export async function createGateOwner({telegramApi,pool}={}){
+export async function createGateOwner({telegramApi,pool,env=process.env}={}){
  if(typeof telegramApi!=='function'||typeof pool?.query!=='function')
    throw Error('STICKER_GATE_OWNER_DEPENDENCIES_MISSING');
  const me=await telegramApi('getMe',{});
@@ -48,8 +64,7 @@ export async function createGateOwner({telegramApi,pool}={}){
  };
  await receipt();
  return Object.freeze({
-   getVerifiedVideoTopic:async()=>{throw Error('VIDEO_TOPIC_NOT_CONNECTED');},
-   verifyReview:async()=>{throw Error('VIDEO_REVIEW_NOT_CONNECTED');},
+   getVerifiedVideoTopic:verifyVideoTopic,
    async getVerifiedStickerTopic(){return receipt();},
    async getVerifiedStickerEntryTopic(){return receipt();},
    async verifyMembership({sellerId,chatId}={}){
