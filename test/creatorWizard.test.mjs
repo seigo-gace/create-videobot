@@ -620,7 +620,7 @@ test('owner-only title edit shows one field and cancel restores saved video with
   await x.callback('video:edit:my1|r1');
   assert.equal(x.states.get(33).draft.mode,'edit');
   assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
-    ['🔙戻る','✅ 変更','❌ キャンセル','🗑 削除']);
+    ['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
   await x.callback('edit:title|r2');
   assert.equal(x.states.get(33).screen,'field');
   assert.equal(x.screens.at(-1).panel.text.includes('［編集］価格'),false);
