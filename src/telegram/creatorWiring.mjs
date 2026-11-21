@@ -47,7 +47,7 @@ export function createVideoBotSourceModule({
       (mediaPorts!=null&&(typeof mediaPorts.fetchSource!=='function'||
        typeof mediaPorts.saveGenerated!=='function')))
     throw new Error('VideoBot source module missing owned dependencies');
-  for(const name of ['getVerifiedVideoTopic','verifyMembership','verifyReview','verifyRelease']) {
+  for(const name of ['getVerifiedVideoTopic','verifyMembership']) {
     if(typeof gateOwner[name]!=='function')throw new Error('verified GATE owner provider missing: '+name);
   }
   const screen=screenTransport??createVideoBotScreenTransport(telegramApi);
@@ -112,9 +112,7 @@ export function createVideoBotSourceModule({
   const publishListing=listing=>publishVideoListing({
     listing,store:receiptStore,telegramApi,
     getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic,
-    verifyMembership:gateOwner.verifyMembership,
-    verifyReview:gateOwner.verifyReview,
-    verifyRelease:gateOwner.verifyRelease
+    verifyMembership:gateOwner.verifyMembership
   });
   const stickerPublisher=async({owner,draft,onUploaded,onBeforeMutation})=>{
     if(!Number.isSafeInteger(owner)||owner<=0||!draft?.fileId||!draft?.title)
