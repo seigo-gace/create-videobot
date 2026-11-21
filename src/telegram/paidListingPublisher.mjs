@@ -1,5 +1,23 @@
 import { buildFreeAlbumRequest } from './freeAlbum.mjs';
 import { buildPaidMediaRequest } from './paidMedia.mjs';
+/** Paid video stays separate from the free media group under Telegram Bot API.
+ * Link the existing preview to the official Stars purchase message without
+ * re-uploading, deleting, or making the paid file public.
+ */
+export function paidVideoPreviewLink({chatId,freeMessageId,paidMessageId}={}) {
+  if(!Number.isSafeInteger(chatId)||chatId>=0||
+     !Number.isSafeInteger(freeMessageId)||freeMessageId<=0||
+     !Number.isSafeInteger(paidMessageId)||paidMessageId<=0||
+     freeMessageId===paidMessageId)throw new Error('invalid linked video receipt');
+  const internalId=String(chatId).slice(4);
+  if(!/^\\d+$/.test(internalId)||!String(chatId).startsWith('-100'))
+    throw new Error('invalid supergroup link');
+  return {
+    chat_id:chatId,message_id:freeMessageId,
+    reply_markup:{inline_keyboard:[[{text:'⭐ Stars本編・購入はこちら',url:`https://t.me/c/${internalId}/${paidMessageId}`}]]}
+  };
+}
+
 
 /**
  * VideoBot owns the Stars-media-specific two-step transport.
@@ -86,7 +104,20 @@ export async function publishVideoListing({
     if (!Number.isSafeInteger(paidResult?.message_id) || paidResult.message_id <= 0)
       throw new Error('paid media acknowledgment invalid');
     await store.recordPaid(key,paidResult.message_id);
+    // A native mixed free/paid album is not supported by Telegram.
+    // A preview jump is the non-destructive alternative. Paid delivery has
+    // already been acknowledged: failure to edit the preview must not cause
+    // another paid-media send or invalidate the durable send receipt.
+    let previewLinked=false;
+    try {
+      await telegramApi('editMessageReplyMarkup',paidVideoPreviewLink({
+        chatId:topic.chatId,freeMessageId:existing.freeMessageIds?.[0] ??
+          (await store.read(key)).freeMessageIds?.[0],paidMessageId:paidResult.message_id
+      }));
+      previewLinked=true;
+    } catch { /* Existing paid receipt remains final; do not retry paid media. */ }
     return {
+      previewLinked,
       posted:true,alreadySent:false,
       freeMessageIds:(await store.read(key)).freeMessageIds,paidMessageId:paidResult.message_id
     };
