@@ -296,18 +296,19 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         screen:'my_videos',page:0
       },rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
     }
-    if(code==='menu:sales'||code==='menu:home') {
-      const summary=code==='menu:sales'&&typeof salesProvider?.getSummary==='function'
+    if(code==='menu:sales'||code==='menu:home'||code==='menu:purchase') {
+      const target=code.slice('menu:'.length);
+      const summary=target==='sales'&&typeof salesProvider?.getSummary==='function'
         ? await salesProvider.getSummary(ownerId):null;
       const panel=summary
         ? rev=>salesOverviewPanel(summary,rev)
-        :menuPage(code==='menu:sales'?'sales':'home');
+        :menuPage(target);
       return persistAndRender(ownerId,old,{
         screenMessageId:messageId,draft:old?.draft??null,waiting:null,
-        screen:code==='menu:sales'?'sales':'home'
+        screen:target
       },panel);
     }
-    if(code.startsWith('sales:')||code.startsWith('menu:home|r')) {
+        if(code.startsWith('sales:')||code.startsWith('menu:home|r')) {
       if(old?.screenMessageId!==messageId || !['sales','sales_history','sales_withdrawal'].includes(old?.screen))
         throw new Error('SALES_SCREEN_STALE');
       const action=validateRevision(code,old);
