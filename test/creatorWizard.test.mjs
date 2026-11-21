@@ -79,6 +79,24 @@ test('creator DM callback/standard input/price flow uses one existing screen and
   assert.ok(x.screens.some(s=>s.panel.replyToMessageId===210 && s.oldId===null),
     'registration details reply to the visible original when album creation is unconfirmed');
 });
+test('creator home purchase selector switches in place and returns without resetting draft or creating another sale',async()=>{
+  const x=setup();
+  await x.callback('menu:listing');
+  const before=x.states.get(33).draft;
+  await x.callback('menu:purchase');
+  assert.equal(x.states.get(33).screen,'purchase');
+  assert.equal(x.states.get(33).draft,before);
+  assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard[0][0].url,'https://t.me/PremiumBot');
+  assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard[0][1].url,'https://fragment.com/stars');
+  assert.equal(x.screens.at(-1).oldId,101,'must reuse existing DM screen');
+  await x.callback('menu:home');
+  assert.equal(x.states.get(33).screen,'home');
+  assert.equal(x.states.get(33).draft,before);
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[1].map(b=>b.text),
+    ['🔙 戻る','⭐ 売上・引き出し','⭐ 購入']);
+  await x.callback('menu:sales');
+  assert.equal(x.states.get(33).screen,'sales');
+});
 test('old callback revision or different owner cannot change draft',async()=>{
   const x=setup();
   await x.callback('menu:listing');
