@@ -1,11 +1,11 @@
 const PAGES=Object.freeze({
  home:{text:'🎨 クリエーター投稿\n\nこのbotではあなたが作成した動画・ステッカー・絵文字をTelegram Starsで有料登録・販売できます。\n\nボタンや［編集］をタップするだけで操作できます。動画はサムネとサンプル動画を自動で切り出し、ステッカー・絵文字は動画や画像を規格に合わせて自動加工します。\n\nあなたのオリジナル動画・ステッカー・絵文字をお気軽に投稿してください。\n\n［⭐ 売上・引き出し］では登録商品の売上・履歴を確認できます。出金は実際に利用できる場合だけ案内します。［⭐ 購入］からはStarsの購入先（Telegram／Fragment）を選択できます。',buttons:[
   [['🎬 動画','menu:video'],['🎨 ステッカー／絵文字','menu:stickers']],
-  [['🔙 戻る','https://t.me/c/2373696859/1613'],['⭐ 売上・引き出し','menu:sales'],['⭐ 購入','menu:purchase']]
+  [['🔙戻る','https://t.me/c/2373696859/1613'],['⭐ 売上・引き出し','menu:sales'],['⭐ 購入','menu:purchase']]
  ]},
  purchase:{text:'⭐ Starsを購入\n\nTelegram Starsは動画・ステッカー・絵文字の購入に使用します。\n\n購入方法をお選びください。［Telegramで購入］はTelegram公式のPremiumBot、［Fragmentで購入］はFragmentの購入ページを開きます。\n\n購入・決済は各サービスの画面で行われます。価格や支払条件を確認してから進んでください。',buttons:[
   [['🔗 Telegramで購入','https://t.me/PremiumBot'],['🔗 Fragmentで購入','https://fragment.com/stars']],
-  [['🔙 戻る','menu:home']]
+  [['🔙戻る','menu:home']]
  ]},
  video:{text:'🎬 クリエータービデオ\n\n動画の投稿・管理・売上確認ができます。',buttons:[
   [['🎬 動画を投稿','menu:listing'],['📦 マイ動画','menu:manage']],
