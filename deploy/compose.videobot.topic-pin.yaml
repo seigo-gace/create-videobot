@@ -1,0 +1,27 @@
+# STK-04: ONE existing CreateVdobot identity sends and pins its own Topic link.
+# No second bot, webhook registration, polling, Userbot or GateApp writer.
+services:
+  videobot-topic-pin:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: create-videobot:sticker-topic-pin
+    pull_policy: never
+    init: true
+    restart: "no"
+    read_only: true
+    user: "1000:1000"
+    network_mode: host
+    command: ["node", "src/runtime/creatorStickerPinMain.mjs"]
+    environment:
+      VIDEOBOT_STICKER_PIN_ONCE: "YES"
+      VIDEOBOT_TELEGRAM_TOKEN_FILE: /run/secrets/videobot_telegram_token
+      VIDEOBOT_STICKER_PIN_RECEIPT_DIR: /var/lib/videobot/sticker-entry
+    volumes:
+      - ${VIDEOBOT_TELEGRAM_TOKEN_SOURCE:?existing_Creator_Bot_token_required}:/run/secrets/videobot_telegram_token:ro
+      - ${VIDEOBOT_STICKER_PIN_STATE_SOURCE:?private_durable_pin_receipt_required}:/var/lib/videobot/sticker-entry:rw
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.25

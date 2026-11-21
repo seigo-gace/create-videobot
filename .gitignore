@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.session
+*.session-journal
+*.sqlite
+*.db
+*.pem
+*.key
