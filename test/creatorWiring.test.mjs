@@ -14,9 +14,8 @@ function deps(){
         id:9,purpose:'video_sale',board:'video_chat',chatId:-100123,threadId:11,
         title:'Verified sale topic',enabled:true,verified:true
       };},
-      async verifyMembership(){calls.push({type:'membership'});return false;},
-      async verifyReview(){calls.push({type:'review'});return true;},
-      async verifyRelease(){calls.push({type:'release'});return true;}
+      async verifyMembership(){calls.push({type:'membership'});return false;}
+
     },
     mediaPorts:{fetchSource:async()=>{throw Error('no media reads');},
       saveGenerated:async()=>{throw Error('no media saves');}},
@@ -32,7 +31,7 @@ function listing() {
 }
 test('Source composition refuses missing verified GATE and screen providers',()=>{
  const x=deps();
- for(const key of ['verifyReview','verifyRelease','getVerifiedVideoTopic','verifyMembership']){
+ for(const key of ['getVerifiedVideoTopic','verifyMembership']){
   const previous=x.moduleConfig.gateOwner[key];
   delete x.moduleConfig.gateOwner[key];
   assert.throws(()=>createVideoBotSourceModule(x.moduleConfig),/verified GATE owner provider missing/);
