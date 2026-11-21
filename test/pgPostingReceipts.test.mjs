@@ -49,6 +49,19 @@ test('claim/ack are atomic conditional SQL operations, cannot overwrite two mess
   assert.ok(db.queries.some(q=>q.sql.includes('ON CONFLICT (delivery_key) DO NOTHING')));
   assert.ok(db.queries.some(q=>q.sql.includes('status=\'sending\' AND free_message_ids IS NULL')));
 });
+test('PostgreSQL bigint[] text IDs are normalized without losing exact message identities',async()=>{
+  const db=fakeDb(),store=createPostgresPostingReceiptStore(db);
+  await store.claim({key:'list2:1',listingId:'list2',revision:1,topicId:1695});
+  await store.recordFree('list2:1',[4689,4690]);
+  await store.recordPaid('list2:1',4691);
+  db.entries.get('list2:1').free_message_ids=['4689','4690'];
+  db.entries.get('list2:1').paid_message_id='4691';
+  assert.deepEqual(await store.read('list2:1'),{
+    status:'sent',freeMessageIds:[4689,4690],paidMessageId:4691
+  });
+  db.entries.get('list2:1').free_message_ids=['9007199254740993','4690'];
+  await assert.rejects(()=>store.read('list2:1'),/PERSISTED_FREE_MESSAGE_ID_INVALID/);
+});
 test('domain paid sale path reuses existing builders and private receipt store, not shared MPB',async()=>{
   const db=fakeDb(),store=createPostgresPostingReceiptStore(db);
   const calls=[];
