@@ -130,7 +130,7 @@ test('buyer can read no-voluntary-refund notice before the official Stars unlock
     assert.match(caption,/法令・Telegram公式の正当な例外/);
     assert.ok(caption.length<=1024);
   }
-  assert.deepEqual(d.calls.map(c=>c.method),['sendMediaGroup','sendPaidMedia']);
+  assert.deepEqual(d.calls.map(c=>c.method),['sendMediaGroup','sendPaidMedia','editMessageReplyMarkup']);
 });
 
 test('free preview links to the paid message without exposing the video file or resending',async()=>{
