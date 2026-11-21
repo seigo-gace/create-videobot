@@ -12,7 +12,6 @@ import { buildPaidMediaRequest } from './paidMedia.mjs';
 export async function publishVideoListing({
   listing,
   getVerifiedVideoTopic,
-  verifyMembership,
   store,
   telegramApi
 } = {}) {
@@ -25,7 +24,7 @@ export async function publishVideoListing({
       listing.ownerConfirmedPublish !== true ||
       listing.feeTermsAccepted !== true || listing.managementFeeBps !== 3000)
       throw new Error('listing not ready for publication: seller fee agreement required');
-  for (const fn of [getVerifiedVideoTopic,verifyMembership,telegramApi]) {
+  for (const fn of [getVerifiedVideoTopic,telegramApi]) {
     if (typeof fn !== 'function') throw new Error('trusted provider missing');
   }
   for (const name of ['claim','recordFree','recordPaid','markUnknown','read']) {
@@ -45,8 +44,6 @@ export async function publishVideoListing({
     throw new Error('verified sale topic unavailable');
   }
 
-  if (await verifyMembership({ sellerId: listing.sellerId, chatId: topic.chatId }) !== true)
-    throw new Error('GATE membership not verified');
   } catch (cause) {
     const failure=new Error(cause instanceof Error?cause.message:'video publication prerequisites unavailable',{cause});
     failure.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
