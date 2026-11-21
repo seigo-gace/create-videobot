@@ -81,7 +81,7 @@ test('domain paid sale path reuses existing builders and private receipt store, 
   const repeated=await publishVideoListing(dependencies);
   assert.equal(first.posted,true);
   assert.equal(repeated.alreadySent,true);
-  assert.deepEqual(calls,['sendMediaGroup','sendPaidMedia','editMessageReplyMarkup']);
+  assert.deepEqual(calls,['sendMediaGroup','sendPaidMedia']);
   assert.deepEqual((await store.read('list1:1')).freeMessageIds,[71,72]);
 });
 test('database adapter rejects invalid ids and refuses stale paid acknowledgment',async()=>{
