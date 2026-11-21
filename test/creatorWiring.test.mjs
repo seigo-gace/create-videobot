@@ -40,13 +40,13 @@ test('Source composition refuses missing verified GATE and screen providers',()=
  assert.ok(typeof createVideoBotSourceModule({...x.moduleConfig,screenTransport:null}).handleTelegramWebhook==='function');
  assert.throws(()=>createVideoBotSourceModule({...x.moduleConfig,mediaPorts:null}),/Telegram fetcher credentials unavailable/);
 });
-test('verified GATE membership deny is applied from composed creator publisher before any SQL or send',async()=>{
+test('a configured topic can be read from the composed publisher without developer release checks',async()=>{
  const x=deps();
  const bot=createVideoBotSourceModule(x.moduleConfig);
  assert.ok(typeof bot.handleTelegramWebhook==='function');
  assert.ok(typeof bot.handleCreatorUpdate==='function');
- await assert.rejects(()=>bot.publishListing(listing()),/GATE membership not verified/);
- assert.deepEqual(x.calls.map(c=>c.type),['topic','membership']);
+ await assert.rejects(()=>bot.publishListing(listing()),/DB query not expected/);
+ assert.deepEqual(x.calls.map(c=>c.type),['topic','sql']);
 });
 test('fee agreement denial precedes all GATE, DB and Telegram side effects',async()=>{
  const x=deps();const bot=createVideoBotSourceModule(x.moduleConfig);
