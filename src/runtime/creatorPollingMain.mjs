@@ -98,7 +98,7 @@ export async function createCreatorPollingRuntime({
    const owner=await importOwner(pathToFileURL(env.VIDEOBOT_GATE_OWNER_ADAPTER).href);
    if(typeof owner?.createGateOwner!=='function')
      throw Error('CREATOR_POLL_GATE_OWNER_PROVIDER_INVALID');
-   gateOwner=await owner.createGateOwner({telegramApi:api,pool});
+   gateOwner=await owner.createGateOwner({telegramApi:api,pool,env});
    gateConnected=true;
   }
   const info=await api('getWebhookInfo',{});
