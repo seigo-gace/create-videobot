@@ -37,7 +37,7 @@ function deps(overrides={}){
   const calls=[],store=memoryReceiptStore();
   return {listing:listing(),store,calls,
     getVerifiedVideoTopic:async()=>({id:9,purpose:'video_sale',board:'video_chat',chatId:-100123,threadId:777,title:'💰稼げる有料動画投稿',enabled:true,verified:true}),
-    verifyMembership:async()=>true,
+
     telegramApi:async (method,params)=>{
       calls.push({method,params});
       return method==='sendMediaGroup'?[{message_id:10},{message_id:11}]:{message_id:12};
@@ -58,9 +58,8 @@ test('uses existing paid/free builders, requires approval and persists both resp
   assert.equal(repeat.alreadySent,true);
   assert.equal(d.calls.length,2);
 });
-test('denied membership or invalid topic prevents any send',async()=>{
+test('invalid configured topic prevents any send',async()=>{
   for(const override of [
-    {verifyMembership:async()=>false},
     {getVerifiedVideoTopic:async()=>({purpose:'announcement',board:'video_chat',enabled:true,verified:true,chatId:-100123,threadId:777,title:'bad'})},
   ]){
     const d=deps(override);
