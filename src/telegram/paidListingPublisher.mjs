@@ -10,7 +10,7 @@ export function paidVideoPreviewLink({chatId,freeMessageId,paidMessageId}={}) {
      !Number.isSafeInteger(paidMessageId)||paidMessageId<=0||
      freeMessageId===paidMessageId)throw new Error('invalid linked video receipt');
   const internalId=String(chatId).slice(4);
-  if(!/^\\d+$/.test(internalId)||!String(chatId).startsWith('-100'))
+  if(!/^[0-9]+$/.test(internalId)||!String(chatId).startsWith('-100'))
     throw new Error('invalid supergroup link');
   return {
     chat_id:chatId,message_id:freeMessageId,
