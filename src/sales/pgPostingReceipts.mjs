@@ -40,7 +40,12 @@ export function createPostgresPostingReceiptStore(pool) {
       );
       if(!r.rows?.length)return null;
       const row=r.rows[0];
-      return {status:row.status,freeMessageIds:row.free_message_ids ?? null,
+      const freeMessageIds=row.free_message_ids==null?null:row.free_message_ids.map(value=>{
+        const n=Number(value);
+        if(!Number.isSafeInteger(n)||n<=0)throw new Error('PERSISTED_FREE_MESSAGE_ID_INVALID');
+        return n;
+      });
+      return {status:row.status,freeMessageIds,
         paidMessageId:row.paid_message_id==null?null:Number(row.paid_message_id)};
     },
     async recordFree(key,ids) {
