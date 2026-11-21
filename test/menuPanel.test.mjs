@@ -12,7 +12,7 @@ test('shared creator home selects existing video and sticker/emoji menus',()=>{
  assert.match(p.text,/Telegram Stars/);
  assert.equal(p.text.includes('30%'),false,'fee explanation belongs to terms');
  assert.deepEqual(p.reply_markup.inline_keyboard[1],[
-  {text:'🔙 戻る',url:'https://t.me/c/2373696859/1613'},
+  {text:'🔙戻る',url:'https://t.me/c/2373696859/1613'},
   {text:'⭐ 売上・引き出し',callback_data:'menu:sales'},
   {text:'⭐ 購入',callback_data:'menu:purchase'}
  ]);
@@ -22,7 +22,7 @@ test('shared creator home selects existing video and sticker/emoji menus',()=>{
  assert.deepEqual(purchase.reply_markup.inline_keyboard,[
   [{text:'🔗 Telegramで購入',url:'https://t.me/PremiumBot'},
    {text:'🔗 Fragmentで購入',url:'https://fragment.com/stars'}],
-  [{text:'🔙 戻る',callback_data:'menu:home'}]
+  [{text:'🔙戻る',callback_data:'menu:home'}]
  ]);
  assert.match(purchase.text,/各サービスの画面/);
  const video=menuPage('video');
