@@ -13,8 +13,6 @@ export async function publishVideoListing({
   listing,
   getVerifiedVideoTopic,
   verifyMembership,
-  verifyReview,
-  verifyRelease,
   store,
   telegramApi
 } = {}) {
@@ -27,7 +25,7 @@ export async function publishVideoListing({
       listing.ownerConfirmedPublish !== true ||
       listing.feeTermsAccepted !== true || listing.managementFeeBps !== 3000)
       throw new Error('listing not ready for publication: seller fee agreement required');
-  for (const fn of [getVerifiedVideoTopic,verifyMembership,verifyReview,verifyRelease,telegramApi]) {
+  for (const fn of [getVerifiedVideoTopic,verifyMembership,telegramApi]) {
     if (typeof fn !== 'function') throw new Error('trusted provider missing');
   }
   for (const name of ['claim','recordFree','recordPaid','markUnknown','read']) {
@@ -49,11 +47,6 @@ export async function publishVideoListing({
 
   if (await verifyMembership({ sellerId: listing.sellerId, chatId: topic.chatId }) !== true)
     throw new Error('GATE membership not verified');
-  if (await verifyReview({ sellerId: listing.sellerId, listingId: listing.id, revision:listing.revision }) !== true)
-    throw new Error('listing review not approved');
-  if (await verifyRelease({ purpose:'video_sale', chatId:topic.chatId, threadId:topic.threadId }) !== true)
-    throw new Error('video sale release not verified');
-
   } catch (cause) {
     const failure=new Error(cause instanceof Error?cause.message:'video publication prerequisites unavailable',{cause});
     failure.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
