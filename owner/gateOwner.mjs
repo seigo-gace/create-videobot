@@ -63,6 +63,18 @@ export async function createGateOwner({telegramApi,pool,env=process.env}={}){
    return t;
  };
  await receipt();
+ const verifyVideoTopic=async()=>{
+   const topic=configuredVideoSaleTopic(env);
+   if(topic.threadId===ROUTE.threadId)
+     throw Error('VIDEO_SALE_STICKER_TOPIC_COLLISION');
+   const chat=await telegramApi('getChat',{chat_id:topic.chatId});
+   if(chat?.id!==topic.chatId||chat?.type!=='supergroup'||chat?.is_forum!==true)
+     throw Error('VIDEO_SALE_GROUP_NOT_VERIFIED');
+   const rights=await telegramApi('getChatMember',{chat_id:topic.chatId,user_id:me.id});
+   if(!['administrator','creator'].includes(rights?.status))
+     throw Error('VIDEO_SALE_BOT_POSTING_RIGHTS_MISSING');
+   return topic;
+ };
  return Object.freeze({
    getVerifiedVideoTopic:verifyVideoTopic,
    async getVerifiedStickerTopic(){return receipt();},
