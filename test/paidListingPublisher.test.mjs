@@ -37,7 +37,7 @@ function deps(overrides={}){
   const calls=[],store=memoryReceiptStore();
   return {listing:listing(),store,calls,
     getVerifiedVideoTopic:async()=>({id:9,purpose:'video_sale',board:'video_chat',chatId:-100123,threadId:777,title:'💰稼げる有料動画投稿',enabled:true,verified:true}),
-    verifyMembership:async()=>true,verifyReview:async()=>true,verifyRelease:async()=>true,
+
     telegramApi:async (method,params)=>{
       calls.push({method,params});
       return method==='sendMediaGroup'?[{message_id:10},{message_id:11}]:{message_id:12};
@@ -58,11 +58,8 @@ test('uses existing paid/free builders, requires approval and persists both resp
   assert.equal(repeat.alreadySent,true);
   assert.equal(d.calls.length,2);
 });
-test('denied GATE, review, release or topic prevents any send',async()=>{
+test('invalid configured topic prevents any send',async()=>{
   for(const override of [
-    {verifyMembership:async()=>false},
-    {verifyReview:async()=>false},
-    {verifyRelease:async()=>false},
     {getVerifiedVideoTopic:async()=>({purpose:'announcement',board:'video_chat',enabled:true,verified:true,chatId:-100123,threadId:777,title:'bad'})},
   ]){
     const d=deps(override);
@@ -71,6 +68,14 @@ test('denied GATE, review, release or topic prevents any send',async()=>{
     assert.equal(d.store.map.size,0);
   }
 });
+test('unconnected video GATE is marked as a definitive pre-send refusal',async()=>{
+ const d=deps({getVerifiedVideoTopic:async()=>{throw new Error('VIDEO_TOPIC_NOT_CONNECTED');}});
+ await assert.rejects(()=>publishVideoListing(d),e=>
+   e.code==='VIDEO_PUBLICATION_PRE_SEND_REJECTED'&&/VIDEO_TOPIC_NOT_CONNECTED/.test(e.message));
+ assert.equal(d.calls.length,0);
+ assert.equal(d.store.map.size,0);
+});
+
 test('paid failure after free album is kept unknown and cannot automatically resend',async()=>{
   const d=deps({telegramApi:async (method)=>{
     d.calls.push({method});
@@ -98,4 +103,32 @@ test('reject missing seller 30-percent consent before any free or paid Telegram 
    assert.equal(d.calls.length,0);
    assert.equal(d.store.map.size,0);
  }
+});
+
+test('optional video description appears on both free gallery and official tap-to-unlock Stars video',async()=>{
+ const d=deps();
+ d.listing.description='30秒の無料見本。全編はStarsで視聴できます。';
+ await publishVideoListing(d);
+ assert.equal(d.calls[0].method,'sendMediaGroup');
+ assert.equal(d.calls[0].params.media.length,2);
+ assert.equal(d.calls[1].method,'sendPaidMedia');
+ assert.equal(d.calls[1].params.media[0].type,'video');
+ assert.equal(d.calls[1].params.star_count,300);
+ assert.match(d.calls[0].params.media[0].caption,/30秒の無料見本/);
+ assert.match(d.calls[1].params.caption,/30秒の無料見本/);
+ assert.equal(d.calls[1].params.payload,'sale001:1');
+});
+
+test('buyer can read no-voluntary-refund notice before the official Stars unlock',async()=>{
+  const d=deps();
+  d.listing.description='見本の説明';
+  await publishVideoListing(d);
+  for(const caption of [d.calls[0].params.media[0].caption,d.calls[1].params.caption]){
+    assert.match(caption,/見本の説明/);
+    assert.match(caption,/300 Stars/);
+    assert.match(caption,/購入者都合の通常返金なし/);
+    assert.match(caption,/法令・Telegram公式の正当な例外/);
+    assert.ok(caption.length<=1024);
+  }
+  assert.deepEqual(d.calls.map(c=>c.method),['sendMediaGroup','sendPaidMedia']);
 });
