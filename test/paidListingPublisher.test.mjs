@@ -154,7 +154,7 @@ test('optional video description appears on both free gallery and official tap-t
  assert.equal(d.calls[1].method,'sendPaidMedia');
  assert.equal(d.calls[1].params.media[0].type,'video');
  assert.equal(d.calls[1].params.star_count,300);
- assert.match(d.calls[0].params.media[0].caption,/30秒の無料見本/);
+ assert.equal(d.calls[0].params.media[0].caption,undefined);
  assert.match(d.calls[1].params.caption,/30秒の無料見本/);
  assert.equal(d.calls[1].params.payload,'sale001:1');
 });
@@ -167,15 +167,15 @@ test('public preview and native Stars post contain only creator-supplied title a
  const paid=d.calls[1].params;
  assert.equal(free.media.length,2);
  assert.deepEqual(free.media.map(x=>x.has_spoiler),[undefined,undefined]);
- assert.equal(free.media[0].caption,'夏の思い出\n見本の説明');
+ assert.equal(free.media[0].caption,undefined);
  assert.equal(paid.caption,'夏の思い出\n見本の説明');
  assert.equal(paid.star_count,300);
  assert.equal(paid.media[0].type,'video');
- for(const caption of [free.media[0].caption,paid.caption]){
+ for(const caption of [paid.caption]){
   assert.doesNotMatch(caption,/購入前|購入者都合|返金|Telegram公式|https?:\/\//);
  }
  const noDescription=deps();
  await publishVideoListing(noDescription);
- assert.equal(noDescription.calls[0].params.media[0].caption,'夏の思い出');
+ assert.equal(noDescription.calls[0].params.media[0].caption,undefined);
  assert.equal(noDescription.calls[1].params.caption,'夏の思い出');
 });
