@@ -40,7 +40,7 @@ function deps(overrides={}){
 
     telegramApi:async (method,params)=>{
       calls.push({method,params});
-      return method==='sendMediaGroup'?[{message_id:10,media_group_id:'album_001'},{message_id:11,media_group_id:'album_001'}]:{message_id:12};
+      return method==='sendMediaGroup'?[{message_id:10,media_group_id:'album_001'},{message_id:11,media_group_id:'album_001'}]:{message_id:12,chat:{id:-100123},message_thread_id:777,paid_media:{star_count:300,paid_media:[{type:'preview'}]}};
     },...overrides};
 }
 test('uses existing paid/free builders, requires approval and persists both response ids',async()=>{
@@ -76,6 +76,25 @@ test('an ungrouped or mismatched Telegram album response is not marked as publis
    assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup']);
    await assert.rejects(()=>publishVideoListing(d),/PUBLISH_NEEDS_RECONCILE/);
    assert.equal(d.calls.length,1);
+ }
+});
+
+test('paid-message acknowledgement without official Stars payload is never treated as published',async()=>{
+ for(const result of [
+   {message_id:12,chat:{id:-100123},message_thread_id:777},
+   {message_id:12,chat:{id:-100123},message_thread_id:777,paid_media:{star_count:0,paid_media:[{type:'preview'}]}},
+   {message_id:12,chat:{id:-100123},message_thread_id:777,paid_media:{star_count:300,paid_media:[]}},
+   {message_id:12,chat:{id:-100999},message_thread_id:777,paid_media:{star_count:300,paid_media:[{type:'preview'}]}}
+ ]) {
+   const d=deps({telegramApi:async(method,params)=>{
+     d.calls.push({method,params});
+     return method==='sendMediaGroup'?
+       [{message_id:10,media_group_id:'album_001'},{message_id:11,media_group_id:'album_001'}]:result;
+   }});
+   await assert.rejects(()=>publishVideoListing(d),/native Stars lock not confirmed/);
+   assert.equal((await d.store.read('sale001:1')).status,'needs_reconcile');
+   assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','sendPaidMedia']);
+   await assert.rejects(()=>publishVideoListing(d),/PUBLISH_NEEDS_RECONCILE/);
  }
 });
 
