@@ -1,5 +1,5 @@
 /**
- * Telegram represents the free spoiler gallery and Stars-locked video as
+ * Telegram represents the free gallery and Stars-locked video as
  * separate messages. This module builds the free two-item album only.
  * No network call, token, GATE bypass or publishing side effects here.
  */
@@ -14,8 +14,8 @@ export function buildFreeAlbumRequest({ chatId, messageThreadId, thumbnailFileId
     chat_id: chatId,
     ...(messageThreadId ? { message_thread_id: messageThreadId } : {}),
     media: [
-      { type: 'photo', media: thumbnailFileId, has_spoiler: true, ...(caption ? { caption } : {}) },
-      { type: 'video', media: sampleFileId, has_spoiler: true }
+      { type: 'photo', media: thumbnailFileId, ...(caption ? { caption } : {}) },
+      { type: 'video', media: sampleFileId, }
     ]
   };
 }
