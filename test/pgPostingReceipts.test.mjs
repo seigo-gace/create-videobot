@@ -67,7 +67,7 @@ test('domain paid sale path reuses existing builders and private receipt store, 
   const calls=[];
   const dependencies={
     listing:{id:'list1',sellerId:'user1',revision:1,title:'Movie',priceStars:50,
-      thumbnail:{fileId:'photo001'},sample:{fileId:'sample001'},paidVideo:{fileId:'main001'},
+      thumbnail:{fileId:'photo001'},sample:{fileId:'sample001',durationSeconds:30},paidVideo:{fileId:'main001'},
       rightsVerified:true,adultConsentVerified:true,ownerConfirmedPublish:true,feeTermsAccepted:true,managementFeeBps:3000},
     getVerifiedVideoTopic:async()=>({id:3,chatId:-100333,threadId:22,
       purpose:'video_sale',board:'video_chat',verified:true,enabled:true,title:'Sale'}),
