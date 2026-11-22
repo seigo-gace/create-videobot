@@ -179,3 +179,20 @@ test('public preview and native Stars post contain only creator-supplied title a
  assert.equal(noDescription.calls[0].params.media[0].caption,undefined);
  assert.equal(noDescription.calls[1].params.caption,'夏の思い出');
 });
+
+test('fails before any Telegram call if free sample is too long or is identical to paid main',async()=>{
+ for(const patch of [
+   {sample:{fileId:'sample001',durationSeconds:31}},
+   {sample:{fileId:'main001',durationSeconds:30}},
+   {sample:{fileId:'sample001',durationSeconds:NaN}},
+   {sample:{fileId:'sample001',durationSeconds:0}}
+ ]){
+   const d=deps();
+   Object.assign(d.listing,patch);
+   await assert.rejects(()=>publishVideoListing(d),error=>
+     error.code==='VIDEO_PUBLICATION_PRE_SEND_REJECTED' &&
+     error.message==='VIDEO_FREE_SAMPLE_NOT_SAFE_FOR_PUBLICATION');
+   assert.equal(d.calls.length,0);
+   assert.equal(d.store.map.size,0);
+ }
+});
