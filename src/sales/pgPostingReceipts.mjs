@@ -36,7 +36,7 @@ export function createPostgresPostingReceiptStore(pool) {
       if(typeof listingId!=='string'||!ID.test(listingId))throw new Error('invalid listing');
       validKey(key);
       const r=await pool.query(
-        "SELECT delivery_key,status FROM videobot_post_receipts WHERE listing_id=$1 AND delivery_key<>$2 AND status IN ('sending','sent','needs_reconcile') ORDER BY created_at ASC LIMIT 1",
+        "SELECT delivery_key,status FROM videobot_post_receipts WHERE listing_id=$1 AND delivery_key<>$2 AND status IN ('sending','sent','needs_reconcile') ORDER BY updated_at ASC LIMIT 1",
         [listingId,key]
       );
       return r.rows?.length ? {key:r.rows[0].delivery_key,status:r.rows[0].status} : null;
