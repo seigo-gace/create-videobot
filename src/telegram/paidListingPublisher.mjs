@@ -55,7 +55,7 @@ export async function publishVideoListing({
   const caption=listing.title+(listing.description?'\n'+listing.description:'');
   if(caption.length>1024)throw new Error('video caption too long');
   const free=buildFreeAlbumRequest({ ...base, thumbnailFileId:listing.thumbnail.fileId,
-    sampleFileId:listing.sample.fileId,caption });
+    sampleFileId:listing.sample.fileId });
   const key=listing.id + ':' + listing.revision;
   // Telegram's purchased_paid_media update identifies the sale by payload.
   // No payload means no useful paid-media purchase notification.
