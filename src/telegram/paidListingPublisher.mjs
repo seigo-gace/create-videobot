@@ -72,6 +72,17 @@ export async function publishVideoListing({
   // No payload means no useful paid-media purchase notification.
   const paid=buildPaidMediaRequest({ ...base,mediaFileId:listing.paidVideo.fileId,
     priceStars:listing.priceStars,caption,payload:key });
+  // Reopening an already acknowledged publication is idempotent even if
+  // historical duplicate versions exist. This branch causes no Telegram I/O.
+  const ownReceipt=await store.read(key);
+  if (ownReceipt?.status==='sent' &&
+      Array.isArray(ownReceipt.freeMessageIds) &&
+      ownReceipt.freeMessageIds.length===2 &&
+      Number.isSafeInteger(ownReceipt.paidMessageId)) {
+    return {posted:true,alreadySent:true,
+      freeMessageIds:ownReceipt.freeMessageIds,
+      paidMessageId:ownReceipt.paidMessageId};
+  }
   // A listing's revision is an editing version, not authorization to post
   // another paid purchase item. Preserve both old paid posts and receipts;
   // never silently issue a duplicate Stars offer for an existing listing.
