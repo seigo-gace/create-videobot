@@ -20,6 +20,23 @@ test('official bot Stars balance is readable without disclosure or seller payout
  assert.equal(observed.params.body,'{}');
  assert.equal(observed.params.redirect,'error');
 });
+test('native video album elements can be edited without changing posts or revealing Bot credentials',async()=>{
+ const requests=[];
+ const api=createTelegramBotApi({token,fetchImpl:async(url,opt)=>{
+  requests.push({url,body:JSON.parse(opt.body)});
+  return {status:200,json:async()=>({ok:true,result:{
+   message_id:4699,chat:{id:-1002373696859},media_group_id:'album_123',
+   has_media_spoiler:false
+  }})};
+ }});
+ const result=await api('editMessageMedia',{chat_id:-1002373696859,message_id:4699,
+  media:{type:'photo',media:'photo123',caption:''}});
+ assert.equal(result.message_id,4699);
+ assert.match(requests[0].url,/\/editMessageMedia$/);
+ assert.equal(requests[0].body.media.type,'photo');
+ assert.equal(requests[0].body.media.has_spoiler,undefined);
+ assert.equal(requests.length,1);
+});
 test('arbitrary Telegram methods cannot execute',async()=>{
  let called=false;const api=createTelegramBotApi({token,fetchImpl:async()=>{called=true}});
  await assert.rejects(()=>api('deleteWebhook'));
