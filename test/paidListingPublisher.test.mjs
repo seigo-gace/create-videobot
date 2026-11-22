@@ -196,3 +196,17 @@ test('fails before any Telegram call if free sample is too long or is identical 
    assert.equal(d.store.map.size,0);
  }
 });
+
+test('existing published revision blocks a second free album or Stars video',async()=>{
+ const d=deps();
+ d.store.findOtherDelivery=async({listingId,key})=>{
+   assert.equal(listingId,'sale001');
+   assert.equal(key,'sale001:1');
+   return {key:'sale001:2',status:'sent'};
+ };
+ await assert.rejects(()=>publishVideoListing(d),e=>
+   e.code==='VIDEO_PUBLICATION_PRE_SEND_REJECTED' &&
+   e.message==='VIDEO_EXISTING_PUBLICATION_REQUIRES_EDIT');
+ assert.equal(d.calls.length,0);
+ assert.equal(d.store.map.size,0);
+});
