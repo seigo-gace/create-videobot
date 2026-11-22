@@ -24,6 +24,17 @@ export async function publishVideoListing({
       listing.ownerConfirmedPublish !== true ||
       listing.feeTermsAccepted !== true || listing.managementFeeBps !== 3000)
       throw new Error('listing not ready for publication: seller fee agreement required');
+  // The private preview preparation can fail or be bypassed by a stale draft.
+  // Never publish the main file as a free sample or accept an overlong sample.
+  // Check before the durable claim and before any Telegram send.
+  if (!Number.isFinite(listing.sample.durationSeconds) ||
+      listing.sample.durationSeconds <= 0 ||
+      listing.sample.durationSeconds > 30 ||
+      listing.sample.fileId === listing.paidVideo.fileId) {
+    const error = new Error('VIDEO_FREE_SAMPLE_NOT_SAFE_FOR_PUBLICATION');
+    error.code = 'VIDEO_PUBLICATION_PRE_SEND_REJECTED';
+    throw error;
+  }
   for (const fn of [getVerifiedVideoTopic,telegramApi]) {
     if (typeof fn !== 'function') throw new Error('trusted provider missing');
   }
