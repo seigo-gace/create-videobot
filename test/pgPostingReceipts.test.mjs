@@ -74,7 +74,7 @@ test('domain paid sale path reuses existing builders and private receipt store, 
     verifyMembership:async()=>true,verifyReview:async()=>true,verifyRelease:async()=>true,store,
     telegramApi:async(method)=>{
       calls.push(method);
-      return method==='sendMediaGroup'?[{message_id:71,media_group_id:'album_db'},{message_id:72,media_group_id:'album_db'}]:{message_id:73};
+      return method==='sendMediaGroup'?[{message_id:71,media_group_id:'album_db'},{message_id:72,media_group_id:'album_db'}]:{message_id:73,chat:{id:-100333},message_thread_id:22,paid_media:{star_count:50,paid_media:[{type:'preview'}]}};
     }
   };
   const first=await publishVideoListing(dependencies);
