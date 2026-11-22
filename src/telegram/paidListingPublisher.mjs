@@ -72,6 +72,17 @@ export async function publishVideoListing({
   // No payload means no useful paid-media purchase notification.
   const paid=buildPaidMediaRequest({ ...base,mediaFileId:listing.paidVideo.fileId,
     priceStars:listing.priceStars,caption,payload:key });
+  // A listing's revision is an editing version, not authorization to post
+  // another paid purchase item. Preserve both old paid posts and receipts;
+  // never silently issue a duplicate Stars offer for an existing listing.
+  if (typeof store.findOtherDelivery === 'function') {
+    const other=await store.findOtherDelivery({listingId:listing.id,key});
+    if (other) {
+      const error=new Error('VIDEO_EXISTING_PUBLICATION_REQUIRES_EDIT');
+      error.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
+      throw error;
+    }
+  }
   const claim=await store.claim({key,listingId:listing.id,revision:listing.revision,topicId:topic.id});
   if (!claim || claim.claimed !== true) {
     const prior=await store.read(key);
