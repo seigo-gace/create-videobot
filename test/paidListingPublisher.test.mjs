@@ -47,7 +47,7 @@ test('uses existing paid/free builders, requires approval and persists both resp
   const d=deps();
   const result=await publishVideoListing(d);
   assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','sendPaidMedia']);
-  assert.deepEqual(d.calls[0].params.media.map(x=>x.has_spoiler),[true,true]);
+  assert.deepEqual(d.calls[0].params.media.map(x=>x.has_spoiler),[undefined,undefined]);
   assert.equal(d.calls[1].params.star_count,300);
   assert.equal(d.calls[1].params.payload,'sale001:1');
   assert.equal(d.calls[0].params.message_thread_id,777);
@@ -166,7 +166,7 @@ test('public preview and native Stars post contain only creator-supplied title a
  const free=d.calls[0].params;
  const paid=d.calls[1].params;
  assert.equal(free.media.length,2);
- assert.deepEqual(free.media.map(x=>x.has_spoiler),[true,true]);
+ assert.deepEqual(free.media.map(x=>x.has_spoiler),[undefined,undefined]);
  assert.equal(free.media[0].caption,'夏の思い出\n見本の説明');
  assert.equal(paid.caption,'夏の思い出\n見本の説明');
  assert.equal(paid.star_count,300);
