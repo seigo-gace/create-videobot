@@ -210,3 +210,14 @@ test('existing published revision blocks a second free album or Stars video',asy
  assert.equal(d.calls.length,0);
  assert.equal(d.store.map.size,0);
 });
+
+test('existing receipt stays idempotent even when another revision was previously published',async()=>{
+ const d=deps();
+ await publishVideoListing(d);
+ d.store.findOtherDelivery=async()=>({key:'sale001:2',status:'sent'});
+ const again=await publishVideoListing(d);
+ assert.equal(again.alreadySent,true);
+ assert.deepEqual(again.freeMessageIds,[10,11]);
+ assert.equal(again.paidMessageId,12);
+ assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','sendPaidMedia']);
+});
