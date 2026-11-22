@@ -40,7 +40,7 @@ function deps(overrides={}){
 
     telegramApi:async (method,params)=>{
       calls.push({method,params});
-      return method==='sendMediaGroup'?[{message_id:10},{message_id:11}]:{message_id:12};
+      return method==='sendMediaGroup'?[{message_id:10,media_group_id:'album_001'},{message_id:11,media_group_id:'album_001'}]:{message_id:12};
     },...overrides};
 }
 test('uses existing paid/free builders, requires approval and persists both response ids',async()=>{
@@ -58,6 +58,27 @@ test('uses existing paid/free builders, requires approval and persists both resp
   assert.equal(repeat.alreadySent,true);
   assert.equal(d.calls.length,2);
 });
+test('an ungrouped or mismatched Telegram album response is not marked as published or retried',async()=>{
+ for(const response of [
+   [{message_id:10},{message_id:11}],
+   [{message_id:10,media_group_id:'album_a'},{message_id:11,media_group_id:'album_b'}],
+   [{message_id:10,media_group_id:'album_a'},{message_id:10,media_group_id:'album_a'}]
+ ]) {
+   const d=deps({telegramApi:async(method)=>{
+     d.calls.push({method});
+     if(method==='sendMediaGroup')return response;
+     throw Error('paid-media must not be sent after invalid free album');
+   }});
+   await assert.rejects(()=>publishVideoListing(d),/media_group_id mismatch/);
+   const state=await d.store.read('sale001:1');
+   assert.equal(state.status,'needs_reconcile');
+   assert.equal(state.freeMessageIds,null);
+   assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup']);
+   await assert.rejects(()=>publishVideoListing(d),/PUBLISH_NEEDS_RECONCILE/);
+   assert.equal(d.calls.length,1);
+ }
+});
+
 test('invalid configured topic prevents any send',async()=>{
   for(const override of [
     {getVerifiedVideoTopic:async()=>({purpose:'announcement',board:'video_chat',enabled:true,verified:true,chatId:-100123,threadId:777,title:'bad'})},
@@ -79,7 +100,7 @@ test('unconnected video GATE is marked as a definitive pre-send refusal',async()
 test('paid failure after free album is kept unknown and cannot automatically resend',async()=>{
   const d=deps({telegramApi:async (method)=>{
     d.calls.push({method});
-    if(method==='sendMediaGroup')return [{message_id:22},{message_id:23}];
+    if(method==='sendMediaGroup')return [{message_id:22,media_group_id:'album_002'},{message_id:23,media_group_id:'album_002'}];
     throw new Error('simulated timeout after paid request');
   }});
   await assert.rejects(()=>publishVideoListing(d),/simulated timeout/);
