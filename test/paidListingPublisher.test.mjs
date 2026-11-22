@@ -159,16 +159,23 @@ test('optional video description appears on both free gallery and official tap-t
  assert.equal(d.calls[1].params.payload,'sale001:1');
 });
 
-test('buyer can read no-voluntary-refund notice before the official Stars unlock',async()=>{
-  const d=deps();
-  d.listing.description='見本の説明';
-  await publishVideoListing(d);
-  for(const caption of [d.calls[0].params.media[0].caption,d.calls[1].params.caption]){
-    assert.match(caption,/見本の説明/);
-    assert.match(caption,/300 Stars/);
-    assert.match(caption,/購入者都合の通常返金なし/);
-    assert.match(caption,/法令・Telegram公式の正当な例外/);
-    assert.ok(caption.length<=1024);
-  }
-  assert.deepEqual(d.calls.map(c=>c.method),['sendMediaGroup','sendPaidMedia']);
+test('public preview and native Stars post contain only creator-supplied title and description',async()=>{
+ const d=deps();
+ d.listing.description='見本の説明';
+ await publishVideoListing(d);
+ const free=d.calls[0].params;
+ const paid=d.calls[1].params;
+ assert.equal(free.media.length,2);
+ assert.deepEqual(free.media.map(x=>x.has_spoiler),[true,true]);
+ assert.equal(free.media[0].caption,'夏の思い出\n見本の説明');
+ assert.equal(paid.caption,'夏の思い出\n見本の説明');
+ assert.equal(paid.star_count,300);
+ assert.equal(paid.media[0].type,'video');
+ for(const caption of [free.media[0].caption,paid.caption]){
+  assert.doesNotMatch(caption,/購入前|購入者都合|返金|Telegram公式|https?:\/\//);
+ }
+ const noDescription=deps();
+ await publishVideoListing(noDescription);
+ assert.equal(noDescription.calls[0].params.media[0].caption,'夏の思い出');
+ assert.equal(noDescription.calls[1].params.caption,'夏の思い出');
 });
