@@ -50,11 +50,9 @@ export async function publishVideoListing({
     throw failure;
   }
   const base={chatId:topic.chatId,messageThreadId:topic.threadId};
-  // The buyer sees the no-voluntary-refund rule before Telegram's native
-  // Stars purchase confirmation. Never offer a Bot refund workflow here;
-  // mandatory legal/Telegram payment corrections remain independent.
-  const buyerNotice='購入前に内容と価格（'+listing.priceStars+' Stars）を確認してください。購入者都合の通常返金なし（法令・Telegram公式の正当な例外を除く）。';
-  const caption=listing.title+(listing.description?'\n'+listing.description:'')+'\n\n'+buyerNotice;
+  // Public listing captions contain only the creator's title and optional description.
+  // Telegram's native paid-media UI owns the Stars price and purchase prompt.
+  const caption=listing.title+(listing.description?'\n'+listing.description:'');
   if(caption.length>1024)throw new Error('video caption too long');
   const free=buildFreeAlbumRequest({ ...base, thumbnailFileId:listing.thumbnail.fileId,
     sampleFileId:listing.sample.fileId,caption });
