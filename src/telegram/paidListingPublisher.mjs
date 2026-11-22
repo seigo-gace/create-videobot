@@ -87,8 +87,14 @@ export async function publishVideoListing({
       await store.recordFree(key,preview.map(m=>m.message_id));
     }
     const paidResult=await telegramApi('sendPaidMedia',paid);
-    if (!Number.isSafeInteger(paidResult?.message_id) || paidResult.message_id <= 0)
-      throw new Error('paid media acknowledgment invalid');
+    if (!Number.isSafeInteger(paidResult?.message_id) || paidResult.message_id <= 0 ||
+        paidResult.chat?.id !== topic.chatId ||
+        (paidResult.message_thread_id != null && paidResult.message_thread_id !== topic.threadId) ||
+        !paidResult.paid_media ||
+        paidResult.paid_media.star_count !== listing.priceStars ||
+        !Array.isArray(paidResult.paid_media.paid_media) ||
+        paidResult.paid_media.paid_media.length !== 1)
+      throw new Error('paid media acknowledgment invalid: native Stars lock not confirmed');
     await store.recordPaid(key,paidResult.message_id);
     return {
       posted:true,alreadySent:false,
