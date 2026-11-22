@@ -15,6 +15,12 @@ function fakeDb(){
         entries.set(k,{status:'sending',free_message_ids:null,paid_message_id:null});
         return {rowCount:1,rows:[{delivery_key:k}]};
       }
+      if(sql.startsWith('SELECT delivery_key,status FROM videobot_post_receipts')) {
+        const other=[...entries.entries()].find(([key,row])=>
+          key.startsWith(params[0]+':') && key!==params[1] &&
+          ['sending','sent','needs_reconcile'].includes(row.status));
+        return {rowCount:other?1:0,rows:other?[{delivery_key:other[0],status:other[1].status}]:[]};
+      }
       if(sql.startsWith('SELECT status,free_message_ids')){
         const row=entries.get(k);
         return {rowCount:row?1:0,rows:row?[{...row}]:[]};
@@ -90,4 +96,15 @@ test('database adapter rejects invalid ids and refuses stale paid acknowledgment
   await assert.rejects(()=>store.recordPaid('a:1',4),/STALE/);
   await assert.rejects(()=>store.recordFree('a:1',[1,1]),/distinct/);
   assert.throws(()=>createPostgresPostingReceiptStore(),/pool required/);
+});
+
+test('same product another published version is detected by the existing receipt store',async()=>{
+ const db=fakeDb(),store=createPostgresPostingReceiptStore(db);
+ assert.equal(await store.findOtherDelivery({listingId:'list1',key:'list1:2'}),null);
+ await store.claim({key:'list1:1',listingId:'list1',revision:1,topicId:3});
+ await store.recordFree('list1:1',[41,42]);
+ await store.recordPaid('list1:1',43);
+ assert.deepEqual(await store.findOtherDelivery({listingId:'list1',key:'list1:2'}),{key:'list1:1',status:'sent'});
+ assert.equal(await store.findOtherDelivery({listingId:'list1',key:'list1:1'}),null);
+ assert.ok(db.queries.some(q=>q.sql.includes('ORDER BY updated_at ASC LIMIT 1')));
 });
