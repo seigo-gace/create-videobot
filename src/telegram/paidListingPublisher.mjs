@@ -78,8 +78,12 @@ export async function publishVideoListing({
     if (!existing.freeMessageIds) {
       const preview=await telegramApi('sendMediaGroup',free);
       if (!Array.isArray(preview) || preview.length !== 2 ||
-          preview.some(m=>!Number.isSafeInteger(m?.message_id)||m.message_id<=0))
-        throw new Error('free album acknowledgment invalid');
+          preview.some(m=>!Number.isSafeInteger(m?.message_id)||m.message_id<=0) ||
+          preview[0].message_id === preview[1].message_id ||
+          typeof preview[0].media_group_id !== 'string' ||
+          !preview[0].media_group_id ||
+          preview[0].media_group_id !== preview[1].media_group_id)
+        throw new Error('free album acknowledgment invalid: media_group_id mismatch');
       await store.recordFree(key,preview.map(m=>m.message_id));
     }
     const paidResult=await telegramApi('sendPaidMedia',paid);
