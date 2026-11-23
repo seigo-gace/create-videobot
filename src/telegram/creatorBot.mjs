@@ -65,6 +65,12 @@ export function createCreatorBotUpdateHandler(options={}) {
         const sale=await options.stickerSalesHandler(update);
         if(sale?.handled)return sale;
       }
+      // A purchased-video offer enters through a button deep link. Route it
+      // before generic sticker /start handling, which can absorb the update.
+      if(/^\/start(?:@[A-Za-z0-9_]+)?\s+vid_[A-Za-z0-9_-]{1,40}_r[1-9][0-9]*$/.test(message.text.trim())){
+        if(typeof options.videoInvoiceHandler!=='function')throw Error('VIDEO_INVOICE_HANDLER_MISSING');
+        return options.videoInvoiceHandler(update);
+      }
       // The sticker wizard owns unresolved registrations even when a user
       // reopens the generic /start; it must run before the video home page.
       if(typeof options.stickerHandler==='function') {
