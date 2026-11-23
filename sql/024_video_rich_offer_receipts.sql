@@ -34,3 +34,22 @@ BEGIN
    CHECK(delivery_key ~ '^[A-Za-z0-9_-]{1,40}:[1-9][0-9]*$');
  END IF;
 END $$;
+
+-- A successful RichMessage invoice creates immutable ledger evidence using
+-- the same seller/buyer/fee accounting as legacy invoice sales. Its delivery
+-- key is protected by a published RichMessage receipt, not a synthetic old
+-- album receipt. Preserve all existing paid transactions.
+ALTER TABLE videobot_stars_ledger
+  DROP CONSTRAINT IF EXISTS videobot_stars_ledger_delivery_key_fkey;
+DO $$
+BEGIN
+ IF NOT EXISTS (
+   SELECT 1 FROM pg_constraint
+   WHERE conrelid='videobot_stars_ledger'::regclass
+     AND conname='videobot_stars_ledger_delivery_key_format_check'
+ ) THEN
+  ALTER TABLE videobot_stars_ledger
+   ADD CONSTRAINT videobot_stars_ledger_delivery_key_format_check
+   CHECK(delivery_key ~ '^[A-Za-z0-9_-]{1,40}:[1-9][0-9]*$');
+ END IF;
+END $$;
