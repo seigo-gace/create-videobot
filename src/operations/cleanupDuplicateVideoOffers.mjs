@@ -34,7 +34,7 @@ export async function cleanupDuplicateVideoOffers({pool,api,auditFile,auditWrite
  const keepIds=allIds(keep),dropIds=duplicates.flatMap(allIds);
  if(keepIds.length!==3||new Set(keepIds).size!==3||
     !keepIds.every(id=>Number.isSafeInteger(id)&&id>0)||
-    dropIds.length!==duplicates.length*3||new Set(dropIds).size!==dropIds.length||
+    dropIds.length!==duplicates.length*3||
     dropIds.some(id=>!Number.isSafeInteger(id)||id<=0||keepIds.includes(id)))
    throw Error('VIDEO_CLEANUP_RECEIPT_IDS_UNSAFE');
  if(duplicates.some(r=>{
@@ -53,9 +53,17 @@ export async function cleanupDuplicateVideoOffers({pool,api,auditFile,auditWrite
    "SELECT COUNT(*)::int AS n FROM videobot_stars_ledger WHERE kind='paid' AND delivery_key=$1",
    [keep.delivery_key])).rows[0]?.n;
  if(!(status>0))throw Error('VIDEO_CLEANUP_SURVIVOR_PURCHASE_LOST');
- let deleted=0;
+ // Several old failed publishes reused the same sample album.
+ // The protected sale IDs were already excluded; remove each other message once.
+ const uniqueTargets=[],seen=new Set();
  for(const r of duplicates){
    for(const id of allIds(r)){
+     if(seen.has(id))continue;
+     seen.add(id);uniqueTargets.push({r,id});
+   }
+ }
+ let deleted=0;
+ for(const {r,id} of uniqueTargets){
      // Record intention BEFORE irreversible network I/O. Unknown replies remain
      // visible in the on-disk audit; no automatic retries or ambiguous success.
      auditWrite(auditFile,JSON.stringify({
@@ -67,7 +75,6 @@ export async function cleanupDuplicateVideoOffers({pool,api,auditFile,auditWrite
        at:new Date().toISOString(),action:'delete_ack',delivery_key:r.delivery_key,
        message_id:id,protected_delivery_key:keep.delivery_key})+'\n',{mode:0o600});
      deleted++;
-   }
  }
  return {deleted,kept:keepIds.length,duplicates:duplicates.length};
 }
