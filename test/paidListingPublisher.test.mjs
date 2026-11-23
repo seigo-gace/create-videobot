@@ -47,19 +47,18 @@ function deps(overrides={}){
    return [{message_id:10,media_group_id:'g1'},
            {message_id:11,media_group_id:'g1'}];
   if(method==='getMe')return {is_bot:true,username:'CreateVdobot'};
-  if(method==='editMessageReplyMarkup')
-   return {message_id:11,media_group_id:'g1',
-    chat:{id:topic.chatId},message_thread_id:topic.threadId,
+  if(method==='sendMessage')
+   return {message_id:12,chat:{id:topic.chatId},message_thread_id:topic.threadId,
     reply_markup:params.reply_markup};
   throw Error('Unexpected Telegram call '+method);
  };
  return {listing:item,store,calls,getVerifiedVideoTopic:async()=>topic,
   telegramApi:api,...overrides};
 }
-test('publishes spoiler album with purchase inline keyboard on sample and NO third message',async()=>{
+test('publishes only spoiler thumbnail + sample album then a separate inline purchase button below',async()=>{
  const d=deps(),result=await publishVideoListing(d);
  assert.equal(result.saleMode,'invoice');
- assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','getMe','editMessageReplyMarkup']);
+ assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','getMe','sendMessage']);
  const album=d.calls[0].params;
  assert.equal(album.message_thread_id,777);
  assert.deepEqual(album.media.map(x=>x.type),['photo','video']);
@@ -67,21 +66,22 @@ test('publishes spoiler album with purchase inline keyboard on sample and NO thi
  assert.equal(album.media[0].caption,'販売動画\n無料見本を確認してください。');
  assert.equal(album.media[1].caption,undefined);
  const offer=d.calls[2].params;
- assert.equal(offer.message_id,11);
+ assert.equal(offer.message_thread_id,777);
+ assert.deepEqual(offer.reply_parameters,{message_id:11});
  assert.equal(offer.reply_markup.inline_keyboard[0][0].text,'⭐ 300 Starsで本編を購入');
  assert.equal(offer.reply_markup.inline_keyboard[0][0].url,
   'https://t.me/CreateVdobot?start=vid_sale001_r1');
  assert.equal(offer.chat_id,-100123);
  assert.equal(JSON.stringify(d.calls).includes('main001'),false);
  assert.deepEqual(result.freeMessageIds,[10,11]);
- assert.equal(result.paidMessageId,11);
+ assert.equal(result.paidMessageId,12);
  assert.equal(d.store.map.get('sale001:1').status,'sent');
 });
 test('repeated publication returns same receipt without any Telegram call',async()=>{
  const d=deps();await publishVideoListing(d);
  const n=d.calls.length,result=await publishVideoListing(d);
  assert.equal(result.alreadySent,true);
- assert.equal(result.paidMessageId,11);
+ assert.equal(result.paidMessageId,12);
  assert.equal(d.calls.length,n);
 });
 test('native Starlock is explicitly rejected without Telegram sends or a new ledger entry',async()=>{
@@ -138,7 +138,7 @@ test('bad album acknowledgement is uncertain and cannot be reposted blindly',asy
  await assert.rejects(()=>publishVideoListing(d),/PUBLISH_NEEDS_RECONCILE/);
  assert.equal(d.calls.length,1);
 });
-test('failed album button edit preserves album IDs and blocks duplicate send',async()=>{
+test('failed button send after confirmed album preserves album IDs and blocks duplicate send',async()=>{
  const d=deps();
  d.telegramApi=async(method,params)=>{
   d.calls.push({method,params});
@@ -153,16 +153,16 @@ test('failed album button edit preserves album IDs and blocks duplicate send',as
  assert.equal(saved.status,'needs_reconcile');
  assert.deepEqual(saved.freeMessageIds,[10,11]);
  await assert.rejects(()=>publishVideoListing(d),/PUBLISH_NEEDS_RECONCILE/);
- assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','getMe','editMessageReplyMarkup']);
+ assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','getMe','sendMessage']);
 });
 test('a message without the actual inline button is not declared published',async()=>{
  const d=deps();
  const original=d.telegramApi;
  d.telegramApi=async(method,params)=>{
   const result=await original(method,params);
-  return method==='editMessageReplyMarkup'?{...result,reply_markup:undefined}:result;
+  return method==='sendMessage'?{...result,reply_markup:undefined}:result;
  };
- await assert.rejects(()=>publishVideoListing(d),/VIDEO_INVOICE_ALBUM_BUTTON_ACK_UNKNOWN/);
+ await assert.rejects(()=>publishVideoListing(d),/VIDEO_INVOICE_BUTTON_ACK_UNKNOWN/);
  assert.equal(d.store.map.get('sale001:1').status,'needs_reconcile');
 });
 test('identity missing after album never invents a purchase URL',async()=>{
@@ -173,5 +173,5 @@ test('identity missing after album never invents a purchase URL',async()=>{
  };
  await assert.rejects(()=>publishVideoListing(d),/VIDEO_INVOICE_BOT_IDENTITY_NOT_VERIFIED/);
  assert.equal(d.store.map.get('sale001:1').status,'needs_reconcile');
- assert.equal(d.calls.filter(x=>x.method==='editMessageReplyMarkup').length,0);
+ assert.equal(d.calls.filter(x=>x.method==='sendMessage').length,0);
 });
