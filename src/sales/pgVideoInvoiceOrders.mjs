@@ -23,17 +23,22 @@ export function createPostgresVideoInvoiceStore(pool){
    // Compare the verified original purchaser, seller, and exact full video
    // reference. This cannot authorize a different seller's product or sample.
    const r=await pool.query(
-    `WITH eligible AS (
+    `WITH active_offers AS (
+       SELECT delivery_key,listing_id,revision FROM videobot_post_receipts
+        WHERE status='sent' AND sale_mode='invoice' AND paid_message_id IS NOT NULL
+       UNION
+       SELECT delivery_key,listing_id,revision FROM videobot_rich_offer_receipts
+        WHERE status='sent' AND message_id IS NOT NULL
+     ), eligible AS (
        SELECT r.delivery_key,l.paid_video_file_id AS video_file_id,l.title,
               p.telegram_transaction_id
-       FROM videobot_post_receipts r
+       FROM active_offers r
        JOIN videobot_listings l ON l.listing_id=r.listing_id
        JOIN videobot_stars_ledger p ON p.buyer_user_id=$1 AND p.kind='paid'
        JOIN videobot_listings old_l ON old_l.listing_id=p.listing_id
          AND old_l.seller_user_id=l.seller_user_id
          AND old_l.paid_video_file_id=l.paid_video_file_id
-       WHERE r.listing_id=$2 AND r.revision=$3 AND r.sale_mode='invoice'
-         AND r.status='sent' AND r.paid_message_id IS NOT NULL
+       WHERE r.listing_id=$2 AND r.revision=$3
          AND l.status='published' AND l.rights_verified=TRUE
          AND l.adult_consent_verified=TRUE AND l.fee_terms_accepted_at IS NOT NULL
          AND l.paid_video_file_id IS NOT NULL
@@ -99,13 +104,19 @@ export function createPostgresVideoInvoiceStore(pool){
      throw Error('VIDEO_INVOICE_RESERVE_INVALID');
    const key=listingId+':'+revision;
    const result=await pool.query(
-    `INSERT INTO videobot_video_invoice_orders
+    `WITH active_offers AS (
+       SELECT delivery_key,listing_id,revision FROM videobot_post_receipts
+        WHERE status='sent' AND sale_mode='invoice' AND paid_message_id IS NOT NULL
+       UNION
+       SELECT delivery_key,listing_id,revision FROM videobot_rich_offer_receipts
+        WHERE status='sent' AND message_id IS NOT NULL
+     )
+     INSERT INTO videobot_video_invoice_orders
      (order_id,delivery_key,listing_id,buyer_user_id,seller_user_id,price_stars,video_file_id,title,status)
      SELECT $1,r.delivery_key,l.listing_id,$2,l.seller_user_id,
             l.price_stars,l.paid_video_file_id,l.title,'prepared'
-       FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id
-      WHERE r.delivery_key=$3 AND r.status='sent' AND r.sale_mode='invoice'
-        AND r.paid_message_id IS NOT NULL
+       FROM active_offers r JOIN videobot_listings l ON l.listing_id=r.listing_id
+      WHERE r.delivery_key=$3
         AND l.status='published' AND l.rights_verified=TRUE
         AND l.adult_consent_verified=TRUE AND l.paid_video_file_id IS NOT NULL
         AND l.price_stars BETWEEN 1 AND 25000 AND l.fee_terms_accepted_at IS NOT NULL
