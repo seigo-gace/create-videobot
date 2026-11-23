@@ -221,3 +221,41 @@ test('existing receipt stays idempotent even when another revision was previousl
  assert.equal(again.paidMessageId,12);
  assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','sendPaidMedia']);
 });
+
+test('invoice fallback attaches Stars purchase button to sample without exposing main video',async()=>{
+ const d=deps({saleMode:'invoice',telegramApi:async(method,params)=>{
+   d.calls.push({method,params});
+   if(method==='sendMediaGroup')return [
+     {message_id:10,media_group_id:'album_001'},
+     {message_id:11,media_group_id:'album_001'}
+   ];
+   if(method==='editMessageReplyMarkup')return true;
+   throw Error('Unexpected method '+method);
+ }});
+ const result=await publishVideoListing(d);
+ assert.equal(result.saleMode,'invoice');
+ assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','editMessageReplyMarkup']);
+ assert.equal(d.calls[1].params.message_id,11);
+ assert.equal(d.calls[1].params.reply_markup.inline_keyboard[0][0].callback_data,
+   'vid:buy:sale001:1');
+ assert.equal(d.calls[1].params.reply_markup.inline_keyboard[0][0].text,'⭐ 300で購入');
+ assert.equal(JSON.stringify(d.calls).includes('main001'),false);
+ assert.equal((await d.store.read('sale001:1')).status,'sent');
+ const again=await publishVideoListing(d);
+ assert.equal(again.alreadySent,true);
+ assert.equal(d.calls.length,2);
+});
+test('invoice unknown reply markup does not create a second sale offer on retry',async()=>{
+ const d=deps({saleMode:'invoice',telegramApi:async(method,params)=>{
+   d.calls.push({method,params});
+   if(method==='sendMediaGroup')return [
+     {message_id:10,media_group_id:'album_001'},
+     {message_id:11,media_group_id:'album_001'}
+   ];
+   throw Error('unknown remote result');
+ }});
+ await assert.rejects(()=>publishVideoListing(d),/unknown remote result/);
+ assert.equal((await d.store.read('sale001:1')).status,'needs_reconcile');
+ await assert.rejects(()=>publishVideoListing(d),/PUBLISH_NEEDS_RECONCILE/);
+ assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','editMessageReplyMarkup']);
+});
