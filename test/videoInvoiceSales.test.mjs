@@ -86,3 +86,43 @@ test('unrelated sticker and paid media updates remain separate',async()=>{
  assert.equal((await flow.handle({purchased_paid_media:{paid_media_payload:'listing1:1'}})).handled,false);
  assert.equal(d.calls.length,0);
 });
+
+test('previous native Stars buyer receives downloaded full video with NO new invoice',async()=>{
+ const d=deps(),calls=[];
+ d.store.claimLegacyDelivery=async()=>({
+   legacy:true,claimed:true,deliveryKey:'reissue241124:1',
+   fileId:'old_paid_full_file_id',title:'Purchased full video'
+ });
+ d.store.markLegacyDelivered=async args=>calls.push({kind:'saved',args});
+ d.store.markLegacyUnknown=async()=>{throw Error('unexpected unknown delivery');};
+ const flow=createVideoInvoiceSalesFlow({store:d.store,api:async(method,params)=>{
+   calls.push({kind:method,params});
+   if(method==='sendVideo')return {message_id:8765,chat:{id:42}};
+   throw Error('no invoice or other outbound method expected');
+ }});
+ const r=await flow.purchase(42,'reissue241124',1);
+ assert.equal(r.alreadyPurchased,true);
+ assert.equal(r.delivered,true);
+ assert.deepEqual(calls.map(c=>c.kind),['sendVideo','saved']);
+ assert.equal(calls[0].params.protect_content,false);
+ assert.equal(calls[0].params.video,'old_paid_full_file_id');
+});
+test('previously bought video with uncertain delivery never charges again',async()=>{
+ const d=deps(),calls=[];
+ d.store.claimLegacyDelivery=async()=>({
+   legacy:true,claimed:false,deliveryKey:'reissue241124:1'
+ });
+ const flow=createVideoInvoiceSalesFlow({store:d.store,api:async(method)=>calls.push(method)});
+ const r=await flow.purchase(42,'reissue241124',1);
+ assert.equal(r.alreadyPurchased,true);
+ assert.equal(r.deliveryState,'previous_delivery_recorded');
+ assert.equal(calls.length,0);
+});
+test('new buyer with no legacy purchase still receives an XTR invoice',async()=>{
+ const d=deps();
+ d.store.claimLegacyDelivery=async()=>({legacy:false});
+ const flow=createVideoInvoiceSalesFlow({store:d.store,api:d.api});
+ const r=await flow.purchase(42,'listing1',1);
+ assert.equal(r.invoiceSent,true);
+ assert.deepEqual(d.calls.map(c=>c.method),['sendInvoice']);
+});
