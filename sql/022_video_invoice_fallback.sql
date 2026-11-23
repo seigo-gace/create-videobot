@@ -8,6 +8,10 @@ ALTER TABLE videobot_post_receipts
   ADD CONSTRAINT videobot_post_receipts_sale_mode_check
   CHECK (sale_mode IN ('paid_media','invoice'));
 
+-- A receipt's paid_message_id stores the visible purchasable offer message.
+-- In invoice mode it is the sample video's message with inline button;
+-- native paid-media financial reconciliation must filter sale_mode.
+
 CREATE TABLE IF NOT EXISTS videobot_video_invoice_orders (
   order_id TEXT PRIMARY KEY CHECK (order_id ~ '^vi_[a-f0-9]{24}$'),
   delivery_key TEXT NOT NULL REFERENCES videobot_post_receipts(delivery_key) ON DELETE RESTRICT,
