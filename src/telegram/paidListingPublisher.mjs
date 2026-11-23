@@ -2,7 +2,7 @@ import { buildFreeAlbumRequest } from './freeAlbum.mjs';
 import {videoOfferLink} from './videoInvoiceSales.mjs';
 
 /**
- * VideoBot publishes ONE free spoiler album with the Stars invoice purchase button on its sample message.
+ * VideoBot publishes ONE free spoiler album followed by a Stars invoice purchase button.
  * GATE/Topic/feature-release truth and durable MPB-like delivery claims are
  * PROVIDED by their existing owners. This module must not self-certify them.
  *
@@ -125,28 +125,31 @@ export async function publishVideoListing({
     const sampleMessageId=preview?.[1];
     if(!Number.isSafeInteger(sampleMessageId)||sampleMessageId<=0)
       throw new Error('VIDEO_INVOICE_SAMPLE_RECEIPT_MISSING');
-    // sendMediaGroup cannot receive reply_markup on creation, but the bot
-    // can attach inline markup to its second album item after publication.
-    // No separate text/purchase message may be posted.
+    // Telegram sendMediaGroup does not support reply_markup. To ensure
+    // a purchase button actually exists, publish a distinct button message
+    // immediately below the album, explicitly replying to its sample.
     const identity=await telegramApi('getMe',{});
     if(identity?.is_bot!==true)
       throw new Error('VIDEO_INVOICE_BOT_IDENTITY_NOT_VERIFIED');
     const url=videoOfferLink(identity.username,listing.id,listing.revision);
     const buttonText='⭐ '+listing.priceStars+' Starsで本編を購入';
-    const edited=await telegramApi('editMessageReplyMarkup',{
-      chat_id:topic.chatId,message_id:sampleMessageId,
+    const purchaseMessage=await telegramApi('sendMessage',{
+      chat_id:topic.chatId,message_thread_id:topic.threadId,
+      reply_parameters:{message_id:sampleMessageId},
+      text:'⭐ 本編を購入すると、BotのDMで動画を受け取れます。',
       reply_markup:{inline_keyboard:[[{text:buttonText,url}]]}
     });
-    const actualButton=edited?.reply_markup?.inline_keyboard?.[0]?.[0];
-    if(edited?.message_id!==sampleMessageId ||
-       edited.chat?.id!==topic.chatId ||
-       !edited.media_group_id ||
+    const actualButton=purchaseMessage?.reply_markup?.inline_keyboard?.[0]?.[0];
+    if(!Number.isSafeInteger(purchaseMessage?.message_id) ||
+       purchaseMessage.message_id<=0 ||
+       purchaseMessage.chat?.id!==topic.chatId ||
+       (purchaseMessage.message_thread_id!=null &&
+        purchaseMessage.message_thread_id!==topic.threadId) ||
        actualButton?.text!==buttonText || actualButton?.url!==url)
-      throw new Error('VIDEO_INVOICE_ALBUM_BUTTON_ACK_UNKNOWN');
-    // The receipt points to the existing sample item, not a third message.
-    await store.recordPaid(key,sampleMessageId);
+      throw new Error('VIDEO_INVOICE_BUTTON_ACK_UNKNOWN');
+    await store.recordPaid(key,purchaseMessage.message_id);
     return {posted:true,alreadySent:false,saleMode:'invoice',
-      freeMessageIds:preview,paidMessageId:sampleMessageId};
+      freeMessageIds:preview,paidMessageId:purchaseMessage.message_id};
   } catch (error) {
     // Either call may have reached Telegram. Without readback this is unknown.
     await store.markUnknown(key);
