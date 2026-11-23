@@ -126,3 +126,43 @@ test('new buyer with no legacy purchase still receives an XTR invoice',async()=>
  assert.equal(r.invoiceSent,true);
  assert.deepEqual(d.calls.map(c=>c.method),['sendInvoice']);
 });
+
+test('historic buyer may explicitly reopen the existing offer for no-charge delivery recovery',async()=>{
+ const d=deps();
+ d.store.claimLegacyDelivery=async({buyerInitiated})=>({
+  legacy:true,claimed:buyerInitiated===true,deliveryKey:'v26nov24invoice:1',
+  fileId:'old_paid_full_file_id',title:'Previously purchased movie'
+ });
+ d.store.markLegacyDelivered=async()=>{};
+ d.store.markLegacyUnknown=async()=>{};
+ const flow=createVideoInvoiceSalesFlow({store:d.store,api:d.api});
+ const untouched=await flow.purchase(42,'v26nov24invoice',1);
+ assert.equal(untouched.deliveryState,'previous_delivery_recorded');
+ assert.equal(d.calls.length,0);
+ const reopened=await flow.handle({message:{chat:{type:'private',id:42},from:{id:42},
+   text:'/start vid_v26nov24invoice_r1'}});
+ assert.equal(reopened.alreadyPurchased,true);
+ assert.equal(reopened.delivered,true);
+ assert.deepEqual(d.calls.map(x=>x.method),['sendVideo']);
+ assert.equal(d.calls[0].params.protect_content,false);
+});
+test('existing invoice buyer can request a no-charge retry after uncertain send but never auto retries',async()=>{
+ const d=deps(),calls=[];
+ d.state.status='delivery_unknown';
+ d.store.allowBuyerDeliveryRetry=async({orderId,buyerId})=>{
+  assert.equal(orderId,d.state.orderId);assert.equal(buyerId,42);
+  d.state.status='paid';calls.push('retry_claimed');return true;
+ };
+ const flow=createVideoInvoiceSalesFlow({store:d.store,api:d.api});
+ const silent=await flow.purchase(42,'listing1',1);
+ assert.equal(silent.alreadyPurchased,true);
+ assert.equal(silent.deliveryState,'delivery_unknown');
+ assert.equal(d.calls.length,0);
+ const reopened=await flow.handle({message:{chat:{type:'private',id:42},from:{id:42},
+  text:'/start vid_listing1_r1'}});
+ assert.equal(reopened.alreadyPurchased,true);
+ assert.equal(reopened.delivered,true);
+ assert.deepEqual(calls,['retry_claimed']);
+ assert.deepEqual(d.calls.map(c=>c.method),['sendVideo']);
+ assert.equal(d.state.status,'delivered');
+});
