@@ -1,5 +1,6 @@
 import { buildFreeAlbumRequest } from './freeAlbum.mjs';
 import { buildPaidMediaRequest } from './paidMedia.mjs';
+import {videoOfferLink} from './videoInvoiceSales.mjs';
 
 /**
  * VideoBot owns the Stars-media-specific two-step transport.
@@ -125,12 +126,15 @@ export async function publishVideoListing({
       const sampleMessageId=preview?.[1];
       if(!Number.isSafeInteger(sampleMessageId)||sampleMessageId<=0)
         throw new Error('VIDEO_INVOICE_SAMPLE_RECEIPT_MISSING');
-      const callback='vid:buy:'+listing.id+':'+listing.revision;
-      if(Buffer.byteLength(callback,'utf8')>64)
-        throw new Error('VIDEO_INVOICE_CALLBACK_TOO_LONG');
+      // A group callback cannot open a first-time private chat with the Bot.
+      // Use the official Telegram Bot deep link; the buyer initiates their DM.
+      const identity=await telegramApi('getMe',{});
+      if(identity?.is_bot!==true)
+        throw new Error('VIDEO_INVOICE_BOT_IDENTITY_NOT_VERIFIED');
+      const url=videoOfferLink(identity.username,listing.id,listing.revision);
       const attached=await telegramApi('editMessageReplyMarkup',{
         chat_id:topic.chatId,message_id:sampleMessageId,
-        reply_markup:{inline_keyboard:[[{text:'⭐ '+listing.priceStars+'で購入',callback_data:callback}]]}
+        reply_markup:{inline_keyboard:[[{text:'⭐ '+listing.priceStars+'で購入',url}]]}
       });
       if(attached!==true && attached?.alreadyCurrent!==true &&
          attached?.message_id!==sampleMessageId)
