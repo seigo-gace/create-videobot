@@ -1,9 +1,8 @@
 import { buildFreeAlbumRequest } from './freeAlbum.mjs';
-import { buildPaidMediaRequest } from './paidMedia.mjs';
 import {videoOfferLink} from './videoInvoiceSales.mjs';
 
 /**
- * VideoBot owns the Stars-media-specific two-step transport.
+ * VideoBot publishes ONE free spoiler album followed by a Stars invoice purchase button.
  * GATE/Topic/feature-release truth and durable MPB-like delivery claims are
  * PROVIDED by their existing owners. This module must not self-certify them.
  *
@@ -15,7 +14,7 @@ export async function publishVideoListing({
   getVerifiedVideoTopic,
   store,
   telegramApi,
-  saleMode='paid_media'
+  saleMode='invoice'
 } = {}) {
   if (!listing || typeof listing.id !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(listing.id) ||
       typeof listing.sellerId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(listing.sellerId) ||
@@ -24,7 +23,8 @@ export async function publishVideoListing({
       !listing.thumbnail?.fileId || !listing.sample?.fileId || !listing.paidVideo?.fileId ||
       listing.rightsVerified !== true || listing.adultConsentVerified !== true ||
       listing.ownerConfirmedPublish !== true ||
-      listing.feeTermsAccepted !== true || listing.managementFeeBps !== 3000)
+      listing.feeTermsAccepted !== true || listing.managementFeeBps !== 3000 ||
+      !Number.isSafeInteger(listing.priceStars) || listing.priceStars < 1 || listing.priceStars > 25000)
       throw new Error('listing not ready for publication: seller fee agreement required');
   // The private preview preparation can fail or be bypassed by a stale draft.
   // Never publish the main file as a free sample or accept an overlong sample.
@@ -62,20 +62,20 @@ export async function publishVideoListing({
     failure.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
     throw failure;
   }
-  if(!['paid_media','invoice'].includes(saleMode))
-    throw new Error('VIDEO_SALE_MODE_UNVERIFIED');
+  // Master decision 2026-11-24: no newly issued native video Starlock.
+  // Historical paid-media receipts/purchase ledger are preserved elsewhere.
+  if(saleMode!=='invoice') {
+    const error=new Error('VIDEO_NATIVE_STARLOCK_PUBLICATION_DISABLED');
+    error.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
+    throw error;
+  }
   const base={chatId:topic.chatId,messageThreadId:topic.threadId};
-  // Public listing captions contain only the creator's title and optional description.
-  // Telegram's native paid-media UI owns the Stars price and purchase prompt.
+  // The album includes a spoiler thumbnail and a spoiler sample, never the full video.
   const caption=listing.title+(listing.description?'\n'+listing.description:'');
   if(caption.length>1024)throw new Error('video caption too long');
   const free=buildFreeAlbumRequest({ ...base, thumbnailFileId:listing.thumbnail.fileId,
-    sampleFileId:listing.sample.fileId });
+    sampleFileId:listing.sample.fileId,caption });
   const key=listing.id + ':' + listing.revision;
-  // Telegram's purchased_paid_media update identifies the sale by payload.
-  // No payload means no useful paid-media purchase notification.
-  const paid=saleMode==='paid_media'?buildPaidMediaRequest({ ...base,mediaFileId:listing.paidVideo.fileId,
-    priceStars:listing.priceStars,caption,payload:key }):null;
   // Reopening an already acknowledged publication is idempotent even if
   // historical duplicate versions exist. This branch causes no Telegram I/O.
   const ownReceipt=await store.read(key);
@@ -121,42 +121,35 @@ export async function publishVideoListing({
         throw new Error('free album acknowledgment invalid: media_group_id mismatch');
       await store.recordFree(key,preview.map(m=>m.message_id));
     }
-    if(saleMode==='invoice') {
-      const preview=(await store.read(key))?.freeMessageIds;
-      const sampleMessageId=preview?.[1];
-      if(!Number.isSafeInteger(sampleMessageId)||sampleMessageId<=0)
-        throw new Error('VIDEO_INVOICE_SAMPLE_RECEIPT_MISSING');
-      // A group callback cannot open a first-time private chat with the Bot.
-      // Use the official Telegram Bot deep link; the buyer initiates their DM.
-      const identity=await telegramApi('getMe',{});
-      if(identity?.is_bot!==true)
-        throw new Error('VIDEO_INVOICE_BOT_IDENTITY_NOT_VERIFIED');
-      const url=videoOfferLink(identity.username,listing.id,listing.revision);
-      const attached=await telegramApi('editMessageReplyMarkup',{
-        chat_id:topic.chatId,message_id:sampleMessageId,
-        reply_markup:{inline_keyboard:[[{text:'⭐ '+listing.priceStars+'で購入',url}]]}
-      });
-      if(attached!==true && attached?.alreadyCurrent!==true &&
-         attached?.message_id!==sampleMessageId)
-        throw new Error('VIDEO_INVOICE_BUTTON_ACK_UNKNOWN');
-      await store.recordPaid(key,sampleMessageId);
-      return {posted:true,alreadySent:false,saleMode:'invoice',
-        freeMessageIds:preview,paidMessageId:sampleMessageId};
-    }
-    const paidResult=await telegramApi('sendPaidMedia',paid);
-    if (!Number.isSafeInteger(paidResult?.message_id) || paidResult.message_id <= 0 ||
-        paidResult.chat?.id !== topic.chatId ||
-        (paidResult.message_thread_id != null && paidResult.message_thread_id !== topic.threadId) ||
-        !paidResult.paid_media ||
-        paidResult.paid_media.star_count !== listing.priceStars ||
-        !Array.isArray(paidResult.paid_media.paid_media) ||
-        paidResult.paid_media.paid_media.length !== 1)
-      throw new Error('paid media acknowledgment invalid: native Stars lock not confirmed');
-    await store.recordPaid(key,paidResult.message_id);
-    return {
-      posted:true,alreadySent:false,
-      freeMessageIds:(await store.read(key)).freeMessageIds,paidMessageId:paidResult.message_id,saleMode:'paid_media'
-    };
+    const preview=(await store.read(key))?.freeMessageIds;
+    const sampleMessageId=preview?.[1];
+    if(!Number.isSafeInteger(sampleMessageId)||sampleMessageId<=0)
+      throw new Error('VIDEO_INVOICE_SAMPLE_RECEIPT_MISSING');
+    // Telegram sendMediaGroup does not support reply_markup. To ensure
+    // a purchase button actually exists, publish a distinct button message
+    // immediately below the album, explicitly replying to its sample.
+    const identity=await telegramApi('getMe',{});
+    if(identity?.is_bot!==true)
+      throw new Error('VIDEO_INVOICE_BOT_IDENTITY_NOT_VERIFIED');
+    const url=videoOfferLink(identity.username,listing.id,listing.revision);
+    const buttonText='⭐ '+listing.priceStars+' Starsで本編を購入';
+    const purchaseMessage=await telegramApi('sendMessage',{
+      chat_id:topic.chatId,message_thread_id:topic.threadId,
+      reply_parameters:{message_id:sampleMessageId},
+      text:'⭐ 本編を購入すると、BotのDMで動画を受け取れます。',
+      reply_markup:{inline_keyboard:[[{text:buttonText,url}]]}
+    });
+    const actualButton=purchaseMessage?.reply_markup?.inline_keyboard?.[0]?.[0];
+    if(!Number.isSafeInteger(purchaseMessage?.message_id) ||
+       purchaseMessage.message_id<=0 ||
+       purchaseMessage.chat?.id!==topic.chatId ||
+       (purchaseMessage.message_thread_id!=null &&
+        purchaseMessage.message_thread_id!==topic.threadId) ||
+       actualButton?.text!==buttonText || actualButton?.url!==url)
+      throw new Error('VIDEO_INVOICE_BUTTON_ACK_UNKNOWN');
+    await store.recordPaid(key,purchaseMessage.message_id);
+    return {posted:true,alreadySent:false,saleMode:'invoice',
+      freeMessageIds:preview,paidMessageId:purchaseMessage.message_id};
   } catch (error) {
     // Either call may have reached Telegram. Without readback this is unknown.
     await store.markUnknown(key);
