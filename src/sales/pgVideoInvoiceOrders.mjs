@@ -17,6 +17,65 @@ function affected(r){return r?.rowCount===1;}
 export function createPostgresVideoInvoiceStore(pool){
  if(typeof pool?.query!=='function')throw Error('VIDEO_INVOICE_DB_REQUIRED');
  return {
+  async claimLegacyDelivery({buyerId,listingId,revision}){
+   if(!pos(buyerId)||typeof listingId!=='string'||!SKU.test(listingId)||!pos(revision))
+     throw Error('VIDEO_LEGACY_BUYER_INVALID');
+   // Compare the verified original purchaser, seller, and exact full video
+   // reference. This cannot authorize a different seller's product or sample.
+   const r=await pool.query(
+    `WITH eligible AS (
+       SELECT r.delivery_key,l.paid_video_file_id AS video_file_id,l.title,
+              p.telegram_transaction_id
+       FROM videobot_post_receipts r
+       JOIN videobot_listings l ON l.listing_id=r.listing_id
+       JOIN videobot_stars_ledger p ON p.buyer_user_id=$1 AND p.kind='paid'
+       JOIN videobot_listings old_l ON old_l.listing_id=p.listing_id
+         AND old_l.seller_user_id=l.seller_user_id
+         AND old_l.paid_video_file_id=l.paid_video_file_id
+       WHERE r.listing_id=$2 AND r.revision=$3 AND r.sale_mode='invoice'
+         AND r.status='sent' AND r.paid_message_id IS NOT NULL
+         AND l.status='published' AND l.rights_verified=TRUE
+         AND l.adult_consent_verified=TRUE AND l.fee_terms_accepted_at IS NOT NULL
+         AND l.paid_video_file_id IS NOT NULL
+       ORDER BY p.telegram_transaction_id LIMIT 1
+     ), claimed AS (
+       INSERT INTO videobot_video_legacy_deliveries
+         (delivery_key,buyer_user_id,original_telegram_transaction_id,
+          video_file_id,title,status)
+       SELECT delivery_key,$1,telegram_transaction_id,video_file_id,title,
+              'delivering' FROM eligible
+       ON CONFLICT (delivery_key,buyer_user_id) DO NOTHING
+       RETURNING delivery_key
+     )
+     SELECT e.delivery_key,e.video_file_id,e.title,
+            EXISTS(SELECT 1 FROM claimed) AS claimed
+     FROM eligible e`,
+    [buyerId,listingId,revision]);
+   const x=first(r);
+   if(!x)return {legacy:false};
+   return {legacy:true,claimed:x.claimed===true,
+     deliveryKey:x.delivery_key,fileId:x.video_file_id,title:x.title};
+  },
+  async markLegacyDelivered({deliveryKey,buyerId,messageId}){
+   if(typeof deliveryKey!=='string'||!pos(buyerId)||!pos(messageId))
+     throw Error('VIDEO_LEGACY_DELIVERY_INVALID');
+   const r=await pool.query(
+    `UPDATE videobot_video_legacy_deliveries
+     SET status='delivered',delivered_message_id=$3,updated_at=NOW()
+     WHERE delivery_key=$1 AND buyer_user_id=$2 AND status='delivering'
+     RETURNING delivery_key`,
+    [deliveryKey,buyerId,messageId]);
+   if(!affected(r))throw Error('VIDEO_LEGACY_DELIVERY_PERSIST_UNKNOWN');
+  },
+  async markLegacyUnknown({deliveryKey,buyerId}){
+   if(typeof deliveryKey!=='string'||!pos(buyerId))
+     throw Error('VIDEO_LEGACY_DELIVERY_INVALID');
+   await pool.query(
+    `UPDATE videobot_video_legacy_deliveries
+     SET status='delivery_unknown',updated_at=NOW()
+     WHERE delivery_key=$1 AND buyer_user_id=$2 AND status='delivering'`,
+    [deliveryKey,buyerId]);
+  },
   async reserve({buyerId,listingId,revision}){
    if(!pos(buyerId)||typeof listingId!=='string'||!SKU.test(listingId)||!pos(revision))
      throw Error('VIDEO_INVOICE_RESERVE_INVALID');
