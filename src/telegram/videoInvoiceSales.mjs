@@ -74,6 +74,14 @@ export function createVideoInvoiceSalesFlow({api,store}={}){
   }
 
   async function handle(update){
+    const cb=update?.callback_query;
+    if(typeof cb?.data==='string'&&cb.data.startsWith('vid:buy:')){
+      const m=/^vid:buy:([A-Za-z0-9_-]{1,40}):([1-9][0-9]*)$/.exec(cb.data);
+      if(!m||!Number.isSafeInteger(cb.from?.id)||cb.from.id<=0)throw Error('VIDEO_INVOICE_BUTTON_INVALID');
+      await api('answerCallbackQuery',{callback_query_id:cb.id,
+        text:'購入用の請求書をBotとのチャットへ送ります。'});
+      return purchase(cb.from.id,m[1],Number(m[2]));
+    }
     const q=update?.pre_checkout_query;
     if(q && typeof q.invoice_payload==='string' && q.invoice_payload.startsWith('vid:')){
       const id=q.invoice_payload.slice(4);
