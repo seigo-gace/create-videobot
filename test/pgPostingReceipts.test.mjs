@@ -82,7 +82,7 @@ test('invoice video offer uses the existing private receipt store without shared
       calls.push(method);
       if(method==='sendMediaGroup')return [{message_id:71,media_group_id:'album_db'},{message_id:72,media_group_id:'album_db'}];
       if(method==='getMe')return {is_bot:true,username:'CreateVdobot'};
-      if(method==='editMessageReplyMarkup')return {message_id:72,media_group_id:'album_db',chat:{id:-100333},
+      if(method==='sendMessage')return {message_id:73,chat:{id:-100333},
         message_thread_id:22,reply_markup:params.reply_markup};
       throw Error('unexpected Telegram method '+method);
     }
@@ -91,7 +91,7 @@ test('invoice video offer uses the existing private receipt store without shared
   const repeated=await publishVideoListing(dependencies);
   assert.equal(first.posted,true);
   assert.equal(repeated.alreadySent,true);
-  assert.deepEqual(calls,['sendMediaGroup','getMe','editMessageReplyMarkup']);
+  assert.deepEqual(calls,['sendMediaGroup','getMe','sendMessage']);
   assert.deepEqual((await store.read('list1:1')).freeMessageIds,[71,72]);
 });
 test('database adapter rejects invalid ids and refuses stale paid acknowledgment',async()=>{
