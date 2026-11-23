@@ -31,6 +31,9 @@ def live(name):
 
 p = "src/telegram/paidListingPublisher.mjs"
 s = live(p)
+s = once(s, "import { buildPaidMediaRequest } from './paidMedia.mjs';",
+    "import { buildPaidMediaRequest } from './paidMedia.mjs';\n"
+    "import {videoOfferLink} from './videoInvoiceSales.mjs';", "publish-deeplink-import")
 s = once(s, "  telegramApi\n} = {}) {",
     "  telegramApi,\n  saleMode='paid_media'\n} = {}) {", "publish-params")
 s = once(s, "  const base={chatId:topic.chatId,messageThreadId:topic.threadId};",
@@ -49,12 +52,14 @@ invoice_case = """    if(saleMode==='invoice') {
       const sampleMessageId=preview?.[1];
       if(!Number.isSafeInteger(sampleMessageId)||sampleMessageId<=0)
         throw new Error('VIDEO_INVOICE_SAMPLE_RECEIPT_MISSING');
-      const callback='vid:buy:'+listing.id+':'+listing.revision;
-      if(Buffer.byteLength(callback,'utf8')>64)
-        throw new Error('VIDEO_INVOICE_CALLBACK_TOO_LONG');
+      // A group callback cannot open a first-time private chat with the Bot.
+      const identity=await telegramApi('getMe',{});
+      if(identity?.is_bot!==true)
+        throw new Error('VIDEO_INVOICE_BOT_IDENTITY_NOT_VERIFIED');
+      const url=videoOfferLink(identity.username,listing.id,listing.revision);
       const attached=await telegramApi('editMessageReplyMarkup',{
         chat_id:topic.chatId,message_id:sampleMessageId,
-        reply_markup:{inline_keyboard:[[{text:'⭐ '+listing.priceStars+'で購入',callback_data:callback}]]}
+        reply_markup:{inline_keyboard:[[{text:'⭐ '+listing.priceStars+'で購入',url}]]}
       });
       if(attached!==true && attached?.alreadyCurrent!==true &&
          attached?.message_id!==sampleMessageId)
