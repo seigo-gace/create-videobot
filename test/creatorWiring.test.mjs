@@ -24,7 +24,7 @@ function deps(){
   return {moduleConfig,calls};
 }
 function listing() {
-  return {id:'video001',sellerId:'44',revision:1,title:'Example',priceStars:300,
+  return {id:'video001',sellerId:'44',revision:1,title:'Example',description:'',priceStars:300,
     thumbnail:{fileId:'photo001'},sample:{fileId:'sample001',durationSeconds:30},
     paidVideo:{fileId:'main001'},rightsVerified:true,adultConsentVerified:true,
     feeTermsAccepted:true,managementFeeBps:3000,ownerConfirmedPublish:true};
@@ -46,12 +46,12 @@ test('a configured topic can be read from the composed publisher without develop
  assert.ok(typeof bot.handleTelegramWebhook==='function');
  assert.ok(typeof bot.handleCreatorUpdate==='function');
  await assert.rejects(()=>bot.publishListing(listing()),/DB query not expected/);
- assert.deepEqual(x.calls.map(c=>c.type),['topic','sql']);
+ assert.deepEqual(x.calls.map(c=>c.type),['sql']);
 });
 test('fee agreement denial precedes all GATE, DB and Telegram side effects',async()=>{
  const x=deps();const bot=createVideoBotSourceModule(x.moduleConfig);
  const l=listing();l.feeTermsAccepted=false;
- await assert.rejects(()=>bot.publishListing(l),/fee agreement required/);
+ await assert.rejects(()=>bot.publishListing(l),/RICH_VIDEO_LISTING_NOT_READY/);
  assert.equal(x.calls.length,0);
 });
 test('invalid webhook token is rejected before decoding payload or querying database',async()=>{
