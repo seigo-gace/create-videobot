@@ -11,6 +11,11 @@ export function createCreatorBotUpdateHandler(options={}) {
   return async function handleCreatorBotUpdate(update) {
     // Invoice pre-checkout must be approved/rejected promptly.
     if(update?.pre_checkout_query){
+      if(typeof update.pre_checkout_query.invoice_payload==='string'&&
+         update.pre_checkout_query.invoice_payload.startsWith('vid:')){
+        if(typeof options.videoInvoiceHandler!=='function')throw Error('VIDEO_INVOICE_HANDLER_MISSING');
+        return options.videoInvoiceHandler(update);
+      }
       if(typeof options.stickerSalesPayments!=='function')
         throw Error('STICKER_SALE_PAYMENT_OWNER_MISSING');
       return options.stickerSalesPayments(update);
@@ -33,9 +38,18 @@ export function createCreatorBotUpdateHandler(options={}) {
     }
     const message=update?.message;
     if(message?.successful_payment){
+      if(typeof message.successful_payment.invoice_payload==='string'&&
+         message.successful_payment.invoice_payload.startsWith('vid:')){
+        if(typeof options.videoInvoiceHandler!=='function')throw Error('VIDEO_INVOICE_HANDLER_MISSING');
+        return options.videoInvoiceHandler(update);
+      }
       if(typeof options.stickerSalesPayments!=='function')
         throw Error('STICKER_SALE_PAYMENT_OWNER_MISSING');
       return options.stickerSalesPayments(update);
+    }
+    if(update?.callback_query?.data?.startsWith('vid:buy:')){
+      if(typeof options.videoInvoiceHandler!=='function')throw Error('VIDEO_INVOICE_HANDLER_MISSING');
+      return options.videoInvoiceHandler(update);
     }
     if (message && message.chat?.type !== 'private') return {handled:false};
     if (update?.callback_query && update.callback_query.message?.chat?.type !== 'private') return {handled:false};
@@ -50,6 +64,12 @@ export function createCreatorBotUpdateHandler(options={}) {
           .test(message.text.trim())&&typeof options.stickerSalesHandler==='function'){
         const sale=await options.stickerSalesHandler(update);
         if(sale?.handled)return sale;
+      }
+      // A purchased-video offer enters through a button deep link. Route it
+      // before generic sticker /start handling, which can absorb the update.
+      if(/^\/start(?:@[A-Za-z0-9_]+)?\s+vid_[A-Za-z0-9_-]{1,40}_r[1-9][0-9]*$/.test(message.text.trim())){
+        if(typeof options.videoInvoiceHandler!=='function')throw Error('VIDEO_INVOICE_HANDLER_MISSING');
+        return options.videoInvoiceHandler(update);
       }
       // The sticker wizard owns unresolved registrations even when a user
       // reopens the generic /start; it must run before the video home page.
@@ -67,6 +87,10 @@ export function createCreatorBotUpdateHandler(options={}) {
       const videoEdit=/^\/start(?:@[A-Za-z0-9_]+)?\s+ved_video_([A-Za-z0-9_-]{1,40})_r([1-9][0-9]*)$/
         .exec(message.text.trim());
       if(videoEdit)return wizard.openOwnedVideo(update,videoEdit[1],Number(videoEdit[2]));
+      if(typeof options.videoInvoiceHandler==='function'){
+        const invoice=await options.videoInvoiceHandler(update);
+        if(invoice?.handled)return invoice;
+      }
       // Existing video deep links enter the existing video menu directly.
       // Generic /start now uses the shared video/sticker selector.
       if(/^\/start(?:@[A-Za-z0-9_]+)?\s+video$/.test(message.text.trim()))

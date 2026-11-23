@@ -21,7 +21,8 @@ const FILES=Object.freeze([
  '018_poll_quarantine.sql',
  '019_creator_terms_version.sql',
  '020_owner_update_jobs.sql',
- '021_sticker_refunds.sql'
+ '021_sticker_refunds.sql',
+ '022_video_invoice_fallback.sql'
 ]);
 
 /** Apply the owned VideoBot schema atomically under a PostgreSQL advisory

@@ -1,5 +1,6 @@
 import { buildFreeAlbumRequest } from './freeAlbum.mjs';
 import { buildPaidMediaRequest } from './paidMedia.mjs';
+import {videoOfferLink} from './videoInvoiceSales.mjs';
 
 /**
  * VideoBot owns the Stars-media-specific two-step transport.
@@ -13,7 +14,8 @@ export async function publishVideoListing({
   listing,
   getVerifiedVideoTopic,
   store,
-  telegramApi
+  telegramApi,
+  saleMode='paid_media'
 } = {}) {
   if (!listing || typeof listing.id !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(listing.id) ||
       typeof listing.sellerId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(listing.sellerId) ||
@@ -60,6 +62,8 @@ export async function publishVideoListing({
     failure.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
     throw failure;
   }
+  if(!['paid_media','invoice'].includes(saleMode))
+    throw new Error('VIDEO_SALE_MODE_UNVERIFIED');
   const base={chatId:topic.chatId,messageThreadId:topic.threadId};
   // Public listing captions contain only the creator's title and optional description.
   // Telegram's native paid-media UI owns the Stars price and purchase prompt.
@@ -70,8 +74,8 @@ export async function publishVideoListing({
   const key=listing.id + ':' + listing.revision;
   // Telegram's purchased_paid_media update identifies the sale by payload.
   // No payload means no useful paid-media purchase notification.
-  const paid=buildPaidMediaRequest({ ...base,mediaFileId:listing.paidVideo.fileId,
-    priceStars:listing.priceStars,caption,payload:key });
+  const paid=saleMode==='paid_media'?buildPaidMediaRequest({ ...base,mediaFileId:listing.paidVideo.fileId,
+    priceStars:listing.priceStars,caption,payload:key }):null;
   // Reopening an already acknowledged publication is idempotent even if
   // historical duplicate versions exist. This branch causes no Telegram I/O.
   const ownReceipt=await store.read(key);
@@ -94,7 +98,7 @@ export async function publishVideoListing({
       throw error;
     }
   }
-  const claim=await store.claim({key,listingId:listing.id,revision:listing.revision,topicId:topic.id});
+  const claim=await store.claim({key,listingId:listing.id,revision:listing.revision,topicId:topic.id,saleMode});
   if (!claim || claim.claimed !== true) {
     const prior=await store.read(key);
     if (prior?.status === 'sent' && Number.isSafeInteger(prior.paidMessageId))
@@ -117,6 +121,28 @@ export async function publishVideoListing({
         throw new Error('free album acknowledgment invalid: media_group_id mismatch');
       await store.recordFree(key,preview.map(m=>m.message_id));
     }
+    if(saleMode==='invoice') {
+      const preview=(await store.read(key))?.freeMessageIds;
+      const sampleMessageId=preview?.[1];
+      if(!Number.isSafeInteger(sampleMessageId)||sampleMessageId<=0)
+        throw new Error('VIDEO_INVOICE_SAMPLE_RECEIPT_MISSING');
+      // A group callback cannot open a first-time private chat with the Bot.
+      // Use the official Telegram Bot deep link; the buyer initiates their DM.
+      const identity=await telegramApi('getMe',{});
+      if(identity?.is_bot!==true)
+        throw new Error('VIDEO_INVOICE_BOT_IDENTITY_NOT_VERIFIED');
+      const url=videoOfferLink(identity.username,listing.id,listing.revision);
+      const attached=await telegramApi('editMessageReplyMarkup',{
+        chat_id:topic.chatId,message_id:sampleMessageId,
+        reply_markup:{inline_keyboard:[[{text:'⭐ '+listing.priceStars+'で購入',url}]]}
+      });
+      if(attached!==true && attached?.alreadyCurrent!==true &&
+         attached?.message_id!==sampleMessageId)
+        throw new Error('VIDEO_INVOICE_BUTTON_ACK_UNKNOWN');
+      await store.recordPaid(key,sampleMessageId);
+      return {posted:true,alreadySent:false,saleMode:'invoice',
+        freeMessageIds:preview,paidMessageId:sampleMessageId};
+    }
     const paidResult=await telegramApi('sendPaidMedia',paid);
     if (!Number.isSafeInteger(paidResult?.message_id) || paidResult.message_id <= 0 ||
         paidResult.chat?.id !== topic.chatId ||
@@ -129,7 +155,7 @@ export async function publishVideoListing({
     await store.recordPaid(key,paidResult.message_id);
     return {
       posted:true,alreadySent:false,
-      freeMessageIds:(await store.read(key)).freeMessageIds,paidMessageId:paidResult.message_id
+      freeMessageIds:(await store.read(key)).freeMessageIds,paidMessageId:paidResult.message_id,saleMode:'paid_media'
     };
   } catch (error) {
     // Either call may have reached Telegram. Without readback this is unknown.

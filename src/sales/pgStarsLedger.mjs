@@ -31,7 +31,7 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
       if(typeof key!=='string'||!/^[A-Za-z0-9_-]{1,40}:[1-9][0-9]*$/.test(key))
         throw new Error('invalid Stars purchase product payload');
       const selected=await pool.query(
-        "SELECT r.listing_id,l.price_stars,l.seller_user_id,l.management_fee_bps,l.fee_policy_id,l.fee_terms_accepted_at FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id WHERE r.delivery_key=$1 AND r.status='sent' AND r.paid_message_id IS NOT NULL AND l.status IN ('published','paused')",
+        "SELECT r.listing_id,l.price_stars,l.seller_user_id,l.management_fee_bps,l.fee_policy_id,l.fee_terms_accepted_at FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id WHERE r.delivery_key=$1 AND r.status='sent' AND r.sale_mode='paid_media' AND r.paid_message_id IS NOT NULL AND l.status IN ('published','paused')",
         [key]
       );
       const result=validatedResult(selected);
@@ -45,7 +45,7 @@ export function createPostgresStarsLedger({pool,telegramApi}={}) {
       );
       const verified=await reconcilePaidMediaPurchase({purchase,telegramApi});
       const write=await pool.query(
-        "INSERT INTO videobot_stars_ledger (telegram_transaction_id,kind,delivery_key,listing_id,seller_user_id,buyer_user_id,stars,telegram_update_id,management_fee_bps,fee_policy_id) SELECT $2,'paid',r.delivery_key,r.listing_id,l.seller_user_id,$3,$4,$5,l.management_fee_bps,l.fee_policy_id FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id WHERE r.delivery_key=$1 AND r.status='sent' AND r.paid_message_id IS NOT NULL AND l.status IN ('published','paused') AND l.price_stars=$4 AND l.seller_user_id=$6 AND l.fee_terms_accepted_at IS NOT NULL AND l.management_fee_bps=3000 AND l.fee_policy_id='video-admin-30-20261107' ON CONFLICT (telegram_transaction_id,kind) DO NOTHING RETURNING ledger_id",
+        "INSERT INTO videobot_stars_ledger (telegram_transaction_id,kind,delivery_key,listing_id,seller_user_id,buyer_user_id,stars,telegram_update_id,management_fee_bps,fee_policy_id) SELECT $2,'paid',r.delivery_key,r.listing_id,l.seller_user_id,$3,$4,$5,l.management_fee_bps,l.fee_policy_id FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id WHERE r.delivery_key=$1 AND r.status='sent' AND r.sale_mode='paid_media' AND r.paid_message_id IS NOT NULL AND l.status IN ('published','paused') AND l.price_stars=$4 AND l.seller_user_id=$6 AND l.fee_terms_accepted_at IS NOT NULL AND l.management_fee_bps=3000 AND l.fee_policy_id='video-admin-30-20261107' ON CONFLICT (telegram_transaction_id,kind) DO NOTHING RETURNING ledger_id",
         [key,verified.telegramTransactionId,verified.buyerId,verified.stars,
           purchase.updateId,listing.seller_user_id]
       );

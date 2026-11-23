@@ -164,3 +164,24 @@ test('text-linked field edit works only after video registration and for current
  assert.equal(states.get(33).draft.title,'変更後タイトル');
  assert.equal(states.get(33).revision,6);
 });
+
+test('invoice offer button enters purchase before sticker start handler, without typed buyer commands',async()=>{
+ let stickerCalls=0,invoiceCalls=0;
+ const handler=createCreatorBotUpdateHandler({
+  api:async()=>true,
+  sessionStore:{read:async()=>null,write:async()=>null,setScreen:async()=>null},
+  screenTransport:{show:async()=>({messageId:3})},
+  listingStore:{listByOwner:async()=>[],getOwned:async()=>null},
+  stickerHandler:async()=>{stickerCalls++;return {handled:true,source:'sticker-start'};},
+  videoInvoiceHandler:async(update)=>{
+   invoiceCalls++;
+   assert.equal(update.message.from.id,42);
+   return {handled:true,source:'video-invoice'};
+  }
+ });
+ const r=await handler({message:{chat:{id:42,type:'private'},from:{id:42},
+   text:'/start vid_sale001_r1',message_id:42}});
+ assert.deepEqual(r,{handled:true,source:'video-invoice'});
+ assert.equal(invoiceCalls,1);
+ assert.equal(stickerCalls,0);
+});
