@@ -107,7 +107,7 @@ export function createVideoInvoiceSalesFlow({api,store}={}){
       return {handled:true,paymentRecorded:true,duplicate:captured.duplicate,...sent};
     }
     if(m?.chat?.type==='private'&&typeof m.text==='string'){
-      const match=/^\\/start(?:@[A-Za-z0-9_]+)?\\s+vid_([A-Za-z0-9_-]{1,40})_r([1-9][0-9]*)$/.exec(m.text.trim());
+      const match=/^\/start(?:@[A-Za-z0-9_]+)?\s+vid_([A-Za-z0-9_-]{1,40})_r([1-9][0-9]*)$/.exec(m.text.trim());
       if(match)return purchase(m.from?.id,match[1],Number(match[2]));
     }
     return {handled:false};
