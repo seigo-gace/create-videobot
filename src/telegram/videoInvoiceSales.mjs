@@ -23,13 +23,13 @@ export function createVideoInvoiceSalesFlow({api,store}={}){
      'capturePayment','claimDelivery','markDelivered','markDeliveryUnknown']
     .some(k=>typeof store[k]!=='function'))throw Error('VIDEO_INVOICE_PORTS_MISSING');
 
-  async function purchase(userId,listingId,revision){
+  async function purchase(userId,listingId,revision,{buyerInitiated=false}={}){
     if(!Number.isSafeInteger(userId)||userId<=0||!SKU.test(listingId)||
        !Number.isSafeInteger(revision)||revision<1)throw Error('VIDEO_INVOICE_BUYER_INVALID');
     // First check historic native Stars entitlements for the same seller and
     // exact paid video. A verified prior buyer must never see a new invoice.
     if(typeof store.claimLegacyDelivery==='function'){
-      const legacy=await store.claimLegacyDelivery({buyerId:userId,listingId,revision});
+      const legacy=await store.claimLegacyDelivery({buyerId:userId,listingId,revision,buyerInitiated});
       if(legacy?.legacy===true){
         if(legacy.claimed!==true)return {handled:true,alreadyPurchased:true,
           deliveryState:'previous_delivery_recorded'};
@@ -53,8 +53,19 @@ export function createVideoInvoiceSalesFlow({api,store}={}){
     }
     const order=await store.reserve({buyerId:userId,listingId,revision});
     if(order?.status==='paid'||order?.status==='delivered'||order?.status==='delivering'||order?.status==='delivery_unknown'){
-      if(order.status==='paid')await deliver(order.orderId,userId);
-      return {handled:true,alreadyPurchased:true};
+      if(order.status==='paid'){
+        const sent=await deliver(order.orderId,userId);
+        return {...sent,alreadyPurchased:true};
+      }
+      if(order.status==='delivery_unknown' && buyerInitiated===true &&
+         typeof store.allowBuyerDeliveryRetry==='function'){
+        const resumed=await store.allowBuyerDeliveryRetry({orderId:order.orderId,buyerId:userId});
+        if(resumed===true){
+          const sent=await deliver(order.orderId,userId);
+          return {...sent,alreadyPurchased:true};
+        }
+      }
+      return {handled:true,alreadyPurchased:true,deliveryState:order.status};
     }
     if(order?.status!=='prepared')return {handled:true,invoiceState:order?.status??'unknown'};
     const started=await store.markSending({orderId:order.orderId,buyerId:userId});
@@ -105,7 +116,7 @@ export function createVideoInvoiceSalesFlow({api,store}={}){
       if(!m||!Number.isSafeInteger(cb.from?.id)||cb.from.id<=0)throw Error('VIDEO_INVOICE_BUTTON_INVALID');
       await api('answerCallbackQuery',{callback_query_id:cb.id,
         text:'購入用の請求書をBotとのチャットへ送ります。'});
-      return purchase(cb.from.id,m[1],Number(m[2]));
+      return purchase(cb.from.id,m[1],Number(m[2]),{buyerInitiated:cb.message?.chat?.type==='private'});
     }
     const q=update?.pre_checkout_query;
     if(q && typeof q.invoice_payload==='string' && q.invoice_payload.startsWith('vid:')){
@@ -133,7 +144,7 @@ export function createVideoInvoiceSalesFlow({api,store}={}){
     }
     if(m?.chat?.type==='private'&&typeof m.text==='string'){
       const match=/^\/start(?:@[A-Za-z0-9_]+)?\s+vid_([A-Za-z0-9_-]{1,40})_r([1-9][0-9]*)$/.exec(m.text.trim());
-      if(match)return purchase(m.from?.id,match[1],Number(match[2]));
+      if(match)return purchase(m.from?.id,match[1],Number(match[2]),{buyerInitiated:true});
     }
     return {handled:false};
   }
