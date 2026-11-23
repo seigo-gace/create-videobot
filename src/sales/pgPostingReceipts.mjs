@@ -20,15 +20,16 @@ function requireOne(result,reason) {
 export function createPostgresPostingReceiptStore(pool) {
   if(typeof pool?.query!=='function')throw new Error('private SQL pool required');
   return {
-    async claim({key,listingId,revision,topicId}) {
+    async claim({key,listingId,revision,topicId,saleMode='paid_media'}) {
       validKey(key);
       if(typeof listingId!=='string'||!ID.test(listingId)||
          key!==listingId+':'+revision)throw new Error('invalid listing/revision');
       positiveInt(revision,'revision');
       positiveInt(topicId,'verified topic id');
+      if(!['paid_media','invoice'].includes(saleMode))throw Error('invalid video sale mode');
       const r=await pool.query(
-        "INSERT INTO videobot_post_receipts (delivery_key,listing_id,revision,topic_id,status) VALUES ($1,$2,$3,$4,'sending') ON CONFLICT (delivery_key) DO NOTHING RETURNING delivery_key",
-        [key,listingId,revision,topicId]
+        "INSERT INTO videobot_post_receipts (delivery_key,listing_id,revision,topic_id,sale_mode,status) VALUES ($1,$2,$3,$4,$5,'sending') ON CONFLICT (delivery_key) DO NOTHING RETURNING delivery_key",
+        [key,listingId,revision,topicId,saleMode]
       );
       return {claimed:r.rowCount===1};
     },
