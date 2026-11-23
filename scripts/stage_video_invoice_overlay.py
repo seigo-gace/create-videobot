@@ -85,7 +85,7 @@ if not match or len(re.findall(r"getVerifiedVideoTopic:gateOwner\.getVerifiedVid
 s = s[:match.start()] + (
     "getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic,\n"
     "    // Existing unverified Starlock posts require invoice until unpaid-viewer proof.\n"
-    "    saleMode:process.env.VIDEO_SALE_MODE==='paid_media'?'paid_media':'invoice'"
+    "    saleMode:process.env.VIDEO_SALE_MODE==='paid_media'?'paid_media':'invoice',"
 ) + s[match.end():]
 s = once(s, "    stickerSalesPayments:stickerSales.payments,",
     "    stickerSalesPayments:stickerSales.payments,\n"
