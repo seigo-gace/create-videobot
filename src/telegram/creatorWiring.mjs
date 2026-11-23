@@ -116,8 +116,9 @@ export function createVideoBotSourceModule({
   const publishListing=listing=>publishVideoListing({
     listing,store:receiptStore,telegramApi,
     getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic,
-    // Stay with invoice until native Stars locking is confirmed on an unpaid account.
-    saleMode:process.env.VIDEO_SALE_MODE==='paid_media'?'paid_media':'invoice'
+    // Master final decision: all newly published videos use invoice + DM delivery.
+    // Historical paid-media receipts remain readable for existing purchasers.
+    saleMode:'invoice'
   });
   const stickerPublisher=async({owner,draft,onUploaded,onBeforeMutation})=>{
     if(!Number.isSafeInteger(owner)||owner<=0||!draft?.fileId||!draft?.title)
