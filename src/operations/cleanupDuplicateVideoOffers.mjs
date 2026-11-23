@@ -63,7 +63,7 @@ export async function cleanupDuplicateVideoOffers({pool,api,auditFile,auditWrite
        message_id:id,protected_delivery_key:keep.delivery_key})+'\n',{mode:0o600});
      const done=await api('deleteMessage',{chat_id:chatId,message_id:id});
      if(done!==true)throw Error('VIDEO_CLEANUP_ACK_UNKNOWN');
-     appendFileSync(auditFile,JSON.stringify({
+     auditWrite(auditFile,JSON.stringify({
        at:new Date().toISOString(),action:'delete_ack',delivery_key:r.delivery_key,
        message_id:id,protected_delivery_key:keep.delivery_key})+'\n',{mode:0o600});
      deleted++;
