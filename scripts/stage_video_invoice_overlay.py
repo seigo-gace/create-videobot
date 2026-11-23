@@ -106,7 +106,12 @@ write(p, s)
 
 p = "src/runtime/creatorPollingMain.mjs"
 s = live(p)
-s = once(s, "schema.migrations!==21", "schema.migrations!==22", "poller-migration-count")
+migration_source = live("src/runtime/creatorMigrate.mjs")
+prior_count = len(re.findall(r"(?m)^\s*'\d{3}_[^']+\.sql'", migration_source))
+guard = re.search(r"schema\.migrations\s*!==\s*([0-9]+)", s)
+if not guard or prior_count < 1 or int(guard.group(1)) != prior_count:
+    raise RuntimeError("overlay anchor poller-migration-count is not consistent with live schema")
+s = s[:guard.start(1)] + str(prior_count + 1) + s[guard.end(1):]
 write(p, s)
 
 for name in (
