@@ -60,7 +60,7 @@ export function createVideoInvoiceSalesFlow({api,store}={}){
     if(!claim)return {handled:true,deliveryPending:true};
     try{
       const sent=await api('sendVideo',{
-        chat_id:buyerId,video:claim.fileId,protect_content:true,
+        chat_id:buyerId,video:claim.fileId,protect_content:false,
         caption:claim.title
       });
       if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0||
