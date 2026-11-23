@@ -116,7 +116,8 @@ export function createVideoBotSourceModule({
   const publishListing=listing=>publishVideoListing({
     listing,store:receiptStore,telegramApi,
     getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic,
-    saleMode:process.env.VIDEO_SALE_MODE==='invoice'?'invoice':'paid_media'
+    // Stay with invoice until native Stars locking is confirmed on an unpaid account.
+    saleMode:process.env.VIDEO_SALE_MODE==='paid_media'?'paid_media':'invoice'
   });
   const stickerPublisher=async({owner,draft,onUploaded,onBeforeMutation})=>{
     if(!Number.isSafeInteger(owner)||owner<=0||!draft?.fileId||!draft?.title)
