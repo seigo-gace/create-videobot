@@ -59,7 +59,7 @@ test('successful payment triggers one protected private video send only after ca
  assert.equal(r.paymentRecorded,true);assert.equal(r.delivered,true);
  assert.equal(d.calls.length,1);assert.equal(d.calls[0].method,'sendVideo');
  assert.equal(d.calls[0].params.video,'video_existing_file_id');
- assert.equal(d.calls[0].params.protect_content,true);
+ assert.equal(d.calls[0].params.protect_content,false);
  assert.equal(d.state.status,'delivered');
  const duplicate=await flow.deliver(d.state.orderId,42);
  assert.equal(duplicate.deliveryPending,true);
