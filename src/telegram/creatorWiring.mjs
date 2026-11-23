@@ -4,6 +4,8 @@ import {publishVideoListing} from './paidListingPublisher.mjs';
 import {createPostgresCreatorSessionStore} from '../sales/pgCreatorSessions.mjs';
 import {createPostgresListingStore} from '../sales/pgListings.mjs';
 import {createPostgresPostingReceiptStore} from '../sales/pgPostingReceipts.mjs';
+import {createPostgresVideoInvoiceStore} from '../sales/pgVideoInvoiceOrders.mjs';
+import {createVideoInvoiceSalesFlow} from './videoInvoiceSales.mjs';
 import {createPostgresStarsLedger} from '../sales/pgStarsLedger.mjs';
 import {createPostgresUnifiedStarsSales} from '../sales/pgUnifiedStarsSales.mjs';
 import {createPostgresCreatorRefundReconciler} from '../sales/pgCreatorRefundReconciler.mjs';
@@ -63,6 +65,8 @@ export function createVideoBotSourceModule({
   const sessionStore=createPostgresCreatorSessionStore(pool);
   const listingStore=createPostgresListingStore(pool);
   const receiptStore=createPostgresPostingReceiptStore(pool);
+  const videoInvoiceStore=createPostgresVideoInvoiceStore(pool);
+  const videoInvoiceSales=createVideoInvoiceSalesFlow({api:telegramApi,store:videoInvoiceStore});
   const updateStore=createPostgresWebhookUpdateStore(pool);
   const starsLedger=createPostgresStarsLedger({pool,telegramApi});
   const unifiedStarsSales=createPostgresUnifiedStarsSales({pool});
@@ -111,7 +115,8 @@ export function createVideoBotSourceModule({
   });
   const publishListing=listing=>publishVideoListing({
     listing,store:receiptStore,telegramApi,
-    getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic
+    getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic,
+    saleMode:process.env.VIDEO_SALE_MODE==='invoice'?'invoice':'paid_media'
   });
   const stickerPublisher=async({owner,draft,onUploaded,onBeforeMutation})=>{
     if(!Number.isSafeInteger(owner)||owner<=0||!draft?.fileId||!draft?.title)
@@ -346,6 +351,7 @@ export function createVideoBotSourceModule({
     stickerHandler:stickerWizard.handle,
     stickerSalesHandler:stickerSales.handle,
     stickerSalesPayments:stickerSales.payments,
+    videoInvoiceHandler:videoInvoiceSales.handle,
     stickerPaidPhotoPurchase:stickerSales.paidMediaPurchase
   });
   const handleTelegramWebhook=createCreatorWebhookAdmission({
@@ -354,7 +360,7 @@ export function createVideoBotSourceModule({
   return Object.freeze({
     handleTelegramWebhook,
     // Named components for deterministic Source/isolated DB verification.
-    listingStore,sessionStore,receiptStore,starsLedger,unifiedStarsSales,creatorRefundReconciler,updateStore,
+    listingStore,sessionStore,receiptStore,videoInvoiceStore,videoInvoiceSales,starsLedger,unifiedStarsSales,creatorRefundReconciler,updateStore,
     stickerInventory,stickerSalesStore,stickerPaidPhoto,stickerGifts,stickerTopicPosts,stickerWizard,ensureStickerEntryPin,publishListing,handleCreatorUpdate
   });
 }
