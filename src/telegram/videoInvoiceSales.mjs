@@ -26,6 +26,31 @@ export function createVideoInvoiceSalesFlow({api,store}={}){
   async function purchase(userId,listingId,revision){
     if(!Number.isSafeInteger(userId)||userId<=0||!SKU.test(listingId)||
        !Number.isSafeInteger(revision)||revision<1)throw Error('VIDEO_INVOICE_BUYER_INVALID');
+    // First check historic native Stars entitlements for the same seller and
+    // exact paid video. A verified prior buyer must never see a new invoice.
+    if(typeof store.claimLegacyDelivery==='function'){
+      const legacy=await store.claimLegacyDelivery({buyerId:userId,listingId,revision});
+      if(legacy?.legacy===true){
+        if(legacy.claimed!==true)return {handled:true,alreadyPurchased:true,
+          deliveryState:'previous_delivery_recorded'};
+        try{
+          const sent=await api('sendVideo',{
+            chat_id:userId,video:legacy.fileId,caption:legacy.title,
+            protect_content:false
+          });
+          if(!Number.isSafeInteger(sent?.message_id)||sent.message_id<=0||
+             sent.chat?.id!==userId)
+            throw Error('VIDEO_LEGACY_DELIVERY_ACK_UNKNOWN');
+          await store.markLegacyDelivered({
+            deliveryKey:legacy.deliveryKey,buyerId:userId,messageId:sent.message_id
+          });
+          return {handled:true,alreadyPurchased:true,delivered:true};
+        }catch{
+          await store.markLegacyUnknown({deliveryKey:legacy.deliveryKey,buyerId:userId});
+          return {handled:true,alreadyPurchased:true,deliveryUnknown:true};
+        }
+      }
+    }
     const order=await store.reserve({buyerId:userId,listingId,revision});
     if(order?.status==='paid'||order?.status==='delivered'||order?.status==='delivering'||order?.status==='delivery_unknown'){
       if(order.status==='paid')await deliver(order.orderId,userId);
