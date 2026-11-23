@@ -6,7 +6,7 @@ import {appendFileSync} from 'node:fs';
  * no invoice buyers, under the Telegram deletion age limit, no survivor IDs.
  * Does not change any purchase, ledger or receipt.
  */
-export async function cleanupDuplicateVideoOffers({pool,api,auditFile,chatId=-1002373696859,now=Date.now()}){
+export async function cleanupDuplicateVideoOffers({pool,api,auditFile,auditWrite=appendFileSync,chatId=-1002373696859,now=Date.now()}){
  if(typeof pool?.query!=='function'||typeof api!=='function'||
     typeof auditFile!=='string'||!auditFile.startsWith('/var/lib/videobot/media-work/'))
    throw Error('VIDEO_CLEANUP_DEPENDENCIES');
@@ -58,7 +58,7 @@ export async function cleanupDuplicateVideoOffers({pool,api,auditFile,chatId=-10
    for(const id of allIds(r)){
      // Record intention BEFORE irreversible network I/O. Unknown replies remain
      // visible in the on-disk audit; no automatic retries or ambiguous success.
-     appendFileSync(auditFile,JSON.stringify({
+     auditWrite(auditFile,JSON.stringify({
        at:new Date().toISOString(),action:'delete_intent',delivery_key:r.delivery_key,
        message_id:id,protected_delivery_key:keep.delivery_key})+'\n',{mode:0o600});
      const done=await api('deleteMessage',{chat_id:chatId,message_id:id});
