@@ -76,13 +76,30 @@ export function createPostgresVideoInvoiceStore(pool){
        !payment.telegram_payment_charge_id.length)
      throw Error('VIDEO_INVOICE_PAYMENT_INVALID');
    const charge=payment.telegram_payment_charge_id;
+   // Charge acknowledgement and 70/30 sale ledger are one SQL statement:
+   // a ledger error rolls back the order state instead of losing revenue.
    const written=await pool.query(
-    `UPDATE videobot_video_invoice_orders
-     SET status='paid',telegram_payment_charge_id=$3,telegram_update_id=$4,updated_at=NOW()
-     WHERE order_id=$1 AND buyer_user_id=$2 AND price_stars=$5
-       AND status IN ('sent','invoice_unknown')
-       AND telegram_payment_charge_id IS NULL
-     RETURNING order_id`,
+    `WITH paid AS (
+       UPDATE videobot_video_invoice_orders
+         SET status='paid',telegram_payment_charge_id=$3,
+             telegram_update_id=$4,updated_at=NOW()
+       WHERE order_id=$1 AND buyer_user_id=$2 AND price_stars=$5
+         AND status IN ('sent','invoice_unknown')
+         AND telegram_payment_charge_id IS NULL
+       RETURNING *
+     ), credited AS (
+       INSERT INTO videobot_stars_ledger
+         (telegram_transaction_id,kind,delivery_key,listing_id,seller_user_id,
+          buyer_user_id,stars,telegram_update_id,management_fee_bps,fee_policy_id)
+       SELECT p.telegram_payment_charge_id,'paid',p.delivery_key,p.listing_id,
+              p.seller_user_id,p.buyer_user_id,p.price_stars,p.telegram_update_id,
+              l.management_fee_bps,l.fee_policy_id
+         FROM paid p JOIN videobot_listings l ON l.listing_id=p.listing_id
+        WHERE l.fee_terms_accepted_at IS NOT NULL AND l.management_fee_bps=3000
+          AND l.fee_policy_id='video-admin-30-20261107'
+       RETURNING ledger_id
+     )
+     SELECT p.order_id FROM paid p WHERE (SELECT COUNT(*) FROM credited)=1`,
     [orderId,buyerId,charge,updateId,payment.total_amount]);
    if(affected(written))return {duplicate:false,orderId};
    const r=await pool.query(
