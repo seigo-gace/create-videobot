@@ -107,7 +107,7 @@ export async function createCreatorPollingRuntime({
   if(env.VIDEOBOT_SCHEMA_MIGRATE!=='YES')
    throw Error('CREATOR_POLL_SCHEMA_OWNER_CONSENT_MISSING');
   const schema=await applySchema({pool});
-  if(schema.migrations!==21)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
+  if(schema.migrations!==22)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
   const ownerQueue=env.VIDEOBOT_OWNER_JOBS==='YES'?createPostgresOwnerUpdateQueue(pool):null;
   if(ownerQueue)await ownerQueue.recover();
   const pollAdmissionSecret=randomBytes(32).toString('hex');
