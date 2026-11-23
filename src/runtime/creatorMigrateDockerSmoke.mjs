@@ -23,7 +23,7 @@ try {
    throw new Error('Docker-installed schema not readable');
  // A second real transaction must be idempotent on a migrated database.
  const repeat=await applyCreatorSchema({pool});
- if(repeat.applied!==true||repeat.migrations!==22)throw new Error('schema re-application invalid');
+ if(repeat.applied!==true||repeat.migrations!==23)throw new Error('schema re-application invalid');
  // Verify the durable owner-ordered inbox against REAL PostgreSQL.
  const queue=createPostgresOwnerUpdateQueue(pool);
  const updates=[
