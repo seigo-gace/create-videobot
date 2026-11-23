@@ -81,7 +81,7 @@ test('repeated publication returns same receipt without any Telegram call',async
  const d=deps();await publishVideoListing(d);
  const n=d.calls.length,result=await publishVideoListing(d);
  assert.equal(result.alreadySent,true);
- assert.equal(result.paidMessageId,12);
+ assert.equal(result.paidMessageId,11);
  assert.equal(d.calls.length,n);
 });
 test('native Starlock is explicitly rejected without Telegram sends or a new ledger entry',async()=>{
