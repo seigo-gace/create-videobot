@@ -6,7 +6,7 @@ export function buildPaidMediaRequest({chatId,mediaFileId,priceStars,caption='',
  if(typeof caption!=='string'||caption.length>1024) throw new Error('invalid caption');
  if(messageThreadId !== undefined && (!Number.isSafeInteger(messageThreadId)||messageThreadId<=0)) throw new Error('invalid topic');
  if(payload!==undefined && (typeof payload!=='string'||!payload.trim()||Buffer.byteLength(payload,'utf8')>128||!/^[A-Za-z0-9_-]{1,40}:[1-9][0-9]*$/.test(payload))) throw new Error('invalid paid media payload');
- return {chat_id:chatId,...(messageThreadId?{message_thread_id:messageThreadId}:{}),star_count:priceStars,protect_content:true,media:[{type:'video',media:mediaFileId}],...(caption?{caption}:{}),...(payload?{payload}:{})};
+ return {chat_id:chatId,...(messageThreadId?{message_thread_id:messageThreadId}:{}),star_count:priceStars,media:[{type:'video',media:mediaFileId}],...(caption?{caption}:{}),...(payload?{payload}:{})};
 }
 export async function sendPaidVideo({telegramApi,gateVerified,approved,params}) {
  if(gateVerified!==true||approved!==true) throw new Error('GATE verification and approval required');
