@@ -69,3 +69,12 @@ test('one failed Telegram delete is recorded without faking success',async()=>{
  assert.equal(d.audit.length,1);
  assert.equal(d.audit[0].action,'delete_intent');
 });
+
+test('shared free album IDs among unpaid receipts are deleted once, not twice',async()=>{
+ const d=fixture();
+ d.rows[2].free_message_ids=[61,62];
+ const result=await cleanupDuplicateVideoOffers(d.options);
+ assert.deepEqual(result,{deleted:4,kept:3,duplicates:2});
+ assert.deepEqual(d.calls.filter(x=>x.method==='deleteMessage').map(x=>x.params.message_id),[60,61,62,70]);
+ assert.equal(d.audit.filter(x=>x.action==='delete_ack').length,4);
+});
