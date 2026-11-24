@@ -116,7 +116,7 @@ export function createVideoInvoiceSalesFlow({api,store}={}){
       if(!m||!Number.isSafeInteger(cb.from?.id)||cb.from.id<=0)throw Error('VIDEO_INVOICE_BUTTON_INVALID');
       await api('answerCallbackQuery',{callback_query_id:cb.id,
         text:'購入用の請求書をBotとのチャットへ送ります。'});
-      return purchase(cb.from.id,m[1],Number(m[2]),{buyerInitiated:cb.message?.chat?.type==='private'});
+      return purchase(cb.from.id,m[1],Number(m[2]),{buyerInitiated:true});
     }
     const q=update?.pre_checkout_query;
     if(q && typeof q.invoice_payload==='string' && q.invoice_payload.startsWith('vid:')){
