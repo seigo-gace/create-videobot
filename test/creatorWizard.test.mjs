@@ -848,3 +848,23 @@ test('unresolved prior sale cannot be silently cleared by pressing new post',asy
  assert.equal(x.states.get(33).draft.sample.fileId,'prepared_sample_001');
  assert.equal(x.states.get(33).screen,'editor');
  });
+
+test('incomplete preview reference set is reported as incomplete and original input is retained',async()=>{
+ const x=setup({mediaProcessorOverride:{async prepareMissingPreviews(){return {thumbnail:{fileId:'photo_auto_1'},sample:{fileId:'sample_auto_1',durationSeconds:30}};}}});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'synthetic_source_01'},caption:'Synthetic fixture'},9401);
+ const state=x.states.get(33);
+ assert.equal(state.draft.paidVideo.fileId,'synthetic_source_01');
+ assert.equal(state.draft.thumbnail.secondFileId,undefined);
+ assert.match(x.screens.at(-1).panel.text,/取得が完了していません/);
+ assert.equal(x.calls.some(c=>c.method==='sendMediaGroup'),false);
+ assert.equal(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===9401),false);
+});
+test('missing preview adapter output is not reported as completed',async()=>{
+ const x=setup({mediaProcessorOverride:{async prepareMissingPreviews(){return {};}}});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'synthetic_source_02'},caption:'Synthetic fixture'},9402);
+ assert.equal(x.states.get(33).draft.sample,null);
+ assert.match(x.screens.at(-1).panel.text,/取得が完了していません/);
+ assert.equal(x.calls.some(c=>c.method==='sendMediaGroup'),false);
+});

@@ -512,7 +512,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null,screen:'editor'},
             rev=>statusPanel(prepared,rev,warning));
         }
-        const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!prepared[k]);
+        const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!prepared[k]||(k==='thumbnail'&&!prepared.thumbnail.secondFileId));
         const note=missing.length ? warning : '本人が規約確認画面で［同意して登録する］を押すまでは公開されません。';
         return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null,screen:'review'},
           rev=>reviewPanel(prepared,rev,note));
@@ -635,7 +635,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         warning=safePreviewFailure(e);
       }
     }
-    if(prepared.thumbnail&&prepared.sample){
+    if(!prepared.thumbnail?.secondFileId||!prepared.sample){
+      if(!warning)warning='⚠️ サムネイル2枚とサンプル動画1本の取得が完了していません。元動画は保持しています。';
+      return {draft:prepared,warning,previewMessageId};
+    }
+    if(prepared.thumbnail?.secondFileId&&prepared.sample){
       // Only the owner receives this three-item preview. No paid-media
       // publication/charge is triggered until the final registration.
       try{
@@ -662,7 +666,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const {ownerId,messageId}=privateUser(update);
     const old=await sessionStore.read(ownerId);
     if(!old?.draft)return {handled:false};
-    if(!old.waiting && !old.draft.paidVideo && (update.message.video?.file_id || update.message.document?.file_id)){
+    if(old.screen==='await_video' && !old.waiting && !old.draft.paidVideo && (update.message.video?.file_id || update.message.document?.file_id)){
       // Incoming captioned video on the new-listing screen, without extra title step.
       old.waiting='paidVideo';
     }
@@ -739,7 +743,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       waiting:error?old.waiting:firstVideo?'description':null,
       screen:nextScreen,
       ...(nextScreen==='editor'&&old.waiting==='description'?{descriptionEntered:true}:{})};
-    const note=(error?'⚠️ '+error:firstVideo?'': '✅ 反映しました。')+
+    const note=(error?'⚠️ '+error:firstVideo||previewWarning?'': '✅ 反映しました。')+
       (previewWarning?'\n'+previewWarning:'')+
       (inputDeleteFailed?'\n入力メッセージを自動削除できませんでした。手動で削除してください。':'');
     return persistAndRender(ownerId,old,next,
