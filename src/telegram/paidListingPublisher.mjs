@@ -126,8 +126,9 @@ export async function publishVideoListing({
     if(!Number.isSafeInteger(sampleMessageId)||sampleMessageId<=0)
       throw new Error('VIDEO_INVOICE_SAMPLE_RECEIPT_MISSING');
     // Telegram sendMediaGroup does not support reply_markup. To ensure
-    // a purchase button actually exists, publish a distinct button message
-    // immediately below the album, explicitly replying to its sample.
+    // a purchase button actually exists, publish a distinct button message.
+    // Never reply to a preview that can later be removed or replaced:
+    // the reply reference cannot be cleared by editing this message.
     const identity=await telegramApi('getMe',{});
     if(identity?.is_bot!==true)
       throw new Error('VIDEO_INVOICE_BOT_IDENTITY_NOT_VERIFIED');
@@ -135,7 +136,6 @@ export async function publishVideoListing({
     const buttonText='⭐ '+listing.priceStars+' Starsで本編を購入';
     const purchaseMessage=await telegramApi('sendMessage',{
       chat_id:topic.chatId,message_thread_id:topic.threadId,
-      reply_parameters:{message_id:sampleMessageId},
       text:'⭐ 本編を購入すると、BotのDMで動画を受け取れます。',
       reply_markup:{inline_keyboard:[[{text:buttonText,url}]]}
     });
