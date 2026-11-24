@@ -1,5 +1,3 @@
-import {videoOfferLink} from './videoInvoiceSales.mjs';
-
 /** Single Telegram RichMessage containing one photo+video collage and one
  * Stars invoice purchase keyboard. Never sends the paid full video publicly.
  * Legacy records remain intact, including original purchaser entitlements.
@@ -57,9 +55,10 @@ export async function publishRichVideoListing({
    reject('RICH_VIDEO_TOPIC_NOT_VERIFIED');
  if(legacy.length && legacy[0].topicId!==topic.id)
    reject('RICH_VIDEO_LEGACY_TOPIC_MISMATCH');
- const me=await telegramApi('getMe',{});
- if(me?.is_bot!==true)reject('RICH_VIDEO_BOT_IDENTITY_NOT_VERIFIED');
- const url=videoOfferLink(me.username,listing.id,listing.revision);
+ // Same-message inline callback starts the Stars invoice directly.
+ // There is no Bot DM deep-link and no second purchase button to tap.
+ const action='vid:buy:'+listing.id+':'+listing.revision;
+ if(Buffer.byteLength(action,'utf8')>64)reject('RICH_VIDEO_CALLBACK_TOO_LONG');
  const label='⭐ '+listing.priceStars+' Starsで本編を購入';
  const request={
   chat_id:topic.chatId,message_thread_id:topic.threadId,
@@ -67,10 +66,9 @@ export async function publishRichVideoListing({
    {type:'collage',blocks:[
     {type:'photo',photo:{type:'photo',media:listing.thumbnail.fileId,has_spoiler:true}},
     {type:'video',video:{type:'video',media:listing.sample.fileId,has_spoiler:true}}
-   ]},
-   {type:'paragraph',text}
+   ],caption:{text}}
   ]},
-  reply_markup:{inline_keyboard:[[{text:label,url}]]}
+  reply_markup:{inline_keyboard:[[{text:label,callback_data:action}]]}
  };
  // A durable claim precedes the one and only public posting request.
  const claimed=await store.claim({key,listingId:listing.id,revision:listing.revision,topicId:topic.id});
@@ -86,7 +84,8 @@ export async function publishRichVideoListing({
      (sent.message_thread_id!=null&&sent.message_thread_id!==topic.threadId)||
      sent.media_group_id!=null||
      !Array.isArray(types)||!types.includes('photo')||!types.includes('video')||
-     button?.text!==label||button?.url!==url)
+     collage?.caption?.text!==text||
+     button?.text!==label||button?.callback_data!==action)
    throw Error('RICH_VIDEO_TELEGRAM_ACK_UNKNOWN');
   await store.recordSent(key,sent.message_id);
   return {posted:true,alreadySent:false,richMessageId:sent.message_id,saleMode:'invoice'};
