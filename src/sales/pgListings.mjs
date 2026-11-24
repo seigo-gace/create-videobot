@@ -25,7 +25,7 @@ function recordToListing(row) {
     id:row.listing_id,sellerId:String(row.seller_user_id),revision:Number(row.revision),
     title:row.title,description:row.description??'',priceStars:row.price_stars==null?null:Number(row.price_stars),
     priceMode:row.price_mode,
-    thumbnail:row.thumbnail_file_id?{fileId:row.thumbnail_file_id}:null,
+    thumbnail:row.thumbnail_file_id?{fileId:row.thumbnail_file_id,...(row.second_thumbnail_file_id?{secondFileId:row.second_thumbnail_file_id}:{})}:null,
     sample:row.sample_file_id?{fileId:row.sample_file_id,
       durationSeconds:Number(row.sample_duration_seconds)}:null,
     paidVideo:row.paid_video_file_id?{fileId:row.paid_video_file_id}:null,
@@ -55,9 +55,10 @@ function validatedDraft(draft) {
        (typeof v.fileId!=='string'||!/^[A-Za-z0-9_-]{3,256}$/.test(v.fileId)))
       throw new Error('invalid '+f+' reference');
   }
+  if(draft.thumbnail?.secondFileId!==undefined&&(!/^[A-Za-z0-9_-]{3,256}$/.test(draft.thumbnail.secondFileId)||draft.thumbnail.secondFileId===draft.thumbnail.fileId))throw Error('invalid second thumbnail');
   if(draft.sample &&
      (!Number.isFinite(draft.sample.durationSeconds)||draft.sample.durationSeconds<=0||
-      draft.sample.durationSeconds>30))throw new Error('sample longer than 30 seconds');
+      draft.sample.durationSeconds>60.1))throw new Error('sample longer than 60.1 seconds');
   if(draft.feeTermsAccepted===true &&
      (typeof draft.termsVersion!=='string'||!/^[0-9]+(?:\.[0-9]+){0,2}$/.test(draft.termsVersion)||
       typeof draft.termsAcceptedAt!=='string'||!Number.isFinite(Date.parse(draft.termsAcceptedAt))||
@@ -71,7 +72,8 @@ function validatedDraft(draft) {
     draft.feeTermsAccepted===true,draft.description??'',
     draft.feeTermsAccepted===true?draft.termsVersion??null:null,
     draft.feeTermsAccepted===true?draft.termsUrl??null:null,
-    draft.feeTermsAccepted===true?draft.termsAcceptedAt??null:null
+    draft.feeTermsAccepted===true?draft.termsAcceptedAt??null:null,
+    draft.thumbnail?.secondFileId??null
   ];
 }
 export function createPostgresListingStore(pool) {
@@ -98,7 +100,7 @@ export function createPostgresListingStore(pool) {
       ownerId(owner);listingId(id);
       const cols=validatedDraft(draft);
       const r=await pool.query(
-        "INSERT INTO videobot_listings (listing_id,seller_user_id,revision,title,price_stars,price_mode,thumbnail_file_id,sample_file_id,sample_duration_seconds,paid_video_file_id,rights_verified,adult_consent_verified,fee_terms_accepted_at,description,creator_terms_version,creator_terms_url,status) VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $12 THEN $16::timestamptz ELSE NULL END,$13,$14,$15,'draft') ON CONFLICT(listing_id) DO NOTHING RETURNING *",
+        "INSERT INTO videobot_listings (listing_id,seller_user_id,revision,title,price_stars,price_mode,thumbnail_file_id,sample_file_id,sample_duration_seconds,paid_video_file_id,rights_verified,adult_consent_verified,fee_terms_accepted_at,description,creator_terms_version,creator_terms_url,second_thumbnail_file_id,status) VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $12 THEN $16::timestamptz ELSE NULL END,$13,$14,$15,$17,'draft') ON CONFLICT(listing_id) DO NOTHING RETURNING *",
         [id,owner,...cols]
       );
       if(r?.rowCount!==1)throw new Error('LISTING_ALREADY_EXISTS');
@@ -113,7 +115,7 @@ export function createPostgresListingStore(pool) {
       if(expectedRevision<1)throw new Error('existing revision required');
       const cols=validatedDraft(draft);
       const r=await pool.query(
-        "UPDATE videobot_listings SET title=$4,price_stars=$5,price_mode=$6,thumbnail_file_id=$7,sample_file_id=$8,sample_duration_seconds=$9,paid_video_file_id=$10,rights_verified=$11,adult_consent_verified=$12,fee_terms_accepted_at=CASE WHEN $13 THEN $17::timestamptz ELSE NULL END,description=$14,creator_terms_version=$15,creator_terms_url=$16,revision=revision+1,updated_at=NOW() WHERE seller_user_id=$1 AND listing_id=$2 AND revision=$3 AND status IN ('draft','ready') RETURNING *",
+        "UPDATE videobot_listings SET title=$4,price_stars=$5,price_mode=$6,thumbnail_file_id=$7,sample_file_id=$8,sample_duration_seconds=$9,paid_video_file_id=$10,rights_verified=$11,adult_consent_verified=$12,fee_terms_accepted_at=CASE WHEN $13 THEN $17::timestamptz ELSE NULL END,description=$14,creator_terms_version=$15,creator_terms_url=$16,second_thumbnail_file_id=$18,revision=revision+1,updated_at=NOW() WHERE seller_user_id=$1 AND listing_id=$2 AND revision=$3 AND status IN ('draft','ready') RETURNING *",
         [owner,id,expectedRevision,...cols]
       );
       if(r?.rowCount!==1)throw new Error('LISTING_STALE_OR_PUBLISHED');
@@ -124,7 +126,7 @@ export function createPostgresListingStore(pool) {
       ownerId(owner);listingId(id);revisionNumber(expectedRevision);
       if(expectedRevision<1 || receipt?.posted!==true ||
          !Array.isArray(receipt.freeMessageIds) ||
-         receipt.freeMessageIds.length!==2 ||
+         ![2,3].includes(receipt.freeMessageIds.length) ||
          receipt.freeMessageIds.some(x=>!Number.isSafeInteger(x)||x<=0) ||
          !Number.isSafeInteger(receipt.paidMessageId) ||
          receipt.paidMessageId<=0)

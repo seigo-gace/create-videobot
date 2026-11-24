@@ -31,7 +31,7 @@ export async function publishVideoListing({
   // Check before the durable claim and before any Telegram send.
   if (!Number.isFinite(listing.sample.durationSeconds) ||
       listing.sample.durationSeconds <= 0 ||
-      listing.sample.durationSeconds > 30 ||
+      listing.sample.durationSeconds > 60.1 ||
       listing.sample.fileId === listing.paidVideo.fileId) {
     const error = new Error('VIDEO_FREE_SAMPLE_NOT_SAFE_FOR_PUBLICATION');
     error.code = 'VIDEO_PUBLICATION_PRE_SEND_REJECTED';
@@ -70,7 +70,7 @@ export async function publishVideoListing({
   const caption=listing.title+(listing.description?'\n'+listing.description:'');
   if(caption.length>1024)throw new Error('video caption too long');
   const free=buildFreeAlbumRequest({ ...base, thumbnailFileId:listing.thumbnail.fileId,
-    sampleFileId:listing.sample.fileId });
+    secondThumbnailFileId:listing.thumbnail.secondFileId, sampleFileId:listing.sample.fileId });
   const key=listing.id + ':' + listing.revision;
   // Telegram's purchased_paid_media update identifies the sale by payload.
   // No payload means no useful paid-media purchase notification.
@@ -81,7 +81,7 @@ export async function publishVideoListing({
   const ownReceipt=await store.read(key);
   if (ownReceipt?.status==='sent' &&
       Array.isArray(ownReceipt.freeMessageIds) &&
-      ownReceipt.freeMessageIds.length===2 &&
+      [2,3].includes(ownReceipt.freeMessageIds.length) &&
       Number.isSafeInteger(ownReceipt.paidMessageId)) {
     return {posted:true,alreadySent:true,
       freeMessageIds:ownReceipt.freeMessageIds,
@@ -112,18 +112,18 @@ export async function publishVideoListing({
     // Unknown outcome after a request means no automatic second attempt.
     if (!existing.freeMessageIds) {
       const preview=await telegramApi('sendMediaGroup',free);
-      if (!Array.isArray(preview) || preview.length !== 2 ||
+      if (!Array.isArray(preview) || preview.length !== free.media.length ||
           preview.some(m=>!Number.isSafeInteger(m?.message_id)||m.message_id<=0) ||
-          preview[0].message_id === preview[1].message_id ||
+          new Set(preview.map(m=>m.message_id)).size!==preview.length ||
           typeof preview[0].media_group_id !== 'string' ||
           !preview[0].media_group_id ||
-          preview[0].media_group_id !== preview[1].media_group_id)
+          preview.some(m=>m.media_group_id!==preview[0].media_group_id))
         throw new Error('free album acknowledgment invalid: media_group_id mismatch');
       await store.recordFree(key,preview.map(m=>m.message_id));
     }
     if(saleMode==='invoice') {
       const preview=(await store.read(key))?.freeMessageIds;
-      const sampleMessageId=preview?.[1];
+      const sampleMessageId=preview?.at(-1);
       if(!Number.isSafeInteger(sampleMessageId)||sampleMessageId<=0)
         throw new Error('VIDEO_INVOICE_SAMPLE_RECEIPT_MISSING');
       // A group callback cannot open a first-time private chat with the Bot.

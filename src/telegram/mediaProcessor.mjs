@@ -90,15 +90,18 @@ export function createVideoMediaProcessor({
     },
     async prepareMissingPreviews(draft) {
       if(!draft?.paidVideo?.fileId)throw new Error('paid video required for automatic preview');
-      if(draft.thumbnail&&draft.sample)return {};
+      if(draft.thumbnail?.secondFileId&&draft.sample)return {};
       await checkScratchSpace();
       return withSource(draft.paidVideo.fileId,async(path,dir)=>{
         const prepared=await prepareMissingPreviewAssets({
           ...options,sourcePath:path,thumbnail:draft.thumbnail,sample:draft.sample,
-          thumbnailOutputPath:join(dir,'thumb.jpg'),sampleOutputPath:join(dir,'sample.mp4')
+          thumbnailOutputPath:join(dir,'thumb.jpg'),secondThumbnailOutputPath:join(dir,'thumb-2.jpg'),sampleOutputPath:join(dir,'sample.mp4')
         });
         const refs={};
-        if(!draft.thumbnail)refs.thumbnail={fileId:await uploadPrepared(prepared.thumbnail.path,'photo',Number(draft.sellerId))};
+        if(!draft.thumbnail?.secondFileId)refs.thumbnail={
+          fileId:draft.thumbnail?.fileId??await uploadPrepared(prepared.thumbnail.path,'photo',Number(draft.sellerId)),
+          secondFileId:await uploadPrepared(prepared.secondThumbnail.path,'photo',Number(draft.sellerId))
+        };
         if(!draft.sample)refs.sample={
           fileId:await uploadPrepared(prepared.sample.path,'video',Number(draft.sellerId)),
           durationSeconds:prepared.sample.durationSeconds

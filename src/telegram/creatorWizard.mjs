@@ -253,7 +253,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         '前の画面のボタンでした。現在の登録内容を表示しました。もう一度選択してください。'));
     }
     if(legacyEditorTap && old?.draft?.paidVideo && oldScreen) {
-      const recovered=(!old.draft.thumbnail||!old.draft.sample)
+      const recovered=(!old.draft.thumbnail?.secondFileId||!old.draft.sample)
         ?await autoPreview(ownerId,old.draft)
         :{draft:old.draft,warning:'',previewMessageId:old.previewMessageId??null};
       return persistAndRender(ownerId,old,{
@@ -277,7 +277,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       // Older in-progress drafts may have been saved before the automatic
       // preview pipeline was active. Repair only missing derived media on
       // explicit editor re-entry; never require a second main-video upload.
-      const recovery=draft.paidVideo && (!draft.thumbnail || !draft.sample)
+      const recovery=draft.paidVideo && (!draft.thumbnail?.secondFileId || !draft.sample)
         ?await autoPreview(ownerId,draft)
         :{draft,warning:'',previewMessageId:old?.previewMessageId??null};
       return persistAndRender(ownerId,old,{
@@ -431,7 +431,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(value==='back') {
         // Existing drafts from the former UI can be repaired by returning
         // from Stars settings, without losing their stored main video.
-        const recovery=draft.paidVideo && (!draft.thumbnail || !draft.sample)
+        const recovery=draft.paidVideo && (!draft.thumbnail?.secondFileId || !draft.sample)
           ?await autoPreview(ownerId,draft)
           :{draft,warning:'',previewMessageId:old.previewMessageId??null};
         return persistAndRender(ownerId,old,{
@@ -459,11 +459,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(value==='preview') {
         let prepared=draft;
         let warning='';
-        if(draft.paidVideo && (!draft.thumbnail || !draft.sample)) {
+        if(draft.paidVideo && (!draft.thumbnail?.secondFileId || !draft.sample)) {
           if(typeof mediaProcessor?.prepareMissingPreviews==='function') {
             try {
               const refs=await mediaProcessor.prepareMissingPreviews(draft);
-              if(!draft.thumbnail && refs?.thumbnail) prepared=editCreatorDraft(prepared,{type:'thumbnail',media:refs.thumbnail});
+              if(!draft.thumbnail?.secondFileId && refs?.thumbnail) prepared=editCreatorDraft(prepared,{type:'thumbnail',media:refs.thumbnail});
               if(!draft.sample && refs?.sample) prepared=editCreatorDraft(prepared,{type:'sample',media:refs.sample});
             } catch(e) {warning='自動生成に失敗しました：'+(e instanceof Error?e.message:'処理できません');}
           } else warning='自動生成サービスが未接続です。';
@@ -589,10 +589,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   async function autoPreview(ownerId,draft) {
     let prepared=draft,warning='',previewMessageId=null;
     if(!draft.paidVideo)return {draft:prepared,warning,previewMessageId};
-    if((!draft.thumbnail||!draft.sample)&&typeof mediaProcessor?.prepareMissingPreviews==='function'){
+    if((!draft.thumbnail?.secondFileId||!draft.sample)&&typeof mediaProcessor?.prepareMissingPreviews==='function'){
       try{
         const refs=await mediaProcessor.prepareMissingPreviews(draft);
-        if(!prepared.thumbnail&&refs?.thumbnail)
+        if(!prepared.thumbnail?.secondFileId&&refs?.thumbnail)
           prepared=editCreatorDraft(prepared,{type:'thumbnail',media:refs.thumbnail});
         if(!prepared.sample&&refs?.sample)
           prepared=editCreatorDraft(prepared,{type:'sample',media:refs.sample});
@@ -608,13 +608,14 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           protect_content:true,disable_notification:true,
           media:[
             {type:'photo',media:prepared.thumbnail.fileId,caption:'🖼 サムネ'},
-            {type:'video',media:prepared.sample.fileId,caption:'🎞 30秒サンプル'},
+            ...(prepared.thumbnail.secondFileId?[{type:'photo',media:prepared.thumbnail.secondFileId,caption:'🖼 サムネ'}]:[]),
+            {type:'video',media:prepared.sample.fileId,caption:'🎞 サンプル',supports_streaming:true},
             {type:'video',media:prepared.paidVideo.fileId,caption:'🎬 本動画（作成者向けプレビュー）'}
           ]});
-        if(!Array.isArray(response)||response.length!==3||
+        if(!Array.isArray(response)||response.length!==(prepared.thumbnail.secondFileId?4:3)||
           response.some(m=>!Number.isSafeInteger(m?.message_id)||m.message_id<1))
           warning+='\n⚠️ アルバム表示の応答を確認できません。重複送信は行いません。';
-        else previewMessageId=response[2].message_id;
+        else previewMessageId=response.at(-1).message_id;
       }catch{
         warning+='\n⚠️ プレビューアルバムの表示を確認できません。重複送信は行いません。';
       }
@@ -643,7 +644,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       } else if(old.waiting==='thumbnail') {
         const p=update.message.photo?.at(-1);
         if(!p?.file_id)throw new Error('サムネイル画像を送信してください。');
-        draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:p.file_id}});
+        draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:p.file_id,...(draft.thumbnail?.secondFileId&&draft.thumbnail.secondFileId!==p.file_id?{secondFileId:draft.thumbnail.secondFileId}:{})}});
       } else if(old.waiting==='paidVideo') {
         if(!update.message.video?.file_id && !update.message.document?.file_id)
           throw new Error('本編動画（MP4）を送信してください。');
@@ -673,12 +674,6 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         if(old.draft.paidVideo?.fileId!==incomingVideo.file_id){
           draft=editCreatorDraft(editCreatorDraft(draft,{type:'removeThumbnail'}),{type:'removeSample'});
         }
-        // Telegram may supply a native thumbnail for a video even when
-        // its full bytes exceed the public Bot API download limit.
-        // Reuse this owner-provided file_id before attempting FFmpeg.
-        const nativeThumbnail=update.message.video?.thumbnail?.file_id;
-        if(!draft.thumbnail && typeof nativeThumbnail==='string')
-          draft=editCreatorDraft(draft,{type:'thumbnail',media:{fileId:nativeThumbnail}});
         const preview=await autoPreview(ownerId,draft);
         draft=preview.draft;
         previewWarning=preview.warning;

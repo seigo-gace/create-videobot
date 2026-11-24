@@ -27,10 +27,11 @@ function title(value) {
 }
 function media(value, role) {
   if (!value || typeof value.fileId !== 'string' || !/^[A-Za-z0-9_-]{3,256}$/.test(value.fileId)) throw new Error('invalid ' + role + ' file ID');
-  if (role === 'sample' && (!Number.isFinite(value.durationSeconds) || value.durationSeconds <= 0 || value.durationSeconds > 30)) {
-    throw new Error('sample must be verified <=30 seconds before registration');
+  if (role === 'sample' && (!Number.isFinite(value.durationSeconds) || value.durationSeconds <= 0 || value.durationSeconds > 60.1)) {
+    throw new Error('sample must be verified <=60.1 seconds before registration');
   }
-  return { fileId: value.fileId, ...(role === 'sample' ? { durationSeconds: value.durationSeconds } : {}) };
+  if(role==='thumbnail'&&value.secondFileId!==undefined&&(!/^[A-Za-z0-9_-]{3,256}$/.test(value.secondFileId)||value.secondFileId===value.fileId))throw Error('invalid second thumbnail');
+  return { fileId: value.fileId, ...(role==='thumbnail'&&value.secondFileId?{secondFileId:value.secondFileId}:{}), ...(role === 'sample' ? { durationSeconds: value.durationSeconds } : {}) };
 }
 function expectDraft(draft) {
   if (!draft || !USER_ID.test(draft.sellerId || '') || !['create','edit'].includes(draft.mode)) throw new Error('invalid editor state');

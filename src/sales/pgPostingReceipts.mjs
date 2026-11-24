@@ -60,8 +60,8 @@ export function createPostgresPostingReceiptStore(pool) {
     },
     async recordFree(key,ids) {
       validKey(key);
-      if(!Array.isArray(ids)||ids.length!==2||ids.some(id=>!Number.isSafeInteger(id)||id<=0)||ids[0]===ids[1])
-        throw new Error('two valid distinct free message IDs required');
+      if(!Array.isArray(ids)||![2,3].includes(ids.length)||ids.some(id=>!Number.isSafeInteger(id)||id<=0)||new Set(ids).size!==ids.length)
+        throw new Error('two or three valid distinct free message IDs required');
       const r=await pool.query(
         "UPDATE videobot_post_receipts SET free_message_ids=$2::bigint[],updated_at=NOW() WHERE delivery_key=$1 AND status='sending' AND free_message_ids IS NULL RETURNING delivery_key",
         [key,ids]

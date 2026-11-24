@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { lstat, stat, link, unlink, chmod } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, extname, resolve } from 'node:path';
-import { probeDurationSeconds, prepareSampleVideo } from './sampleMedia.mjs';
+import { probeDurationSeconds, prepareAutomaticSampleVideo } from './sampleMedia.mjs';
 
 const execute = promisify(execFile);
 
@@ -24,7 +24,7 @@ async function ensureAbsent(path) {
  * Extract one preview image from the main video. No Telegram send or automatic
  * publishing occurs. Output is created only if absent; source is never touched.
  */
-export async function extractPreviewThumbnail({ inputPath, outputPath, run = execute, ffprobe = 'ffprobe', ffmpeg = 'ffmpeg' } = {}) {
+export async function extractPreviewThumbnail({ inputPath, outputPath, run = execute, ffprobe = 'ffprobe', ffmpeg = 'ffmpeg', fraction = 0.25 } = {}) {
   const duration = await probeDurationSeconds(inputPath, { run, ffprobe });
   const output = outputFile(outputPath, '.jpg');
   if (resolve(inputPath) === output) throw new Error('thumbnail must differ from source');
@@ -32,7 +32,7 @@ export async function extractPreviewThumbnail({ inputPath, outputPath, run = exe
   const temporary = resolve(dirname(output), '.thumb-' + randomUUID() + '.jpg');
   try {
     await run(ffmpeg, [
-      '-nostdin', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.min(1, duration / 2)),
+      '-nostdin', '-hide_banner', '-loglevel', 'error', '-ss', String(duration * fraction),
       '-i', inputPath, '-frames:v', '1', '-q:v', '2', '-y', temporary
     ], { timeout: 60000, maxBuffer: 1024 * 1024 });
     const info = await lstat(temporary);
@@ -53,31 +53,31 @@ export async function extractPreviewThumbnail({ inputPath, outputPath, run = exe
  * upload and publish are handled by separate bounded components.
  */
 export async function prepareMissingPreviewAssets({
-  sourcePath, thumbnail = null, sample = null, thumbnailOutputPath, sampleOutputPath,
+  sourcePath, thumbnail = null, sample = null, thumbnailOutputPath, secondThumbnailOutputPath, sampleOutputPath,
   run = execute, ffprobe = 'ffprobe', ffmpeg = 'ffmpeg'
 } = {}) {
-  if (thumbnail && sample) return { thumbnail: { kind: 'existing', value: thumbnail }, sample: { kind: 'existing', value: sample } };
+  if (thumbnail && (!secondThumbnailOutputPath || thumbnail.secondFileId) && sample) return { thumbnail: { kind: 'existing', value: thumbnail }, secondThumbnail: null, sample: { kind: 'existing', value: sample } };
   const seconds = await probeDurationSeconds(sourcePath, { run, ffprobe });
   // A short paid video still receives a *strictly shorter* free sample.
   // Do not expose the entire video as a free preview. Sub-second clips
   // need a source playable for at least a few frames at 30 FPS.
   if(!sample && seconds < 0.3)throw Error('video shorter than playable preview minimum');
-  let generatedThumbnail = null;
+  const generatedThumbnails = [];
   try {
     const thumbnailResult = thumbnail
       ? { kind: 'existing', value: thumbnail }
       : await extractPreviewThumbnail({ inputPath: sourcePath, outputPath: thumbnailOutputPath, run, ffprobe, ffmpeg });
-    if (!thumbnail) generatedThumbnail = thumbnailResult.path;
+    if (!thumbnail) generatedThumbnails.push(thumbnailResult.path);
+    const secondThumbnail = secondThumbnailOutputPath && !thumbnail?.secondFileId
+      ? await extractPreviewThumbnail({inputPath:sourcePath,outputPath:secondThumbnailOutputPath,run,ffprobe,ffmpeg,fraction:0.75}) : null;
+    if(secondThumbnail) generatedThumbnails.push(secondThumbnail.path);
     const sampleResult = sample
       ? { kind: 'existing', value: sample }
-      : await prepareSampleVideo({
-          inputPath: sourcePath, outputPath: sampleOutputPath, run, ffprobe, ffmpeg,
-          limitSeconds: seconds > 30 ? 30 : Math.max(0.1,Math.floor(seconds / 3 * 100) / 100)
-        });
+      : await prepareAutomaticSampleVideo({inputPath:sourcePath,outputPath:sampleOutputPath,run,ffprobe,ffmpeg});
     if (!sample && sampleResult.kind !== 'clipped') throw new Error('paid main must not be copied fully as free sample');
-    return { thumbnail: thumbnailResult, sample: sampleResult };
+    return { thumbnail: thumbnailResult, secondThumbnail, sample: sampleResult };
   } catch (error) {
-    if (generatedThumbnail) await unlink(generatedThumbnail).catch(e => { if (e.code !== 'ENOENT') throw e; });
+    for (const path of generatedThumbnails) await unlink(path).catch(e => { if (e.code !== 'ENOENT') throw e; });
     throw error;
   }
 }

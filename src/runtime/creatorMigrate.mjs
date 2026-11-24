@@ -22,7 +22,8 @@ const FILES=Object.freeze([
  '019_creator_terms_version.sql',
  '020_owner_update_jobs.sql',
  '021_sticker_refunds.sql',
- '022_video_invoice_fallback.sql'
+ '022_video_invoice_fallback.sql',
+ '023_video_preview_montage.sql'
 ]);
 
 /** Apply the owned VideoBot schema atomically under a PostgreSQL advisory

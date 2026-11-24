@@ -3,19 +3,21 @@
  * separate messages. This module builds the free two-item album only.
  * No network call, token, GATE bypass or publishing side effects here.
  */
-export function buildFreeAlbumRequest({ chatId, messageThreadId, thumbnailFileId, sampleFileId, caption = '' } = {}) {
+export function buildFreeAlbumRequest({ chatId, messageThreadId, thumbnailFileId, secondThumbnailFileId, sampleFileId, caption = '' } = {}) {
   if (!Number.isSafeInteger(chatId) || chatId === 0) throw new Error('invalid chat');
   if (messageThreadId !== undefined && (!Number.isSafeInteger(messageThreadId) || messageThreadId <= 0)) throw new Error('invalid topic');
   for (const [key, value] of Object.entries({ thumbnailFileId, sampleFileId })) {
     if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{3,256}$/.test(value)) throw new Error('invalid ' + key);
   }
+  if (secondThumbnailFileId!==undefined && (typeof secondThumbnailFileId!=='string'||! /^[A-Za-z0-9_-]{3,256}$/.test(secondThumbnailFileId)||secondThumbnailFileId===thumbnailFileId)) throw new Error('invalid second thumbnail');
   if (typeof caption !== 'string' || caption.length > 1024) throw new Error('invalid caption');
   return {
     chat_id: chatId,
     ...(messageThreadId ? { message_thread_id: messageThreadId } : {}),
     media: [
       { type: 'photo', media: thumbnailFileId, has_spoiler: true, ...(caption ? { caption } : {}) },
-      { type: 'video', media: sampleFileId, has_spoiler: true }
+      ...(secondThumbnailFileId?[{type:'photo',media:secondThumbnailFileId,has_spoiler:true}]:[]),
+      { type: 'video', media: sampleFileId, has_spoiler: true, supports_streaming:true }
     ]
   };
 }
@@ -27,7 +29,7 @@ export function buildFreeAlbumRequest({ chatId, messageThreadId, thumbnailFileId
  */
 export function buildListingMessagePlan({ listingId, freeAlbum, paidMedia } = {}) {
   if (typeof listingId !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(listingId)) throw new Error('invalid listing');
-  if (!freeAlbum || !Array.isArray(freeAlbum.media) || freeAlbum.media.length !== 2 || !paidMedia || !Array.isArray(paidMedia.media)) throw new Error('invalid listing messages');
+  if (!freeAlbum || !Array.isArray(freeAlbum.media) || ![2,3].includes(freeAlbum.media.length) || !paidMedia || !Array.isArray(paidMedia.media)) throw new Error('invalid listing messages');
   if (freeAlbum.chat_id !== paidMedia.chat_id || (freeAlbum.message_thread_id ?? null) !== (paidMedia.message_thread_id ?? null)) throw new Error('listing topic mismatch');
   return Object.freeze({
     listingId,
