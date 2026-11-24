@@ -77,3 +77,58 @@ export async function prepareSampleVideo({ inputPath, outputPath, run = exec, ff
     await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; });
   }
 }
+
+/** Automatic preview only: four non-overlapping excerpts, never the whole paid source.
+ * Keep the existing creator-supplied sample trimming contract independent.
+ */
+export const AUTO_SAMPLE_MAX_SECONDS = 60;
+export function planAutomaticSample(duration) {
+  if (!Number.isFinite(duration) || duration < 0.3) throw new Error('video shorter than playable preview minimum');
+  const length = duration > 60 ? 15 : duration / 12;
+  // Each excerpt is contained inside its own quarter of the source, so a
+  // short source cannot cause overlap or expose the entire paid video.
+  return [0,1,2,3].map(i => ({
+    start: i * duration / 4 + (duration / 4 - length) / 2,
+    length
+  }));
+}
+export async function prepareAutomaticSampleVideo({inputPath,outputPath,run=exec,ffmpeg='ffmpeg',ffprobe='ffprobe'}={}) {
+  const input=absolutePath(inputPath), output=absolutePath(outputPath);
+  if(input===output||extname(output).toLowerCase()!=='.mp4')throw new Error('distinct .mp4 destination required');
+  await destinationAvailable(output);
+  const duration=await probeDurationSeconds(input,{run,ffprobe});
+  const clips=planAutomaticSample(duration);
+  const total=clips.reduce((n,c)=>n+c.length,0);
+  const {stdout:audio}=await run(ffprobe,[
+    '-v','error','-select_streams','a:0','-show_entries','stream=index',
+    '-of','csv=p=0',input
+  ],{timeout:30000,maxBuffer:4096});
+  const hasAudio=/^\d+\s*$/.test(String(audio).trim());
+  const temporary=resolve(dirname(output),'.montage-'+randomUUID()+'.mp4');
+  const sources=clips.flatMap(c=>['-ss',String(c.start),'-t',String(c.length),'-i',input]);
+  const filters=clips.flatMap((c,i)=>[
+    '['+i+':v:0]fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1,setpts=PTS-STARTPTS[v'+i+']',
+    ...(hasAudio?['['+i+':a:0]aresample=48000,apad,atrim=duration='+c.length+',asetpts=PTS-STARTPTS[a'+i+']']:[])
+  ]);
+  filters.push(clips.map((_,i)=>'[v'+i+']'+(hasAudio?'[a'+i+']':'')).join('')+
+    'concat=n=4:v=1:a='+(hasAudio?'1':'0')+'[v]'+(hasAudio?'[a]':''));
+  try {
+    await run(ffmpeg,[
+      '-nostdin','-hide_banner','-loglevel','error','-filter_complex_threads','1',...sources,
+      '-filter_complex',filters.join(';'),'-map','[v]',...(hasAudio?['-map','[a]']:[]),
+      '-t',String(total),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p',
+      '-b:v','1800k','-maxrate','2000k','-bufsize','4000k',
+      ...(hasAudio?['-c:a','aac','-b:a','96k']:[]),'-movflags','+faststart','-y',temporary
+    ],{timeout:240000,maxBuffer:1024*1024});
+    const actual=await probeDurationSeconds(temporary,{run,ffprobe});
+    if(actual>60.1||actual>=duration||Math.abs(actual-total)>0.15)
+      throw new Error('generated automatic sample duration invalid');
+    const info=await stat(temporary);
+    if(info.size<=0||info.size>20*1024*1024)throw new Error('automatic sample upload size invalid');
+    await chmod(temporary,0o600);
+    await link(temporary,output);
+    return {kind:'clipped',path:output,durationSeconds:actual,originalDurationSeconds:duration};
+  } finally {
+    await unlink(temporary).catch(error=>{if(error.code!=='ENOENT')throw error;});
+  }
+}
