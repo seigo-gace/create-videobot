@@ -453,7 +453,7 @@ test('description remains optional and editable through inline text only',async(
  assert.equal(x.states.get(33).draft.description,'');
  const panel=x.screens.at(-1).panel;
  assert.match(panel.text,/［未登録］ 説明：/);
- assert.ok(panel.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='edit:description|r3'));
+ assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r3')&&panel.text.slice(e.offset,e.offset+e.length)==='［未登録］'));
 });
 
 test('existing draft recovers missing automatic media on explicit edit-back, never via New Post',async()=>{
@@ -490,8 +490,7 @@ test('Stars settings back regenerates missing media for an old registered draft'
   assert.equal(restored.draft.paidVideo.fileId,'main001');
   assert.equal(restored.draft.thumbnail.fileId,'photo_auto_1');
   assert.equal(restored.draft.sample.durationSeconds,30);
-  assert.ok(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(
-    b=>b.callback_data?.startsWith('edit:paidVideo|r')));
+  assert.ok(x.screens.at(-1).panel.entities.some(e=>e.url.endsWith('ved_paidVideo_r'+x.states.get(33).revision)));
 });
 
 test('obsolete pre-deploy Stars button redraws owner current draft and recovers My Videos',async()=>{
@@ -510,8 +509,7 @@ test('obsolete pre-deploy Stars button redraws owner current draft and recovers 
   assert.equal(state.draft.title,'旧画面作品');
   assert.equal(state.draft.thumbnail.fileId,'photo_auto_1');
   assert.equal(state.draft.sample.durationSeconds,30);
-  assert.ok(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(
-    b=>b.callback_data?.startsWith('edit:paidVideo|r')));
+  assert.ok(x.screens.at(-1).panel.entities.some(e=>e.url.endsWith('ved_paidVideo_r'+x.states.get(33).revision)));
 });
 
 test('stale review buttons refresh current draft without publishing or canceling',async()=>{
@@ -831,20 +829,22 @@ test('unresolved prior sale cannot be silently cleared by pressing new post',asy
  assert.match(x.screens.at(-1).panel.text,/前の投稿結果が未確定/);
 });
 
- test('rendered sample edit callback stays inside private wizard and cannot submit',async()=>{
+ test('rendered sample text link stays inside private wizard and cannot submit',async()=>{
  const x=setup();
  await x.callback('menu:listing');
  await x.send({video:{file_id:'synthetic_main_01'},caption:'テスト'},1101);
  await x.callback('entry:skip|r'+x.states.get(33).revision);
- const button=x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().find(b=>b.callback_data?.startsWith('edit:sample|r'));
- assert.ok(button);assert.equal(button.url,undefined);
- await x.callback(button.callback_data);
+ const link=x.screens.at(-1).panel.entities.find(e=>e.url.includes('ved_sample_r'));
+ assert.ok(link);
+ const revision=Number(new URL(link.url).searchParams.get('start').split('_r')[1]);
+ await x.handler.openTextEdit({message:{chat:{id:33,type:'private'},from:{id:33},message_id:1103}},'sample',revision);
  const state=x.states.get(33);
  assert.equal(state.screen,'field');assert.equal(state.waiting,'sample');
  const panel=x.screens.at(-1).panel;
  assert.ok(panel.reply_markup.inline_keyboard.flat().every(b=>!b.callback_data.startsWith('entry:register')));
  assert.match(panel.text,/新しいサンプル動画を送信/);
- assert.equal(x.calls.filter(c=>c.method==='answerCallbackQuery').length,3);
+ assert.equal(x.calls.filter(c=>c.method==='answerCallbackQuery').length,2);
+ assert.ok(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===1103));
  await x.send({video:{file_id:'upload001',duration:15}},1102);
  assert.equal(x.states.get(33).draft.sample.fileId,'prepared_sample_001');
  assert.equal(x.states.get(33).screen,'editor');
