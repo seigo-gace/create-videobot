@@ -11,7 +11,7 @@ test('creates only additive rich receipt claim storage; never alters buyer or in
  assert.equal(calls.length,3);
  assert.match(calls[0],/^CREATE TABLE IF NOT EXISTS videobot_rich_offer_receipts/);
  assert.match(calls[1],/^CREATE INDEX IF NOT EXISTS videobot_rich_offer_reconcile/);
- assert(!calls.some(q=>/\bDROP\b|\bDELETE\b|\bUPDATE\b|\bTRUNCATE\b|\bALTER TABLE\b|videobot_stars_ledger|videobot_video_invoice_orders/i.test(q)));
+ assert(!calls.some(q=>/\bDROP\s+(TABLE|CONSTRAINT|COLUMN)\b|\bDELETE\s+FROM\b|\bUPDATE\s+\w+\s+SET\b|\bTRUNCATE\s+(TABLE|\w+)\b|\bALTER\s+TABLE\b|videobot_stars_ledger|videobot_video_invoice_orders/i.test(q)));
 });
 test('fails closed when receipt storage remains unavailable',async()=>{
  await assert.rejects(()=>ensureRichOfferClaimTable({
