@@ -148,10 +148,16 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       return {handled:true,staleTextLink:true};
     const owned=await listingStore.getOwned(ownerId,listingId);
     if(!owned)return {handled:true,staleTextLink:true};
-    // Publicly sold media are immutable. Never silently overwrite purchases.
+    // A legacy [編集] deep link for a purchased video must not lead to
+    // an unrequested Details page. Keep protected sales intact and return
+    // to My Videos; only draft/ready listings have an editable screen.
     if(owned.status==='published'||owned.status==='paused') {
-      const result=await persistAndRender(ownerId,old,{...old,screen:'video_detail',detailId:listingId},
-        rev=>videoInfoPanel(owned,rev));
+      const items=await listingStore.listByOwner(ownerId);
+      const result=await persistAndRender(ownerId,old,{
+        ...old,screen:'my_videos',page:0,detailId:null,waiting:null,
+        draft:null,originalDraft:null
+      },rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,
+        revision:rev,notice:'購入済み動画は変更できません。新規登録する場合は［🆕 新規投稿］を押してください。'}));
       await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
       return result;
     }
@@ -575,9 +581,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
       }
       if((parts[1]==='price'||parts[1]==='open')&&old.screen==='my_videos') {
+        // Obsolete Details buttons only navigate back to the listing; they
+        // must not convert a public sale to an editor or create a new sale.
+        const items=await listingStore.listByOwner(ownerId);
         return persistAndRender(ownerId,old,{
-          ...old,screen:'video_detail',detailId:id
-        },rev=>videoInfoPanel(v,rev,parts[1]));
+          ...old,screen:'my_videos',detailId:null,waiting:null,page:0
+        },rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,
+          revision:rev}));
       }
       if(parts[1]==='back'&&old.screen==='video_detail'&&old.detailId===id) {
         const items=await listingStore.listByOwner(ownerId);
