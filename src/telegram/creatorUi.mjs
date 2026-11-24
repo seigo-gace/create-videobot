@@ -146,6 +146,14 @@ export function creatorDescriptionPanel(draft,revision,notice='') {
 }
 
 /** Telegram creator registration: upload -> automatic private preview -> optional description -> registration. */
+// Render actual stored, probed duration rather than a legacy fixed label.
+function sampleStatus(sample) {
+  if (!sample) return '未登録';
+  if (!Number.isFinite(sample.durationSeconds) || sample.durationSeconds <= 0)
+    return '登録済み（再生時間未確認）';
+  const seconds=Math.round(sample.durationSeconds * 10) / 10;
+  return '登録済み（'+seconds+'秒）';
+}
 export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   expectDraft(draft);
   if(!Number.isSafeInteger(revision)||revision<0)throw new Error('invalid screen revision');
@@ -166,7 +174,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     ['description','説明',draft.description,draft.description],
     ['price','価格',draft.priceStars,'⭐ '+draft.priceStars+' Stars'],
     ['thumbnail','🖼 サムネ',draft.thumbnail,'登録済み'],
-    ['sample','🎞 サンプル',draft.sample,'登録済み'],
+    ['sample','🎞 サンプル',draft.sample,sampleStatus(draft.sample)],
     ['paidVideo','🎬 有料本編',draft.paidVideo,'登録済み']
   ];
   const fields=[];
@@ -208,7 +216,7 @@ export function creatorFieldPanel(draft,field,revision=0,notice='') {
     description:'説明：'+(draft.description||'未登録'),
     price:'価格：'+(draft.priceStars==null?'未設定':'⭐ '+draft.priceStars+' Stars'),
     thumbnail:'🖼 サムネ：'+(draft.thumbnail?'登録済み':'未登録'),
-    sample:'🎞 サンプル：'+(draft.sample?'登録済み':'未登録'),
+    sample:'🎞 サンプル：'+sampleStatus(draft.sample),
     paidVideo:'🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録')
   }[field];
   if(!value)throw new Error('unknown creator field');
@@ -287,7 +295,7 @@ export function videoInfoPanel(listing,revision,mode='open') {
   ];
   if(mode==='open')lines.push(
     'サムネ：'+(listing.thumbnail?'登録済み':'未登録'),
-    'サンプル：'+(listing.sample?'登録済み':'未登録'),
+    'サンプル：'+sampleStatus(listing.sample),
     '本編：'+(listing.paidVideo?'登録済み':'未登録'),
     '状態：'+(listing.status==='published'?'公開済み':listing.status==='paused'?'停止中':'未公開')
   );

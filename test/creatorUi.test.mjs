@@ -298,3 +298,30 @@ test('published buyer-protected videos retain their editor entrance',()=>{
  assert.ok(panel.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='video:edit:editable_draft|r7'));
  assert.equal(panel.reply_markup.inline_keyboard.at(-1)[1].callback_data,'menu:listing');
 });
+
+ test('sample duration label reflects stored duration, never a fixed thirty seconds',()=>{
+  let draft=openCreatorEditor({sellerId:'seller1'});
+  draft=editCreatorDraft(draft,{type:'paidVideo',media:{fileId:'main001'}});
+  for(const durationSeconds of [60,30,12.5]){
+    const updated=editCreatorDraft(draft,{type:'sample',media:{fileId:'sample001',durationSeconds}});
+    const expected='サンプル：登録済み（'+durationSeconds+'秒）';
+    assert.ok(creatorEditorPanel(updated,2).text.includes(expected));
+    assert.ok(creatorFieldPanel(updated,'sample',3).text.includes(expected));
+  }
+  assert.match(creatorFieldPanel(draft,'sample',4).text,/サンプル：未登録/);
+ });
+ test('consent screen has one submit action and no revoke or second submit',()=>{
+  let d=openCreatorEditor({sellerId:'seller1'});
+  d=editCreatorDraft(d,{type:'captionTitle',text:'Test'});
+  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main001'}});
+  d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb001',secondFileId:'thumb002'}});
+  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample001',durationSeconds:60}});
+  d=editCreatorDraft(d,{type:'preset',stars:300});
+  const url='https://example.test/terms.html';
+  for(const draft of [d,{...editCreatorDraft(d,{type:'confirmTerms'}),termsUrl:url}]){
+    const p=creatorReviewPanel(draft,3,'',url);
+    const keys=p.reply_markup.inline_keyboard.flat();
+    assert.equal(keys.filter(b=>b.callback_data?.startsWith('review:agree|')).length,1);
+    assert.ok(keys.every(b=>!b.text.includes('取り消す')&&!b.callback_data?.startsWith('review:publish')));
+  }
+ });
