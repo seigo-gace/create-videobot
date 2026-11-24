@@ -29,8 +29,10 @@ try{
    pool,telegramApi:api,getVerifiedVideoTopic:owner.getVerifiedVideoTopic,
    cleanupOld:true
  });
- console.log('RICH_VIDEO_REPLACEMENT='+JSON.stringify(outcome));
- if(outcome.posted!==true||outcome.paidLedgerUnchanged!==true)
-  throw Error('RICH_VIDEO_REPLACEMENT_NOT_VERIFIED');
- if(!outcome.oldPostFullyRemoved)process.exitCode=4;
+ console.log('VIDEO_EXISTING_MESSAGE_EDIT='+JSON.stringify(outcome));
+ if(outcome.edited!==true||outcome.ledgerUnchanged!==true||
+   outcome.oneMessageCollageVerified!==true||
+   outcome.oneTapCallbackVerified!==true)
+  throw Error('VIDEO_INPLACE_EDIT_NOT_VERIFIED');
+ if(!outcome.freePreviewFullyRemoved)process.exitCode=4;
 }finally{await network.close();await pool.end()}
