@@ -252,7 +252,7 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
     // The seller can edit only unsold draft items. Showing ［編集］ beside a
     // published, buyer-protected sale falsely opens a read-only Details page,
     // which is not an editing flow and was not requested by the creator.
-    const editable=item.status==='draft'||item.status==='ready';
+    const editable=item.status!=='published'&&item.status!=='paused'&&item.status!=='removed';
     const prefix=editable?'［編集］':'';
     const mark=item.id===updatedId?'📝 ':item.status==='published'?'🎬 ':'🆕';
     const row=prefix+mark+item.title;
