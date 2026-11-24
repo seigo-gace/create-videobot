@@ -13,7 +13,7 @@ import {createVideoBotSourceModule} from '../telegram/creatorWiring.mjs';
 import {createCreatorPollingConsumer} from './creatorPollingConsumer.mjs';
 import {createPostgresOwnerUpdateQueue} from './creatorOwnerUpdateJobs.mjs';
 import {setTimeout as sleep} from 'node:timers/promises';
-import {applyCreatorSchema} from './creatorMigrate.mjs';
+import {applyCreatorSchema,assertCreatorSchemaApplied} from './creatorMigrate.mjs';
 import {createCreatorTelegramFetch} from './creatorEgress.mjs';
 import {createStickerShopPreview} from '../stickers/shopPreview.mjs';
 import {createStickerShopServer} from '../stickers/shopHttp.mjs';
@@ -107,7 +107,7 @@ export async function createCreatorPollingRuntime({
   if(env.VIDEOBOT_SCHEMA_MIGRATE!=='YES')
    throw Error('CREATOR_POLL_SCHEMA_OWNER_CONSENT_MISSING');
   const schema=await applySchema({pool});
-  if(schema.migrations!==22)throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
+  assertCreatorSchemaApplied(schema);
   const ownerQueue=env.VIDEOBOT_OWNER_JOBS==='YES'?createPostgresOwnerUpdateQueue(pool):null;
   if(ownerQueue)await ownerQueue.recover();
   const pollAdmissionSecret=randomBytes(32).toString('hex');

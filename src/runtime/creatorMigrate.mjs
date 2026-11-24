@@ -26,6 +26,13 @@ const FILES=Object.freeze([
  '023_video_preview_montage.sql'
 ]);
 
+// Single source of truth shared by the migration runner and its consumers.
+export const CREATOR_SCHEMA_MIGRATION_COUNT=FILES.length;
+export function assertCreatorSchemaApplied(result) {
+ if(result?.applied!==true||result.migrations!==CREATOR_SCHEMA_MIGRATION_COUNT)
+  throw Error('CREATOR_POLL_SCHEMA_INCOMPLETE');
+}
+
 /** Apply the owned VideoBot schema atomically under a PostgreSQL advisory
  * transaction lock. Never touch GateApp-Bot, Gserver or MPB schema.
  * Migration 005 itself refuses silent retroactive fees on historical sales.
@@ -51,7 +58,7 @@ export async function applyCreatorSchema({pool,loadSql}={}) {
   for(const entry of statements)await client.query(entry.sql);
   await client.query('COMMIT');
   committed=true;
-  return {applied:true,migrations:FILES.length};
+  return {applied:true,migrations:CREATOR_SCHEMA_MIGRATION_COUNT};
  }catch(error){
   if(!committed)await client.query('ROLLBACK').catch(()=>{});
   throw error;
