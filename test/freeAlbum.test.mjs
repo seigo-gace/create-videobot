@@ -23,3 +23,9 @@ test('reject missing album media or mismatched paid destination', () => {
   assert.throws(()=>buildFreeAlbumRequest({chatId:1,thumbnailFileId:'',sampleFileId:'sample001'}),/thumbnail/);
   assert.throws(()=>buildFreeAlbumRequest({chatId:1,thumbnailFileId:'photo001',sampleFileId:'sample001',caption:'a'.repeat(1025)}),/caption/);
 });
+
+test('new three-member free album contains exactly two images and one video',()=>{
+ const free=buildFreeAlbumRequest({chatId:1,thumbnailFileId:'photo001',secondThumbnailFileId:'photo002',sampleFileId:'sample001'});
+ assert.deepEqual(free.media.map(m=>m.type),['photo','photo','video']);
+ assert.equal(free.media[2].supports_streaming,true);
+});

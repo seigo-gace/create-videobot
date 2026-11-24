@@ -182,7 +182,7 @@ test('public preview and native Stars post contain only creator-supplied title a
 
 test('fails before any Telegram call if free sample is too long or is identical to paid main',async()=>{
  for(const patch of [
-   {sample:{fileId:'sample001',durationSeconds:31}},
+   {sample:{fileId:'sample001',durationSeconds:61}},
    {sample:{fileId:'main001',durationSeconds:30}},
    {sample:{fileId:'sample001',durationSeconds:NaN}},
    {sample:{fileId:'sample001',durationSeconds:0}}
@@ -260,4 +260,18 @@ test('invoice unknown reply markup does not create a second sale offer on retry'
  assert.equal((await d.store.read('sale001:1')).status,'needs_reconcile');
  await assert.rejects(()=>publishVideoListing(d),/PUBLISH_NEEDS_RECONCILE/);
  assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','getMe','editMessageReplyMarkup']);
+});
+
+test('new free gallery is two spoiler images plus one streaming video',async()=>{
+ const d=deps({telegramApi:async(method,params)=>{
+   d.calls.push({method,params});
+   return method==='sendMediaGroup'?[10,11,12].map(message_id=>({message_id,media_group_id:'album_new'})):{message_id:13,chat:{id:-100123},message_thread_id:777,paid_media:{star_count:300,paid_media:[{type:'preview'}]}};
+ }});
+ d.listing.thumbnail.secondFileId='photo002';d.listing.sample.durationSeconds=60;
+ const result=await publishVideoListing(d);
+ assert.deepEqual(d.calls[0].params.media.map(x=>x.type),['photo','photo','video']);
+ assert.ok(d.calls[0].params.media.every(x=>x.has_spoiler));
+ assert.equal(d.calls[0].params.media[2].supports_streaming,true);
+ assert.deepEqual(result.freeMessageIds,[10,11,12]);
+ assert.equal(result.paidMessageId,13);
 });

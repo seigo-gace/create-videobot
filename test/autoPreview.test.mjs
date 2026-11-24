@@ -20,9 +20,9 @@ async function fixture(fn) {
 function runFake({duration,failSample=false,calls=[]}) {
   return async (command,args) => {
     calls.push({command,args});
-    if(command==='ffprobe')return {stdout: String(args.at(-1).includes('.sample-') ? (duration>30 ? 30 : Math.floor(duration / 3 * 100)/100) : duration)};
+    if(command==='ffprobe')return {stdout: args.includes('-select_streams')?'':String(args.at(-1).includes('.montage-') ? (duration>60 ? 60 : duration/3) : duration)};
     if(command==='ffmpeg') {
-      if(args.at(-1).includes('.sample-') && failSample)throw new Error('mock sample failure');
+      if(args.at(-1).includes('.montage-') && failSample)throw new Error('mock sample failure');
       await writeFile(args.at(-1),'generated');
       return {stdout:''};
     }
@@ -30,15 +30,22 @@ function runFake({duration,failSample=false,calls=[]}) {
   };
 }
 
-test('missing both: generate one image and beginning sample without replacing main', () => fixture(async({src,jpg,mp4})=>{
+test('missing both: generate two images and one montage without replacing main', () => fixture(async({src,jpg,mp4})=>{
   const calls=[];
-  const result=await prepareMissingPreviewAssets({sourcePath:src,thumbnailOutputPath:jpg,sampleOutputPath:mp4,run:runFake({duration:80,calls})});
+  const second=join(src,'..','second.jpg');
+  const result=await prepareMissingPreviewAssets({sourcePath:src,thumbnailOutputPath:jpg,secondThumbnailOutputPath:second,sampleOutputPath:mp4,run:runFake({duration:80,calls})});
+  assert.equal(result.secondThumbnail.path,second);
+  assert.equal(await readFile(second,'utf8'),'generated');
   assert.deepEqual([result.thumbnail.kind,result.sample.kind],['generated','clipped']);
-  assert.equal(result.sample.durationSeconds,30);
+  assert.equal(result.sample.durationSeconds,60);
   assert.equal((await readFile(src,'utf8')),'paid source must not be touched');
   assert.equal(await readFile(jpg,'utf8'),'generated');
   assert.equal(await readFile(mp4,'utf8'),'generated');
-  assert.equal(calls.filter(x=>x.command==='ffmpeg').length,2);
+  assert.equal(calls.filter(x=>x.command==='ffmpeg').length,3);
+  const montage=calls.find(x=>x.args.includes('-filter_complex'));
+  assert.equal(montage.args.filter(x=>x==='-i').length,4);
+  assert.ok(montage.args.includes('concat=n=4:v=1:a=0[v]')||montage.args.some(x=>x.includes('concat=n=4:v=1:a=0[v]')));
+  assert.equal(montage.args.filter((x,i)=>x==='15'&&montage.args[i-1]==='-t').length,4);
 }));
 test('short paid main generates a strictly shorter free sample', () => fixture(async({src,jpg,mp4})=>{
   const calls=[];
@@ -46,7 +53,7 @@ test('short paid main generates a strictly shorter free sample', () => fixture(a
   assert.equal(result.sample.kind,'clipped');
   assert.equal(result.sample.durationSeconds,5);
   const videoCut=calls.filter(x=>x.command==='ffmpeg').find(x=>x.args.includes('-t'));
-  assert.equal(videoCut.args[videoCut.args.indexOf('-t')+1],'5');
+  assert.equal(videoCut.args[videoCut.args.lastIndexOf('-t')+1],'5');
 }));
 test('manual assets remain unchanged and only missing item is auto-generated', () => fixture(async({src,jpg,mp4})=>{
   const thumb={fileId:'manual_photo'};

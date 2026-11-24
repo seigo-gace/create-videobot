@@ -12,7 +12,7 @@ import {optimizePaidMp4} from '../src/sales/paidVideoOptimize.mjs';
 const run=promisify(execFile);
 
 if(process.env.VIDEO_FFMPEG_INTEGRATION==='1'){
- test('REAL FFmpeg: >1 hour source creates 30s sample and thumbnail while preserving original',async()=>{
+ test('REAL FFmpeg: >1 hour source creates 60s four-part sample and two thumbnails while preserving original',async()=>{
    const dir=await mkdtemp(join(tmpdir(),'cv-long-video-'));
    const src=join(dir,'one-hour.mp4'),thumb=join(dir,'thumb.jpg'),sample=join(dir,'sample.mp4');
    try{
@@ -26,11 +26,12 @@ if(process.env.VIDEO_FFMPEG_INTEGRATION==='1'){
      const duration=await probeDurationSeconds(src);
      assert.ok(duration>3600,'source must genuinely exceed one hour');
      const output=await prepareMissingPreviewAssets({
-       sourcePath:src,thumbnailOutputPath:thumb,sampleOutputPath:sample
+       sourcePath:src,thumbnailOutputPath:thumb,secondThumbnailOutputPath:join(dir,'thumb2.jpg'),sampleOutputPath:sample
      });
      assert.equal(output.thumbnail.kind,'generated');
      assert.equal(output.sample.kind,'clipped');
-     assert.ok(output.sample.durationSeconds>0&&output.sample.durationSeconds<=30);
+     assert.ok(Math.abs(output.sample.durationSeconds-60)<0.15);
+     assert.ok((await stat(join(dir,'thumb2.jpg'))).size>0);
      assert.ok((await stat(thumb)).size>0);
      assert.ok((await stat(sample)).size>0);
      assert.equal(createHash('sha256').update(await readFile(src)).digest('hex'),before);

@@ -43,9 +43,9 @@ test('sticker and video use numeric-only custom Stars price without changing tit
   assert.throws(()=>editCreatorDraft(d,{type:'preset',stars:99}),/unknown/);
 });
 
-test('sample media must be verified <=30 seconds before being accepted by creator editor', () => {
+test('sample media must be verified <=60.1 seconds before being accepted by creator editor', () => {
   let d = openCreatorEditor({ sellerId:'seller1' });
-  assert.throws(() => editCreatorDraft(d,{type:'sample',media:{fileId:'file001',durationSeconds:30.1}}), /verified/);
+  assert.throws(() => editCreatorDraft(d,{type:'sample',media:{fileId:'file001',durationSeconds:60.2}}), /verified/);
   d = editCreatorDraft(d,{type:'sample',media:{fileId:'file001',durationSeconds:30}});
   assert.equal(d.sample.durationSeconds,30);
   d = editCreatorDraft(d,{type:'removeSample'});

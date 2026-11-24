@@ -15,14 +15,15 @@ async function setup(fn){
  };
  const saveGenerated=async({path,type})=>{
    calls.push({type,path});
-   return {fileId:type==='photo'?'photo_auto':'video_auto'};
+   return {fileId:type==='photo'?(path.endsWith('thumb-2.jpg')?'photo_auto_2':'photo_auto'):'video_auto'};
  };
  function fakeRun(duration){
    return async(command,args)=>{
      if(command==='ffprobe'){
        if(args.includes('json'))return {stdout:JSON.stringify({format:{duration:String(duration),bit_rate:'1000000'},
          streams:[{codec_type:'video',codec_name:'h264',width:640,height:360}]})};
-       return {stdout:String(args.at(-1).includes('.sample-')?(duration>30?30:Math.floor(duration/3*100)/100):duration)};
+       if(args.includes('-select_streams'))return {stdout:''};
+       return {stdout:String(args.at(-1).includes('.montage-')?(duration>60?60:duration/3):args.at(-1).includes('.sample-')?(duration>30?30:Math.floor(duration/3*100)/100):duration)};
      }
      if(command==='ffmpeg') {
        await writeFile(args.at(-1),'generated data');
@@ -54,12 +55,12 @@ test('main video fills only missing photo and sample from existing AutoPreview p
  const p=createVideoMediaProcessor({fetchSource:f.fetchSource,saveGenerated:f.saveGenerated,
    storageApproved:true,run:f.fakeRun(50),workRoot:f.base});
  const refs=await p.prepareMissingPreviews({paidVideo:{fileId:'main001'}});
- assert.deepEqual(refs,{thumbnail:{fileId:'photo_auto'},sample:{fileId:'video_auto',durationSeconds:30}});
- assert.deepEqual(f.calls.map(x=>x.type),['photo','video']);
+ assert.deepEqual(refs,{thumbnail:{fileId:'photo_auto',secondFileId:'photo_auto_2'},sample:{fileId:'video_auto',durationSeconds:50/3}});
+ assert.deepEqual(f.calls.map(x=>x.type),['photo','photo','video']);
  assert.deepEqual(await readdir(f.base),[]);
  const one=await p.prepareMissingPreviews({paidVideo:{fileId:'main002'},
    thumbnail:{fileId:'manual'}});
- assert.deepEqual(one,{sample:{fileId:'video_auto',durationSeconds:30}});
+ assert.deepEqual(one,{thumbnail:{fileId:'manual',secondFileId:'photo_auto_2'},sample:{fileId:'video_auto',durationSeconds:50/3}});
 }));
 test('unapproved storage refuses generation upload and cleans downloaded media',()=>setup(async f=>{
  const p=createVideoMediaProcessor({fetchSource:f.fetchSource,saveGenerated:f.saveGenerated,

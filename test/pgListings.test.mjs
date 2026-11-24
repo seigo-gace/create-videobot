@@ -9,7 +9,7 @@ function fakeDb(){
       price_mode:d[2],thumbnail_file_id:d[3],sample_file_id:d[4],
       sample_duration_seconds:d[5],paid_video_file_id:d[6],
       rights_verified:d[7],adult_consent_verified:d[8],fee_terms_accepted_at:d[9]?d[13]:null,
-      management_fee_bps:3000,description:d[10]??'',creator_terms_version:d[11]??null,creator_terms_url:d[12]??null,status:'draft'};
+      management_fee_bps:3000,description:d[10]??'',creator_terms_version:d[11]??null,creator_terms_url:d[12]??null,second_thumbnail_file_id:d[14]??null,status:'draft'};
   }
   const query=async(sql,params)=>{
     queries.push({sql,params});
@@ -105,7 +105,7 @@ test('unpublished removal is logical and preserves record instead of DELETE',asy
 test('reject invalid prices and overlength or unverified free samples before SQL writes',async()=>{
   const db=fakeDb(),store=createPostgresListingStore(db);
   await assert.rejects(()=>store.createDraft(33,'v1',example({priceStars:25001})),/price/);
-  await assert.rejects(()=>store.createDraft(33,'v1',example({sample:{fileId:'s001',durationSeconds:30.1}})),/30 seconds/);
+  await assert.rejects(()=>store.createDraft(33,'v1',example({sample:{fileId:'s001',durationSeconds:60.2}})),/60.1 seconds/);
   await assert.rejects(()=>store.createDraft(-1,'v1',example()),/owner/);
   assert.equal(db.queries.length,0);
 });
