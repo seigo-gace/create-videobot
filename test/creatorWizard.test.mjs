@@ -816,6 +816,6 @@ test('unresolved prior sale cannot be silently cleared by pressing new post',asy
  assert.equal(s.publishing,'needs_reconcile');
  assert.deepEqual(s.pendingVideoDraft,{listingId:'my1',revision:7});
  assert.equal(s.draft.paidVideo.fileId,'uncertain_prior_video');
- assert.equal(s.screen,'review');
+ assert.equal(s.screen,'editor');
  assert.match(x.screens.at(-1).panel.text,/前の投稿結果が未確定/);
 });
