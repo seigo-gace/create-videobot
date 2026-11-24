@@ -96,7 +96,7 @@ test('seller consent is explicit, reversible and reset when video changes',()=>{
  assert.deepEqual([d.rightsVerified,d.adultConsentVerified,d.feeTermsAccepted],[true,true,true]);
  let panel=creatorReviewPanel(d,5,'','https://example.test/terms.html');
  assert.match(panel.text,/同意済み/);
- assert.equal(panel.reply_markup.inline_keyboard[1][0].callback_data,'review:agree|r5');
+ assert.equal(panel.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:agree')),false,'incomplete content cannot be submitted');
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main002'}});
  assert.deepEqual([d.rightsVerified,d.adultConsentVerified,d.feeTermsAccepted],[false,false,false]);
  panel=creatorReviewPanel(d,6,'','https://example.test/terms.html');
@@ -163,7 +163,7 @@ test('first video opens inline preview with six edit links and no extra descript
  assert.throws(()=>editCreatorDraft(d,{type:'descriptionInput',text:'x'.repeat(801)}),/description/);
 });
 
-test('terms summary has checkbox and only reveals publish after all content and explicit agreement',()=>{
+test('terms summary offers one final consent action only when content is complete',()=>{
  let d=openCreatorEditor({sellerId:'seller1'});
  d=editCreatorDraft(d,{type:'captionTitle',text:'作品'});
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main11'}});
@@ -171,11 +171,13 @@ test('terms summary has checkbox and only reveals publish after all content and 
  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample11',durationSeconds:30}});
  d=editCreatorDraft(d,{type:'preset',stars:300});
  const before=creatorReviewPanel(d,2,'','https://example.test/terms.html');
- assert.equal(before.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),false);
+ assert.deepEqual(before.reply_markup.inline_keyboard.flat().filter(b=>b.callback_data?.startsWith('review:agree')).map(b=>b.text),['✅ 同意して登録する']);
+ assert.equal(before.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:publish')),false);
  d=editCreatorDraft(d,{type:'confirmTerms'});
  d={...d,termsUrl:'https://example.test/terms.html'};
  const after=creatorReviewPanel(d,3,'','https://example.test/terms.html');
- assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),true);
+ assert.deepEqual(after.reply_markup.inline_keyboard.flat().filter(b=>b.callback_data?.startsWith('review:agree')).map(b=>b.text),['✅ 同意して登録を再試行']);
+ assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:publish')),false);
  assert.match(after.text,/☑ 同意済み/);
 });
 
@@ -273,7 +275,7 @@ test('a changed legal page is not treated as previously accepted by the preview'
  const p=creatorReviewPanel(d,8,'','https://example.test/new-terms.html');
  assert.ok(p.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='review:agree|r8'));
  assert.ok(p.reply_markup.inline_keyboard.flat().every(b=>b.callback_data!=='review:publish|r8'));
- assert.match(p.text,/☐ 規約内容を確認して同意する/);
+ assert.match(p.text,/同意ボタンを押すと登録手続きが開始/);
 });
 
 test('published buyer-protected videos retain their editor entrance',()=>{

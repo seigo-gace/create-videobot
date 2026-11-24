@@ -353,15 +353,14 @@ export function creatorReviewPanel(draft, revision = 0, note = '', termsUrl = ''
     '・購入者都合の通常返金はありません（法令・Telegram公式の正当な例外を除く）。',
     '規約バージョン：'+CREATOR_TERMS_VERSION,
     validTerms?'全文リンクから規約を確認してください。':'⚠️ 規約本文の公開先が未確認のため、同意・投稿できません。',
-    agreed?'☑ 同意済み':'☐ 規約内容を確認して同意する',
+    agreed?'☑ 同意済み':'☐ 規約内容を確認してください。同意ボタンを押すと登録手続きが開始されます。',
     missing.length?'⚠️ 未登録項目：'+missing.join('・'):'',
     note
   ].filter(Boolean).join('\n');
   const rows=[];
   if(validTerms)rows.push([{text:'📄 規約・約款全文',url:termsUrl}]);
-  if(validTerms)rows.push([{text:agreed?'☑ 同意を取り消す':'☐ 内容を確認して同意する',
+  if(validTerms&&!missing.length&&draft.mode==='create')rows.push([{text:agreed?'✅ 同意して登録を再試行':'✅ 同意して登録する',
     callback_data:'review:agree|r'+revision}]);
-  if(validTerms&&agreed&&!missing.length)rows.push([{text:'✅ 投稿する',callback_data:'review:publish|r'+revision}]);
   rows.push([{text:'🔙 プレビューへ戻る',callback_data:'review:edit|r'+revision},
     {text:'❌ キャンセル',callback_data:'review:cancel|r'+revision}]);
   return {text,reply_markup:{inline_keyboard:rows}};

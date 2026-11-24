@@ -157,13 +157,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
 
   async function registerVideo(ownerId,old,draft) {
 
-        if(old.publishing==='needs_reconcile')throw new Error('PUBLISH_NEEDS_RECONCILE');
-        const valid=!!draft.thumbnail?.secondFileId&&!!draft.sample&&!!draft.paidVideo&&
+        if(['needs_reconcile','in_progress'].includes(old.publishing))throw new Error('PUBLISH_NEEDS_RECONCILE');
+        const valid=draft.mode==='create'&&!!draft.thumbnail?.secondFileId&&!!draft.sample&&!!draft.paidVideo&&
           !!draft.title&&Number.isSafeInteger(draft.priceStars)&&
           draft.rightsVerified===true&&draft.adultConsentVerified===true&&
           draft.feeTermsAccepted===true&&draft.termsVersion===CREATOR_TERMS_VERSION&&
            typeof draft.termsAcceptedAt==='string'&&draft.termsUrl===termsUrl&&verifiedTermsUrl;
-        if(!valid)return persistAndRender(ownerId,old,{...old},
+        if(!valid)return persistAndRender(ownerId,old,{...old,draft},
           rev=>old.screen==='review'
             ?reviewPanel(draft,rev,'未登録項目と権利の確認を完了してください。')
             :statusPanel(draft,rev,'⚠️ 本編・サムネ・サンプル・Stars価格を登録してから［登録］してください。'));
@@ -171,11 +171,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           typeof listingStore?.createDraft!=='function' ||
           typeof listingStore?.updateDraft!=='function' ||
           typeof listingStore?.markPublished!=='function')
-          return persistAndRender(ownerId,old,{...old},
+          return persistAndRender(ownerId,old,{...old,draft},
             rev=>old.screen==='review'
               ?reviewPanel(draft,rev,'公開用の既存GATE・Topic・売上DB接続はまだ検証されていません。投稿は行われません。')
               :statusPanel(draft,rev,'⚠️ 公開先と売上DBの接続が未確認です。投稿は行われていません。'));
-        const reservation={...old,revision:old.revision+1,publishing:'in_progress'};
+        const reservation={...old,draft,revision:old.revision+1,publishing:'in_progress'};
         // Reserve callback revision *before* any paid-media send; rejects races.
         await sessionStore.write(ownerId,old.revision,reservation);
         let stored=null;
@@ -513,7 +513,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
             rev=>statusPanel(prepared,rev,warning));
         }
         const missing=['paidVideo','thumbnail','sample','title','priceStars'].filter(k=>!prepared[k]);
-        const note=missing.length ? warning : '本人が［登録］を押すまでは公開されません。';
+        const note=missing.length ? warning : '本人が規約確認画面で［同意して登録する］を押すまでは公開されません。';
         return persistAndRender(ownerId,old,{...old,draft:prepared,waiting:null,screen:'review'},
           rev=>reviewPanel(prepared,rev,note));
       }
@@ -534,15 +534,15 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       }
       if(action==='review:agree'||action==='review:rights') {
         if(!verifiedTermsUrl)throw new Error('CREATOR_PUBLISHED_TERMS_URL_REQUIRED');
-        const currentConsent=draft.feeTermsAccepted===true &&
-          draft.termsVersion===CREATOR_TERMS_VERSION&&draft.termsUrl===termsUrl &&
-          typeof draft.termsAcceptedAt==='string';
-        const nextDraft=editCreatorDraft(draft,
-          {type:currentConsent?'clearTerms':'confirmTerms'});
-        const agreed=nextDraft.feeTermsAccepted
-          ?{...nextDraft,termsUrl}: {...nextDraft,termsUrl:null};
-        return persistAndRender(ownerId,old,{...old,draft:agreed},
-          rev=>reviewPanel(agreed,rev));
+        if(draft?.mode!=='create')return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},
+          rev=>statusPanel(draft,rev,'既存動画は［変更］で保存してください。新規投稿は行っていません。'));
+        if(['needs_reconcile','in_progress'].includes(old.publishing))throw Error('PUBLISH_NEEDS_RECONCILE');
+        if(!draft.paidVideo||!draft.title||!draft.thumbnail?.secondFileId||!draft.sample||
+           !Number.isSafeInteger(draft.priceStars)||draft.priceStars<1)
+          return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},
+            rev=>statusPanel(draft,rev,'未登録項目を確認してください。登録は実行していません。'));
+        const agreed={...editCreatorDraft(draft,{type:'confirmTerms'}),termsUrl};
+        return registerVideo(ownerId,old,agreed);
       }
       if(action==='review:publish'&&!verifiedTermsUrl)throw new Error('CREATOR_PUBLISHED_TERMS_URL_REQUIRED');
       if(action==='review:publish'&&draft?.mode==='edit'){

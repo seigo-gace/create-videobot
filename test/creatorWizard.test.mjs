@@ -214,8 +214,6 @@ test('creator confirms rights and explicitly publishes only after verified store
  assert.equal(published.length,0);
  assert.match(x.screens.at(-1).panel.text,/未登録項目と権利/);
  await x.callback('review:rights|r7');
- assert.equal(x.states.get(33).draft.rightsVerified,true);
- await x.callback('review:publish|r8');
  assert.equal(saved.length,1);
  assert.equal(published.length,1);
  assert.equal(calls.length,1);
@@ -223,8 +221,8 @@ test('creator confirms rights and explicitly publishes only after verified store
  assert.equal(saved[0].owner,33);
  assert.equal(x.states.get(33).draft,null);
  assert.match(x.screens.at(-1).panel.text,/新規動画を登録しました/);
- await x.callback('review:publish|r8');
- assert.equal(x.states.get(33).screen,'my_videos');
+ await x.callback('review:rights|r7');
+  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(published.length,1);
 });
 test('definitive pre-send GATE refusal retains one draft and permits safe retry',async()=>{
@@ -255,13 +253,12 @@ test('definitive pre-send GATE refusal retains one draft and permits safe retry'
  await x.callback('edit:price:300|r4');
  await x.callback('edit:preview|r5');
  await x.callback('review:rights|r6');
- await x.callback('review:publish|r7');
  const stopped=x.states.get(33);
  assert.equal(stopped.publishing,null);
  assert.equal(stopped.pendingVideoDraft.revision,1);
  assert.match(x.screens.at(-1).panel.text,/Telegramへ投稿していません/);
  assert.deepEqual([creates,updates,published],[1,0,0]);
- await x.callback('review:publish|r'+stopped.revision);
+ await x.callback('review:agree|r'+stopped.revision);
  assert.deepEqual([creates,updates,published],[1,1,1]);
  assert.equal(x.states.get(33).pendingVideoDraft,null);
  assert.equal(x.states.get(33).publishing,null);
@@ -285,7 +282,6 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
  await x.callback('edit:price:300|r4');
  await x.callback('edit:preview|r5');
  await x.callback('review:rights|r6');
- await x.callback('review:publish|r7');
  const revision=x.states.get(33).revision;
  assert.equal(x.states.get(33).publishing,'needs_reconcile');
  assert.equal(attempts,1);
@@ -434,9 +430,9 @@ test('video upload -> inline edit -> explicit terms -> publish once -> personal 
  assert.equal(x.states.get(33).screen,'review');
  assert.equal(published.length,0,'entering review cannot publish');
  assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),false);
- await x.callback('review:agree|r8');
- assert.equal(x.states.get(33).draft.feeTermsAccepted,true);
- await x.callback('review:publish|r9');
+ const consent=x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().find(b=>b.callback_data?.startsWith('review:agree'));
+  assert.equal(consent.text,'✅ 同意して登録する');
+  await x.callback(consent.callback_data);
  assert.equal(saved.length,1);
  assert.equal(saved[0].description,'この動画の説明です');
  assert.deepEqual([saved[0].rightsVerified,saved[0].adultConsentVerified,saved[0].feeTermsAccepted],[true,true,true]);
@@ -752,7 +748,6 @@ test('new registration after editing never updates the previous listing',async()
  await x.callback('edit:price:300|r'+x.states.get(33).revision);
  await x.callback('edit:preview|r'+x.states.get(33).revision);
  await x.callback('review:rights|r'+x.states.get(33).revision);
- await x.callback('review:publish|r'+x.states.get(33).revision);
  assert.equal(created,1);
  assert.equal(updated,0);
  assert.equal(x.states.get(33).screen,'my_videos');
