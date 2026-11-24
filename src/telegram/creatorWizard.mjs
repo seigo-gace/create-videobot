@@ -124,7 +124,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   async function openTextEdit(update,field,linkRevision) {
     const {ownerId,messageId}=privateUser(update);
     const old=await sessionStore.read(ownerId);
-    const fields=['title','description','price','paidVideo','thumbnail','sample'];
+    const fields=old?.draft?.publishedEdit?['title','description']:['title','description','price','paidVideo','thumbnail','sample'];
     if(!fields.includes(field) || !Number.isSafeInteger(linkRevision) ||
       linkRevision<1 || old?.revision!==linkRevision ||
       old?.screen!=='editor' || !old?.draft ||
@@ -148,19 +148,6 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       return {handled:true,staleTextLink:true};
     const owned=await listingStore.getOwned(ownerId,listingId);
     if(!owned)return {handled:true,staleTextLink:true};
-    // A legacy [編集] deep link for a purchased video must not lead to
-    // an unrequested Details page. Keep protected sales intact and return
-    // to My Videos; only draft/ready listings have an editable screen.
-    if(owned.status==='published'||owned.status==='paused') {
-      const items=await listingStore.listByOwner(ownerId);
-      const result=await persistAndRender(ownerId,old,{
-        ...old,screen:'my_videos',page:0,detailId:null,waiting:null,
-        draft:null,originalDraft:null
-      },rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,
-        revision:rev,notice:'購入済み動画は変更できません。新規登録する場合は［🆕 新規投稿］を押してください。'}));
-      await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
-      return result;
-    }
     const draft=openCreatorEditor({sellerId:String(ownerId),existing:owned});
     const result=await persistAndRender(ownerId,old,{...old,draft,originalDraft:draft,screen:'editor',waiting:null},
       rev=>statusPanel(draft,rev));
@@ -255,7 +242,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const actionRevision=/\|r([1-9][0-9]*)$/.exec(code);
     const oldScreen=old?.screenMessageId!==messageId ||
       (actionRevision && Number(actionRevision[1])!==old?.revision);
-    if((code.startsWith('entry:register') || code.startsWith('edit:cancel')) &&
+    if(code.startsWith('entry:register') &&
        old?.draft?.paidVideo && oldScreen) {
       // Obsolete destructive/publishing buttons can never execute the old
       // action. Refresh the saved draft and require a fresh explicit tap.
@@ -325,12 +312,18 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         screen:'await_video',waiting:'paidVideo'
       },rev=>statusPanel(draft,rev),{verifiedResolution:resolvedPrevious});
     }
-    if(code==='menu:manage') {
+    // Both the current and previously emitted versioned Back/Cancel buttons
+    // navigate without ever publishing or deleting a product.
+    if(/^menu:manage(?:\|r[1-9][0-9]*)?$/.test(code)||/^edit:cancel(?:\|r[1-9][0-9]*)?$/.test(code)) {
+      if(!old)return {handled:true};
+      const active=old.screenMessageId===messageId && (!actionRevision||Number(actionRevision[1])===old.revision);
+      const cancelled=active && ['await_video','editor','description','field','review'].includes(old.screen);
+      const preserve=['needs_reconcile','in_progress'].includes(old.publishing);
       const items=await listingStore.listByOwner(ownerId);
-      return persistAndRender(ownerId,old,{
-        screenMessageId:messageId,draft:old?.draft??null,waiting:null,
-        screen:'my_videos',page:0
-      },rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
+      return persistAndRender(ownerId,old,{...old,screenMessageId:active?messageId:old.screenMessageId,
+        screen:'my_videos',page:0,waiting:null,field:null,previewMessageId:null,albumMessageId:null,
+        ...(cancelled&&!preserve?{draft:null,originalDraft:null,pendingVideoDraft:null}:{} )},
+        rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
     }
     if(code==='menu:sales'||code==='menu:home'||code==='menu:purchase') {
       const target=code.slice('menu:'.length);
@@ -418,6 +411,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       const action=validateRevision(code,old);
       const draft=old.draft;
       const value=action.slice(5);
+      if(draft?.publishedEdit&&!['cancel','return','save','back','title','description','clear:description'].includes(value))
+        return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null,field:null},rev=>statusPanel(draft,rev,'購入済みの価格・素材は保持します。'));
       if(value==='cancel') {
         const items=await listingStore.listByOwner(ownerId);
         return persistAndRender(ownerId,old,{...old,draft:null,originalDraft:null,
@@ -435,7 +430,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         if(typeof listingStore.updateDraft!=='function')throw Error('LISTING_UPDATE_UNAVAILABLE');
         if(!draft.title || !draft.paidVideo)throw Error('INCOMPLETE_VIDEO_EDIT');
         if(old.publishing==='needs_reconcile')throw Error('PUBLISH_NEEDS_RECONCILE');
-        const saved=await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,draft);
+        let saved;
+        if(draft.publishedEdit){
+          if(typeof listingStore.updatePublishedMetadata!=='function')throw Error('PUBLISHED_EDITOR_UNAVAILABLE');
+          saved=await listingStore.updatePublishedMetadata(ownerId,draft.listingId,draft.revision,draft);
+        }else saved=await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,draft);
         const items=await listingStore.listByOwner(ownerId);
         return persistAndRender(ownerId,old,{...old,draft:null,originalDraft:null,
           waiting:null,screen:'my_videos',page:0},
@@ -471,7 +470,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(value==='back') {
         // Existing drafts from the former UI can be repaired by returning
         // from Stars settings, without losing their stored main video.
-        const recovery=draft.paidVideo && (!draft.thumbnail?.secondFileId || !draft.sample)
+        const recovery=!draft.publishedEdit && draft.paidVideo && (!draft.thumbnail?.secondFileId || !draft.sample)
           ?await autoPreview(ownerId,draft)
           :{draft,warning:'',previewMessageId:old.previewMessageId??null};
         return persistAndRender(ownerId,old,{
@@ -572,13 +571,6 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       const v=await listingStore.getOwned(ownerId,id);
       if(!v)throw new Error('LISTING_NOT_OWNED');
       if(parts[1]==='edit' && old.screen==='my_videos') {
-        if(v.status==='published'||v.status==='paused') {
-          return persistAndRender(ownerId,old,{...old},
-            rev=>({text:'購入済み動画の価格・本編は直接変更できません。購入者の権利を保護する再掲載経路の検証が必要です。',
-              reply_markup:{inline_keyboard:[[{
-                text:'↩ 戻る',callback_data:'menu:manage'
-              }]]}}));
-        }
         const draft=openCreatorEditor({sellerId:String(ownerId),existing:v});
         return persistAndRender(ownerId,old,{...old,screenMessageId:messageId,draft,originalDraft:draft,waiting:null,screen:'editor'},
           rev=>statusPanel(draft,rev));

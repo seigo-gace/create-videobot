@@ -759,22 +759,33 @@ test('new registration after editing never updates the previous listing',async()
  assert.equal(x.states.get(33).draft,null);
 });
 
-test('legacy purchased video Edit link does not open unrequested Details page',async()=>{
+test('published listing Edit opens a real metadata editor and saves without publishing',async()=>{
  const x=setup({listingStoreOverride:{
-  async getOwned(owner,id){return id==='my1'?{id:'my1',sellerId:String(owner),
-    revision:2,status:'published',title:'購入済み商品'}:null;}
+  async getOwned(owner,id){return {id,sellerId:String(owner),revision:2,status:'published',title:'旧タイトル',description:'旧説明',priceStars:300,paidVideo:{fileId:'main777'}};},
+  async updatePublishedMetadata(owner,id,rev,d){assert.equal(owner,33);assert.equal(id,'my1');assert.equal(rev,2);assert.equal(d.title,'新タイトル');assert.equal(d.paidVideo.fileId,'main777');return {id};}
  }});
  await x.callback('menu:manage');
- await x.handler.openOwnedVideo({message:{chat:{id:33,type:'private'},from:{id:33},
-  message_id:111,text:'/start ved_video_my1_r1'}},'my1',1);
+ await x.handler.openOwnedVideo({message:{chat:{id:33,type:'private'},from:{id:33},message_id:111}},'my1',1);
+ assert.equal(x.states.get(33).screen,'editor');
+ assert.equal(x.states.get(33).draft.publishedEdit,true);
+ await x.callback('edit:title|r2');
+ await x.send({text:'新タイトル'},112);
+ await x.callback('edit:save|r4');
+ assert.equal(x.states.get(33).screen,'my_videos');
+ assert.match(x.screens.at(-1).panel.text,/動画を編集／更新しました/);
+});
+test('new post Back and Cancel return to the listing including old versioned Back',async()=>{
+ const x=setup();
+ await x.callback('menu:manage');
+ await x.callback('menu:listing');
+ await x.callback('menu:manage|r2');
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(x.states.get(33).draft,null);
- assert.match(x.screens.at(-1).panel.text,/購入済み動画は変更できません/);
- assert.equal(x.screens.at(-1).panel.text.includes('📋 詳細'),false);
- assert(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].some(
-  b=>b.callback_data==='menu:listing'));
+ await x.callback('menu:listing');
+ await x.callback('edit:cancel|r4');
+ assert.equal(x.states.get(33).screen,'my_videos');
+ assert.equal(x.states.get(33).draft,null);
 });
-
 test('published prior receipt resolves stale creator lock and allows genuinely new registration',async()=>{
  const x=setup({listingStoreOverride:{
    async getOwned(owner,id){

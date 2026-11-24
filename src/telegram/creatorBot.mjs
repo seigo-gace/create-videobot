@@ -71,6 +71,12 @@ export function createCreatorBotUpdateHandler(options={}) {
         if(typeof options.videoInvoiceHandler!=='function')throw Error('VIDEO_INVOICE_HANDLER_MISSING');
         return options.videoInvoiceHandler(update);
       }
+      const inlineEdit=/^\/start(?:@[A-Za-z0-9_]+)?\s+ved_(title|description|paidVideo|thumbnail|sample|price)_r([1-9][0-9]*)$/
+        .exec(message.text.trim());
+      if(inlineEdit)return wizard.openTextEdit(update,inlineEdit[1],Number(inlineEdit[2]));
+      const videoEdit=/^\/start(?:@[A-Za-z0-9_]+)?\s+ved_video_([A-Za-z0-9_-]{1,40})_r([1-9][0-9]*)$/
+        .exec(message.text.trim());
+      if(videoEdit)return wizard.openOwnedVideo(update,videoEdit[1],Number(videoEdit[2]));
       // The sticker wizard owns unresolved registrations even when a user
       // reopens the generic /start; it must run before the video home page.
       if(typeof options.stickerHandler==='function') {
@@ -81,12 +87,6 @@ export function createCreatorBotUpdateHandler(options={}) {
         const sales=await options.stickerSalesHandler(update);
         if(sales?.handled)return sales;
       }
-      const inlineEdit=/^\/start(?:@[A-Za-z0-9_]+)?\s+ved_(title|description|paidVideo|thumbnail|sample|price)_r([1-9][0-9]*)$/
-        .exec(message.text.trim());
-      if(inlineEdit)return wizard.openTextEdit(update,inlineEdit[1],Number(inlineEdit[2]));
-      const videoEdit=/^\/start(?:@[A-Za-z0-9_]+)?\s+ved_video_([A-Za-z0-9_-]{1,40})_r([1-9][0-9]*)$/
-        .exec(message.text.trim());
-      if(videoEdit)return wizard.openOwnedVideo(update,videoEdit[1],Number(videoEdit[2]));
       if(typeof options.videoInvoiceHandler==='function'){
         const invoice=await options.videoInvoiceHandler(update);
         if(invoice?.handled)return invoice;

@@ -121,6 +121,15 @@ export function createPostgresListingStore(pool) {
       if(r?.rowCount!==1)throw new Error('LISTING_STALE_OR_PUBLISHED');
       return recordToListing(r.rows[0]);
     },
+    /** Edit seller metadata without changing the sold media, price, receipt or buyer entitlement. */
+    async updatePublishedMetadata(owner,id,expectedRevision,draft) {
+      ownerId(owner);listingId(id);revisionNumber(expectedRevision);
+      if(!draft?.publishedEdit||!draft.title?.trim()||draft.title.length>128||/[\r\n]/.test(draft.title)||typeof draft.description!=='string'||draft.description.length>800||
+         !Array.isArray(draft.dirtyFields)||draft.dirtyFields.some(f=>!['title','description'].includes(f)))throw Error('PUBLISHED_METADATA_INVALID');
+      const r=await pool.query("UPDATE videobot_listings SET title=$4,description=$5,revision=revision+1,updated_at=NOW() WHERE seller_user_id=$1 AND listing_id=$2 AND revision=$3 AND status IN ('published','paused') RETURNING *",[owner,id,expectedRevision,draft.title,draft.description]);
+      if(r?.rowCount!==1)throw Error('PUBLISHED_EDIT_STALE');
+      return recordToListing(r.rows[0]);
+    },
     /** Only call after both real Telegram message IDs have durable receipts. */
     async markPublished(owner,id,expectedRevision,receipt) {
       ownerId(owner);listingId(id);revisionNumber(expectedRevision);

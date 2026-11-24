@@ -43,6 +43,7 @@ export function openCreatorEditor({ sellerId, existing = null } = {}) {
   if (existing && (existing.sellerId !== sellerId || !ID.test(existing.id || ''))) throw new Error('listing ownership mismatch');
   return {
     mode: existing ? 'edit' : 'create',
+    publishedEdit: ['published','paused'].includes(existing?.status),
     sellerId,
     listingId: existing?.id ?? null,
     revision: existing?.revision ?? 0,
@@ -151,7 +152,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   const btn=(text,action)=>({text,callback_data:action+(revision?'|r'+revision:'')});
   if(screen==='await_video' || (screen==='editor'&&!draft.paidVideo)){
     return {text:'🎬 新規動画を投稿\n\nタイトルと動画を投稿してください。\n動画のキャプションへタイトルを入力し、一緒に送信してください。',
-      reply_markup:{inline_keyboard:[[btn('🔙 戻る','menu:manage'),btn('❌ キャンセル','edit:cancel')]]}};
+      reply_markup:{inline_keyboard:[[btn('🔙 戻る','edit:cancel'),btn('❌ キャンセル','edit:cancel')]]}};
   }
   // The preview is solely a registration/editing workspace. Fee, revenue
   // share, payout and financial examples belong to their existing dedicated
@@ -171,12 +172,14 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   const fields=[];
   for(const [field,label,registered,display] of definitions){
     const mark=registered?'［編集］':'［未登録］';
-    fields.push({field,index:rows.length,mark});
-    rows.push(mark+' '+label+'：'+(registered?display:''));
+    const available=!draft.publishedEdit||['title','description'].includes(field);
+    if(available)fields.push({field,index:rows.length,mark});
+    rows.push((available?mark:'［保持］')+' '+label+'：'+(registered?display:''));
   }
   if(draft.mode==='edit'&&draft.rightsVerified&&draft.adultConsentVerified&&draft.feeTermsAccepted)
     rows.push('☑ 規約約款同意済み');
   rows.push('',...guide);
+  if(draft.publishedEdit)rows.push('公開済み：タイトル・説明を変更できます。購入者の権利を維持するため価格・素材は保持します。');
   const text=rows.join('\n');
   const entities=[];
   for(const {field,index,mark} of fields) {
@@ -189,7 +192,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     return {text,entities,reply_markup:{inline_keyboard:[[
       ...(changed?[]:[btn('🔙 戻る','edit:return')]),
       btn('✅ 変更','edit:save'),btn('❌ キャンセル','edit:cancel'),
-      ...(draft.listingId?[btn('🗑 削除','edit:delete')]:[])
+      ...(draft.listingId&&!draft.publishedEdit?[btn('🗑 削除','edit:delete')]:[])
     ]]}};
   }
   return {text,entities,reply_markup:{inline_keyboard:[
@@ -249,10 +252,8 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
   const rows=[intro];
   const entities=[];
   for(const item of items){
-    // The seller can edit only unsold draft items. Showing ［編集］ beside a
-    // published, buyer-protected sale falsely opens a read-only Details page,
-    // which is not an editing flow and was not requested by the creator.
-    const editable=item.status!=='published'&&item.status!=='paused'&&item.status!=='removed';
+    // All retained owner listings have an actual editor entrance.
+    const editable=item.status!=='removed';
     const prefix=editable?'［編集］':'';
     const mark=item.id===updatedId?'📝 ':item.status==='published'?'🎬 ':'🆕';
     const row=prefix+mark+item.title;
