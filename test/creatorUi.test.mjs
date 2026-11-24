@@ -275,3 +275,16 @@ test('a changed legal page is not treated as previously accepted by the preview'
  assert.ok(p.reply_markup.inline_keyboard.flat().every(b=>b.callback_data!=='review:publish|r8'));
  assert.match(p.text,/☐ 規約内容を確認して同意する/);
 });
+
+test('published buyer-protected videos have no misleading Edit link or unrequested Details entrance',()=>{
+ const panel=myVideosPanel({sellerId:'seller1',revision:7,listings:[
+  {id:'preserved_paid',sellerId:'seller1',title:'購入済みの動画',status:'published'},
+  {id:'editable_draft',sellerId:'seller1',title:'下書き',status:'draft'}
+ ]});
+ assert.match(panel.text,/🎬 購入済みの動画/);
+ assert.doesNotMatch(panel.text,/［編集］🎬/);
+ assert.match(panel.text,/［編集］🆕下書き/);
+ assert.equal(panel.entities.length,1);
+ assert(panel.entities[0].url.includes('editable_draft'));
+ assert.equal(panel.reply_markup.inline_keyboard[0][1].callback_data,'menu:listing');
+});
