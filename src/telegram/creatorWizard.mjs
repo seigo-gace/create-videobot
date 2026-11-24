@@ -315,10 +315,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     // Both the current and previously emitted versioned Back/Cancel buttons
     // navigate without ever publishing or deleting a product.
     if(/^menu:manage(?:\|r[1-9][0-9]*)?$/.test(code)||/^edit:cancel(?:\|r[1-9][0-9]*)?$/.test(code)) {
-      if(!old)return {handled:true};
-      const active=old.screenMessageId===messageId && (!actionRevision||Number(actionRevision[1])===old.revision);
-      const cancelled=active && ['await_video','editor','description','field','review'].includes(old.screen);
-      const preserve=['needs_reconcile','in_progress'].includes(old.publishing);
+      const active=!old||(old.screenMessageId===messageId && (!actionRevision||Number(actionRevision[1])===old.revision));
+      const cancelled=active && ['await_video','editor','description','field','review'].includes(old?.screen);
+      const preserve=['needs_reconcile','in_progress'].includes(old?.publishing);
       const items=await listingStore.listByOwner(ownerId);
       return persistAndRender(ownerId,old,{...old,screenMessageId:active?messageId:old.screenMessageId,
         screen:'my_videos',page:0,waiting:null,field:null,previewMessageId:null,albumMessageId:null,
