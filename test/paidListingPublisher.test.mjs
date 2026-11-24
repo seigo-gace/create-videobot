@@ -67,7 +67,8 @@ test('publishes only spoiler thumbnail + sample album then a separate inline pur
  assert.equal(album.media[1].caption,undefined);
  const offer=d.calls[2].params;
  assert.equal(offer.message_thread_id,777);
- assert.deepEqual(offer.reply_parameters,{message_id:11});
+ assert.equal(Object.hasOwn(offer,'reply_parameters'),false);
+ assert.equal(Object.hasOwn(offer,'reply_to_message_id'),false);
  assert.equal(offer.reply_markup.inline_keyboard[0][0].text,'⭐ 300 Starsで本編を購入');
  assert.equal(offer.reply_markup.inline_keyboard[0][0].url,
   'https://t.me/CreateVdobot?start=vid_sale001_r1');
