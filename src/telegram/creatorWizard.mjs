@@ -61,7 +61,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     // publication result. Only the verified reconciliation owner may
     // clear that lock; ordinary UI navigation must preserve it.
     const next={...patch,revision:expected+1,
-      ...(old?.publishing==='needs_reconcile'&&!verifiedResolution?{publishing:'needs_reconcile'}:{})};
+      ...(old?.publishing==='needs_reconcile'&&!verifiedResolution?{publishing:'needs_reconcile',pendingVideoDraft:old.pendingVideoDraft??null}:{})};
     const drawn=typeof panel==='function'?panel(next.revision):panel;
     // Keep the editable text screen visually attached to the owner's album preview.
     if(['editor','description'].includes(next.screen) &&
@@ -428,7 +428,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(value==='save' && draft?.mode==='edit' && draft.listingId) {
         if(!draft.publishedEdit&&typeof listingStore.updateDraft!=='function')throw Error('LISTING_UPDATE_UNAVAILABLE');
         if(!draft.title || !draft.paidVideo)throw Error('INCOMPLETE_VIDEO_EDIT');
-        if(old.publishing==='needs_reconcile')throw Error('PUBLISH_NEEDS_RECONCILE');
+        if(['needs_reconcile','in_progress'].includes(old.publishing))
+          return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},
+            rev=>statusPanel(draft,rev,'⚠️ 前の投稿結果を確認中です。変更は実行していません。'));
         let saved;
         if(draft.publishedEdit){
           if(typeof listingStore.updatePublishedMetadata!=='function')throw Error('PUBLISHED_EDITOR_UNAVAILABLE');
@@ -532,11 +534,18 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           {...old,waiting:null,screen:'my_videos',page:0,pendingVideoDraft:null},
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
       }
+      // Missing terms configuration is a recoverable UI condition, not a fatal
+      // process error. Never consent or register without verified configuration.
+      const confirmation=['review:agree','review:rights','review:publish'].includes(action);
+      if(confirmation&&!verifiedTermsUrl)
+        return persistAndRender(ownerId,old,{...old,screen:'review',waiting:null},
+          rev=>reviewPanel(draft,rev,'⚠️ 規約本文を確認できません。登録は実行していません。プレビューに戻るか、キャンセルしてください。'));
+      if(confirmation&&['needs_reconcile','in_progress'].includes(old.publishing))
+        return persistAndRender(ownerId,old,{...old,screen:'review',waiting:null},
+          rev=>reviewPanel(draft,rev,'⚠️ 前の投稿結果を確認中です。重複登録は行いません。'));
       if(action==='review:agree'||action==='review:rights') {
-        if(!verifiedTermsUrl)throw new Error('CREATOR_PUBLISHED_TERMS_URL_REQUIRED');
         if(draft?.mode!=='create')return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},
           rev=>statusPanel(draft,rev,'既存動画は［変更］で保存してください。新規投稿は行っていません。'));
-        if(['needs_reconcile','in_progress'].includes(old.publishing))throw Error('PUBLISH_NEEDS_RECONCILE');
         if(!draft.paidVideo||!draft.title||!draft.thumbnail?.secondFileId||!draft.sample||
            !Number.isSafeInteger(draft.priceStars)||draft.priceStars<1)
           return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},
@@ -544,7 +553,6 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         const agreed={...editCreatorDraft(draft,{type:'confirmTerms'}),termsUrl};
         return registerVideo(ownerId,old,agreed);
       }
-      if(action==='review:publish'&&!verifiedTermsUrl)throw new Error('CREATOR_PUBLISHED_TERMS_URL_REQUIRED');
       if(action==='review:publish'&&draft?.mode==='edit'){
         // A stale review created by an older runtime must not republish an edit.
         return persistAndRender(ownerId,old,{...old,screen:'editor',waiting:null},

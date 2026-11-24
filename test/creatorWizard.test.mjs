@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCreatorWizard } from '../src/telegram/creatorWizard.mjs';
 
-function setup({listingStoreOverride={},publishListing,salesProvider,mediaProcessorOverride={}}={}){
+function setup({listingStoreOverride={},publishListing,salesProvider,mediaProcessorOverride={},termsUrl='https://example.test/createvdobot-terms.html'}={}){
   const states=new Map(),calls=[],screens=[];
   const sessionStore={
     async read(id){return states.get(id)??null;},
@@ -43,7 +43,7 @@ function setup({listingStoreOverride={},publishListing,salesProvider,mediaProces
       return {thumbnail:{fileId:'photo_auto_1',secondFileId:'photo_auto_2'},sample:{fileId:'sample_auto_1',durationSeconds:30}};
     }
   };
-  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor:{...mediaProcessor,...mediaProcessorOverride},publishListing,salesProvider,termsUrl:'https://example.test/createvdobot-terms.html'});
+  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor:{...mediaProcessor,...mediaProcessorOverride},publishListing,salesProvider,termsUrl});
   const callback=(action,id=101,from=33)=>handler.handle({
     callback_query:{id:'cq_'+action,from:{id:from},data:action,
       message:{chat:{id:33,type:'private'},message_id:id}}
@@ -285,7 +285,8 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
  const revision=x.states.get(33).revision;
  assert.equal(x.states.get(33).publishing,'needs_reconcile');
  assert.equal(attempts,1);
- await assert.rejects(()=>x.callback('review:publish|r'+revision),/PUBLISH_NEEDS_RECONCILE/);
+ await x.callback('review:publish|r'+revision);
+ assert.match(x.screens.at(-1).panel.text,/前の投稿結果を確認中/);
  assert.equal(attempts,1);
  await x.callback('menu:home');
  assert.equal(x.states.get(33).publishing,'needs_reconcile',
@@ -296,8 +297,8 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
   'new post must not erase an unresolved paid-video publication');
  assert.equal(reopened.screen,'review');
  assert.match(x.screens.at(-1).panel.text,/前の投稿結果が未確定/);
- await assert.rejects(()=>x.callback('review:publish|r'+reopened.revision),
-  /PUBLISH_NEEDS_RECONCILE/);
+ await x.callback('review:publish|r'+reopened.revision);
+ assert.match(x.screens.at(-1).panel.text,/前の投稿結果を確認中/);
  assert.equal(attempts,1,'menu navigation cannot cause duplicate paid media sends');
 });
 
@@ -883,4 +884,31 @@ test('independent input and preview failures remain visible together',async()=>{
  assert.equal(x.states.get(33).draft.sample,null);
  assert.equal(x.calls.some(c=>c.method==='sendMediaGroup'),false);
  assert.equal(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===9403),false);
+});
+
+test('missing terms URL and legacy confirmation never terminate navigation or publish',async()=>{
+  let publications=0;
+  const x=setup({termsUrl:'',publishListing:async()=>{publications++;throw Error('unexpected publish');}});
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'synthetic fixture'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
+  await x.callback('edit:price|r'+x.states.get(33).revision);
+  await x.callback('edit:price:300|r'+x.states.get(33).revision);
+  await x.callback('entry:register|r'+x.states.get(33).revision);
+  for(const action of ['review:agree','review:rights','review:publish']){
+    const before=x.states.get(33);
+    const result=await x.callback(action+'|r'+before.revision);
+    assert.equal(result.handled,true);
+    assert.equal(x.states.get(33).draft.paidVideo.fileId,'main001');
+    assert.notEqual(x.states.get(33).draft.feeTermsAccepted,true);
+    assert.match(x.screens.at(-1).panel.text,/規約本文を確認できません/);
+    assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:agree')),false);
+  }
+  await x.callback('review:edit|r'+x.states.get(33).revision);
+  assert.equal(x.states.get(33).screen,'editor');
+  await x.callback('menu:video');
+  assert.equal(x.states.get(33).screen,'my_videos');
+  await x.callback('menu:listing');
+  assert.equal(x.states.get(33).screen,'await_video');
+  assert.equal(publications,0);
 });
