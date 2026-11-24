@@ -715,7 +715,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         }
         const preview=await autoPreview(ownerId,draft);
         draft=preview.draft;
-        previewWarning=preview.warning;
+        previewWarning=[previewWarning,preview.warning].filter(Boolean).join('\n');
         previewMessageId=preview.previewMessageId;
         albumMessageId=preview.previewMessageId;
       } else if(old.waiting==='sample') {

@@ -868,3 +868,19 @@ test('missing preview adapter output is not reported as completed',async()=>{
  assert.match(x.screens.at(-1).panel.text,/取得が完了していません/);
  assert.equal(x.calls.some(c=>c.method==='sendMediaGroup'),false);
 });
+
+test('independent input and preview failures remain visible together',async()=>{
+ const x=setup({mediaProcessorOverride:{
+   async optimizeMainVideo(){throw new Error('synthetic optimization failure');},
+   async prepareMissingPreviews(){throw new Error('fetch failed');}
+ }});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'synthetic_warning_fixture'},caption:'Synthetic fixture'},9403);
+ const panel=x.screens.at(-1).panel.text;
+ assert.match(panel,/本編圧縮は完了していません/);
+ assert.match(panel,/Telegramから動画を取得できませんでした/);
+ assert.equal(x.states.get(33).draft.paidVideo.fileId,'synthetic_warning_fixture');
+ assert.equal(x.states.get(33).draft.sample,null);
+ assert.equal(x.calls.some(c=>c.method==='sendMediaGroup'),false);
+ assert.equal(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===9403),false);
+});
