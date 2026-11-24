@@ -478,9 +478,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           albumMessageId:recovery.previewMessageId??old.albumMessageId??null
         },rev=>statusPanel(recovery.draft,rev,recovery.warning));
       }
-      if(value==='price')return persistAndRender(ownerId,old,{...old,screen:'field',field:'price',waiting:null},
+      if(value==='price'&&old.screen==='editor')return persistAndRender(ownerId,old,{...old,screen:'field',field:'price',waiting:null},
         rev=>creatorFieldPanel(draft,'price',rev));
-      if(['thumbnail','sample','paidVideo','title','description'].includes(value)) {
+      if(['thumbnail','sample','paidVideo','title','description'].includes(value)&&old.screen==='editor') {
         return persistAndRender(ownerId,old,{...old,screen:'field',field:value,waiting:value},
           rev=>creatorFieldPanel(draft,value,rev));
       }
@@ -571,7 +571,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(!v)throw new Error('LISTING_NOT_OWNED');
       if(parts[1]==='edit' && old.screen==='my_videos') {
         const draft=openCreatorEditor({sellerId:String(ownerId),existing:v});
-        return persistAndRender(ownerId,old,{...old,screenMessageId:messageId,draft,originalDraft:draft,waiting:null,screen:'editor'},
+        return persistAndRender(ownerId,old,{...old,screenMessageId:messageId,draft,originalDraft:draft,waiting:null,field:null,previewMessageId:null,albumMessageId:null,screen:'editor'},
           rev=>statusPanel(draft,rev));
       }
       if(parts[1]==='delete'&&old.screen==='my_videos') {

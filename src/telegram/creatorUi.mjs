@@ -158,8 +158,8 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   // share, payout and financial examples belong to their existing dedicated
   // terms/sales screens, never to the preview's bottom instruction slot.
   const guide=draft.mode==='edit'
-    ?['📝 編集方法','変更したい項目の［編集］をタップして修正してください。','変更が終わったら［変更］をタップしてください。']
-    :['📝 登録方法','変更したい項目の［編集］をタップして修正できます。','内容を確認したら［投稿する］をタップして登録手続きに進んでください。'];
+    ?['📝 編集方法','下の［編集］ボタンから変更したい項目を選んでください。','変更が終わったら［変更］をタップしてください。']
+    :['📝 登録方法','下の［編集］ボタンから変更したい項目を選べます。','内容を確認したら［投稿する］をタップして登録手続きに進んでください。'];
   const rows=['👁 プレビュー',''];
   const definitions=[
     ['title','タイトル',draft.title,draft.title],
@@ -173,7 +173,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   for(const [field,label,registered,display] of definitions){
     const mark=registered?'［編集］':'［未登録］';
     const available=!draft.publishedEdit||['title','description'].includes(field);
-    if(available)fields.push({field,index:rows.length,mark});
+    if(available)fields.push({field,label,mark});
     rows.push((available?mark:'［保持］')+' '+label+'：'+(registered?display:''));
   }
   if(draft.mode==='edit'&&draft.rightsVerified&&draft.adultConsentVerified&&draft.feeTermsAccepted)
@@ -181,21 +181,20 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   rows.push('',...guide);
   if(draft.publishedEdit)rows.push('公開済み：タイトル・説明を変更できます。購入者の権利を維持するため価格・素材は保持します。');
   const text=rows.join('\n');
-  const entities=[];
-  for(const {field,index,mark} of fields) {
-    const offset=rows.slice(0,index).reduce((n,v)=>n+v.length+1,0);
-    entities.push({type:'text_link',offset,length:mark.length,
-      url:'https://t.me/CreateVdobot?start=ved_'+field+'_r'+revision});
-  }
+  // Telegram text_link can only open a URL. Native callback buttons
+  // keep all editor operations inside the already open private chat.
+  const edits=[];
+  for(let i=0;i<fields.length;i+=2)
+    edits.push(fields.slice(i,i+2).map(({field,label,mark})=>btn(mark+label,'edit:'+field)));
   if(draft.mode==='edit') {
     const changed=Array.isArray(draft.dirtyFields)&&draft.dirtyFields.length>0;
-    return {text,entities,reply_markup:{inline_keyboard:[[
+    return {text,reply_markup:{inline_keyboard:[...edits,[
       ...(changed?[]:[btn('🔙 戻る','edit:return')]),
       btn('✅ 変更','edit:save'),btn('❌ キャンセル','edit:cancel'),
       ...(draft.listingId&&!draft.publishedEdit?[btn('🗑 削除','edit:delete')]:[])
     ]]}};
   }
-  return {text,entities,reply_markup:{inline_keyboard:[
+  return {text,reply_markup:{inline_keyboard:[...edits,
     [btn('✅ 投稿する','entry:register'),btn('❌ キャンセル','edit:cancel')]
   ]}};
 }
@@ -250,18 +249,15 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
   const items=owned.slice(page*10,page*10+10);
   const intro=notice || (owned.length ? '🎬 登録済み動画' : '現在動画は未登録です。\n🆕新規動画を登録してください。');
   const rows=[intro];
-  const entities=[];
+  const edits=[];
   for(const item of items){
     // All retained owner listings have an actual editor entrance.
     const editable=item.status!=='removed';
     const prefix=editable?'［編集］':'';
     const mark=item.id===updatedId?'📝 ':item.status==='published'?'🎬 ':'🆕';
     const row=prefix+mark+item.title;
-    if(editable){
-      const offset=rows.join('\n').length+1;
-      entities.push({type:'text_link',offset,length:prefix.length,
-        url:'https://t.me/CreateVdobot?start=ved_video_'+item.id+'_r'+revision});
-    }
+    if(editable)edits.push([{text:'［編集］'+item.title.slice(0,36),
+      callback_data:'video:edit:'+item.id+'|r'+revision}]);
     rows.push(row);
   }
   const btn=(text,data)=>({text,callback_data:data});
@@ -270,8 +266,7 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
   if(page+1<pages)nav.push(btn('次へ ▶','video:page:'+(page+1)+'|r'+revision));
   const keyboard=[[btn('🔙 戻る','menu:home'),btn('🆕 新規投稿','menu:listing')]];
   if(nav.length)keyboard.push(nav);
-  return {text:rows.join('\n'),...(entities.length?{entities}:{}),
-    reply_markup:{inline_keyboard:keyboard}};
+  return {text:rows.join('\n'),reply_markup:{inline_keyboard:[...edits,...keyboard]}};
 }
 
 /** Read-only detail for the existing title and price buttons on My Videos.

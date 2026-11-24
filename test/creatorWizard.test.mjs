@@ -149,7 +149,7 @@ test('VIDEO existing edit preview keeps change buttons, never enables new paid p
  assert.equal(x.states.get(33).draft.mode,'edit');
  await x.callback('edit:preview|r2');
  assert.equal(x.states.get(33).screen,'editor');
- assert.match(x.screens.at(-1).panel.text,/変更したい項目の［編集］/);
+ assert.match(x.screens.at(-1).panel.text,/下の［編集］ボタン/);
  assert.doesNotMatch(x.screens.at(-1).panel.text,/📋 投稿前の規約・約款確認/);
  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
    ['✅ 変更','❌ キャンセル','🗑 削除']);
@@ -329,7 +329,7 @@ test('legacy title and price detail callbacks return to video list without openi
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.match(x.screens.at(-1).panel.text,/自分の動画/);
  assert.doesNotMatch(x.screens.at(-1).panel.text,/管理費30 Stars／投稿者分70 Stars/);
- assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard[0][1].callback_data,'menu:listing');
+ assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1)[1].callback_data,'menu:listing');
  await x.callback('video:price:my1|r2');
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.doesNotMatch(x.screens.at(-1).panel.text,/運営管理費/);
@@ -452,7 +452,7 @@ test('description remains optional and editable through inline text only',async(
  assert.equal(x.states.get(33).draft.description,'');
  const panel=x.screens.at(-1).panel;
  assert.match(panel.text,/［未登録］ 説明：/);
- assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r3')));
+ assert.ok(panel.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='edit:description|r3'));
 });
 
 test('existing draft recovers missing automatic media on explicit edit-back, never via New Post',async()=>{
@@ -489,8 +489,8 @@ test('Stars settings back regenerates missing media for an old registered draft'
   assert.equal(restored.draft.paidVideo.fileId,'main001');
   assert.equal(restored.draft.thumbnail.fileId,'photo_auto_1');
   assert.equal(restored.draft.sample.durationSeconds,30);
-  assert.ok(x.screens.at(-1).panel.entities.some(
-    b=>b.url.includes('ved_paidVideo_')));
+  assert.ok(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(
+    b=>b.callback_data?.startsWith('edit:paidVideo|r')));
 });
 
 test('obsolete pre-deploy Stars button redraws owner current draft and recovers My Videos',async()=>{
@@ -509,8 +509,8 @@ test('obsolete pre-deploy Stars button redraws owner current draft and recovers 
   assert.equal(state.draft.title,'旧画面作品');
   assert.equal(state.draft.thumbnail.fileId,'photo_auto_1');
   assert.equal(state.draft.sample.durationSeconds,30);
-  assert.ok(x.screens.at(-1).panel.entities.some(
-    b=>b.url.includes('ved_paidVideo_')));
+  assert.ok(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(
+    b=>b.callback_data?.startsWith('edit:paidVideo|r')));
 });
 
 test('stale review buttons refresh current draft without publishing or canceling',async()=>{
@@ -622,7 +622,7 @@ test('owner-only title edit shows one field and cancel restores saved video with
   assert.equal(x.screens.at(-1).panel.text.includes('管理費'),false);
   await x.send({text:'編集したタイトル'},901);
   assert.equal(x.states.get(33).draft.title,'編集したタイトル');
-  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
     ['✅ 変更','❌ キャンセル','🗑 削除']);
   await x.callback('edit:cancel|r4');
   assert.equal(x.states.get(33).screen,'my_videos');
@@ -648,7 +648,7 @@ test('initial video upload asks for optional description after private preview a
   assert.equal(x.states.get(33).screen,'editor');
   assert.equal(x.states.get(33).waiting,null);
   assert.equal(x.states.get(33).draft.description,'次に表示される説明');
-  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
     ['✅ 投稿する','❌ キャンセル']);
   assert.equal(x.calls.filter(c=>c.method==='sendPaidMedia').length,0);
 });
@@ -829,3 +829,22 @@ test('unresolved prior sale cannot be silently cleared by pressing new post',asy
  assert.equal(s.screen,'editor');
  assert.match(x.screens.at(-1).panel.text,/前の投稿結果が未確定/);
 });
+
+ test('rendered sample edit callback stays inside private wizard and cannot submit',async()=>{
+ const x=setup();
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'synthetic_main_01'},caption:'テスト'},1101);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ const button=x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().find(b=>b.callback_data?.startsWith('edit:sample|r'));
+ assert.ok(button);assert.equal(button.url,undefined);
+ await x.callback(button.callback_data);
+ const state=x.states.get(33);
+ assert.equal(state.screen,'field');assert.equal(state.waiting,'sample');
+ const panel=x.screens.at(-1).panel;
+ assert.ok(panel.reply_markup.inline_keyboard.flat().every(b=>!b.callback_data.startsWith('entry:register')));
+ assert.match(panel.text,/新しいサンプル動画を送信/);
+ assert.equal(x.calls.filter(c=>c.method==='answerCallbackQuery').length,3);
+ await x.send({video:{file_id:'upload001',duration:15}},1102);
+ assert.equal(x.states.get(33).draft.sample.fileId,'prepared_sample_001');
+ assert.equal(x.states.get(33).screen,'editor');
+ });
