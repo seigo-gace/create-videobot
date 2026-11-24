@@ -147,9 +147,9 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     if(!old || old.revision!==linkRevision || old.screen!=='my_videos')
       return {handled:true,staleTextLink:true};
     const owned=await listingStore.getOwned(ownerId,listingId);
-    if(!owned)return {handled:true,staleTextLink:true};
+    if(!owned||owned.status==='removed')return {handled:true,staleTextLink:true};
     const draft=openCreatorEditor({sellerId:String(ownerId),existing:owned});
-    const result=await persistAndRender(ownerId,old,{...old,draft,originalDraft:draft,screen:'editor',waiting:null},
+    const result=await persistAndRender(ownerId,old,{...old,draft,originalDraft:draft,screen:'editor',waiting:null,field:null,previewMessageId:null,albumMessageId:null},
       rev=>statusPanel(draft,rev));
     await api('deleteMessage',{chat_id:ownerId,message_id:messageId}).catch(()=>{});
     return result;

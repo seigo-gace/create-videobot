@@ -117,7 +117,7 @@ test('creator home opens sticker/emoji editor through existing sticker handler i
  assert.equal(events.filter(x=>x.method==='screen').length,1,'video wizard must not replace sticker screen');
 });
 
-test('native field callback works for current owner/revision; stale old links cannot change it',async()=>{
+test('body text link opens the current owner field; stale old links cannot change it',async()=>{
  const states=new Map(),calls=[];
  const api=async(method,params)=>{calls.push({method,params});return {message_id:41};};
  const store={
@@ -148,14 +148,12 @@ test('native field callback works for current owner/revision; stale old links ca
  assert.equal(states.get(33).revision,4);
  const screen=calls.filter(x=>x.method==='screen').at(-1).panel;
  assert.equal(states.get(33).screen,'editor');
- assert.equal(screen.entities,undefined);
- const buttons=screen.reply_markup.inline_keyboard.flat();
- assert.ok(buttons.some(b=>b.callback_data==='edit:description|r4'));
- assert.equal(buttons.filter(b=>/^edit:(title|description|price|thumbnail|sample|paidVideo)\|r/.test(b.callback_data)).length,6);
- assert.ok(buttons.every(b=>!b.url));
- const title=buttons.find(b=>b.callback_data==='edit:title|r4');
- const result=await handler({callback_query:{id:'field',from:{id:33},data:title.callback_data,
-  message:{chat:{id:33,type:'private'},message_id:41}}});
+ assert.equal(screen.entities.length,6);
+ assert.ok(screen.entities.some(e=>e.url.endsWith('ved_description_r4')));
+ assert.equal(screen.reply_markup.inline_keyboard.length,1);
+ const title=screen.entities.find(e=>e.url.endsWith('ved_title_r4'));
+ assert.equal(screen.text.slice(title.offset,title.offset+title.length),'［編集］');
+ const result=await handler(priv(33,'/start '+new URL(title.url).searchParams.get('start')));
  assert.equal(result.handled,true);
  assert.equal(states.get(33).waiting,'title');
  assert.equal(states.get(33).revision,5);
