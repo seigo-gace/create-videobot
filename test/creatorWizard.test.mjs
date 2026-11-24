@@ -461,7 +461,7 @@ test('description remains optional and editable through inline text only',async(
  assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r3')));
 });
 
-test('existing draft recovers missing automatic media on editor re-entry without re-upload',async()=>{
+test('existing draft recovers missing automatic media on explicit edit-back, never via New Post',async()=>{
   const x=setup();
   await x.callback('menu:listing');
   await x.send({video:{file_id:'main001',duration:90},caption:'保存済み動画'},210);
@@ -470,7 +470,8 @@ test('existing draft recovers missing automatic media on editor re-entry without
   x.states.set(33,{...prior,
     draft:{...prior.draft,thumbnail:null,sample:null},
     previewMessageId:null});
-  await x.callback('menu:listing|r3');
+  await x.callback('edit:price|r3');
+  await x.callback('edit:back|r4');
   const restored=x.states.get(33);
   assert.equal(restored.draft.paidVideo.fileId,'main001');
   assert.equal(restored.draft.thumbnail.fileId,'photo_auto_1');
