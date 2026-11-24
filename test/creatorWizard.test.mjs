@@ -774,3 +774,48 @@ test('legacy purchased video Edit link does not open unrequested Details page',a
  assert(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].some(
   b=>b.callback_data==='menu:listing'));
 });
+
+test('published prior receipt resolves stale creator lock and allows genuinely new registration',async()=>{
+ const x=setup({listingStoreOverride:{
+   async getOwned(owner,id){
+     assert.equal(owner,33);
+     return id==='my1'?{id:'my1',sellerId:String(owner),
+       revision:8,status:'published',title:'購入済み作品'}:null;
+   }
+ }});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'previous_registered_video',duration:80},caption:'前の作品'},1271);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ const prior=x.states.get(33);
+ x.states.set(33,{...prior,publishing:'needs_reconcile',
+  pendingVideoDraft:{listingId:'my1',revision:7},screen:'review'});
+ await x.callback('menu:listing');
+ const s=x.states.get(33);
+ assert.equal(s.publishing,null);
+ assert.equal(s.pendingVideoDraft,null);
+ assert.equal(s.draft.mode,'create');
+ assert.equal(s.draft.paidVideo,null);
+ assert.equal(s.draft.title,'');
+ assert.equal(s.screen,'await_video');
+ assert.equal(s.waiting,'paidVideo');
+ await x.send({video:{file_id:'new_unrelated_video_123',duration:90},caption:'新しい商品'},1272);
+ assert.equal(x.states.get(33).draft.paidVideo.fileId,'new_unrelated_video_123');
+});
+test('unresolved prior sale cannot be silently cleared by pressing new post',async()=>{
+ const x=setup({listingStoreOverride:{
+  async getOwned(owner,id){return {id,sellerId:String(owner),revision:7,status:'draft'};}
+ }});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'uncertain_prior_video',duration:90},caption:'旧商品'},1273);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ const prior=x.states.get(33);
+ x.states.set(33,{...prior,publishing:'needs_reconcile',
+  pendingVideoDraft:{listingId:'my1',revision:7},screen:'review'});
+ await x.callback('menu:listing');
+ const s=x.states.get(33);
+ assert.equal(s.publishing,'needs_reconcile');
+ assert.deepEqual(s.pendingVideoDraft,{listingId:'my1',revision:7});
+ assert.equal(s.draft.paidVideo.fileId,'uncertain_prior_video');
+ assert.equal(s.screen,'review');
+ assert.match(x.screens.at(-1).panel.text,/前の投稿結果が未確定/);
+});
