@@ -7,6 +7,7 @@ import {createCreatorTelegramFetch} from '../runtime/creatorEgress.mjs';
 import {createTelegramBotApi} from '../telegram/botApi.mjs';
 import {createGateOwner} from '../../owner/gateOwner.mjs';
 import {replaceRepliedInvoiceOffer} from './replaceRepliedInvoiceOffer.mjs';
+import {ensureRichOfferClaimTable} from './ensureRichOfferClaimTable.mjs';
 
 setDefaultResultOrder('ipv4first');
 setDefaultAutoSelectFamily(false);
@@ -24,6 +25,7 @@ try{
    token:readPrivateToken(process.env.VIDEOBOT_TELEGRAM_TOKEN_FILE),
    fetchImpl:network.fetch,timeoutMs:25000
  });
+ await ensureRichOfferClaimTable(pool);
  const owner=await createGateOwner({pool,telegramApi:api});
  const outcome=await replaceRepliedInvoiceOffer({
    pool,telegramApi:api,getVerifiedVideoTopic:owner.getVerifiedVideoTopic,
