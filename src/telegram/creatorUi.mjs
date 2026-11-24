@@ -152,7 +152,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   const btn=(text,action)=>({text,callback_data:action+(revision?'|r'+revision:'')});
   if(screen==='await_video' || (screen==='editor'&&!draft.paidVideo)){
     return {text:'🎬 新規動画を投稿\n\nタイトルと動画を投稿してください。\n動画のキャプションへタイトルを入力し、一緒に送信してください。',
-      reply_markup:{inline_keyboard:[[btn('🔙 戻る','edit:cancel'),btn('❌ キャンセル','edit:cancel')]]}};
+      reply_markup:{inline_keyboard:[[btn('🔙 戻る','menu:manage'),btn('❌ キャンセル','edit:cancel')]]}};
   }
   // The preview is solely a registration/editing workspace. Fee, revenue
   // share, payout and financial examples belong to their existing dedicated

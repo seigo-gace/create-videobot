@@ -778,11 +778,15 @@ test('new post Back and Cancel return to the listing including old versioned Bac
  const x=setup();
  await x.callback('menu:manage');
  await x.callback('menu:listing');
- await x.callback('menu:manage|r2');
+ const back=x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().find(b=>b.text.includes('戻る'));
+ assert.equal(back.callback_data,'menu:manage|r2');
+ await x.callback(back.callback_data);
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(x.states.get(33).draft,null);
  await x.callback('menu:listing');
- await x.callback('edit:cancel|r4');
+ const cancel=x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().find(b=>b.text.includes('キャンセル'));
+ assert.equal(cancel.callback_data,'edit:cancel|r4');
+ await x.callback(cancel.callback_data);
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(x.states.get(33).draft,null);
 });
