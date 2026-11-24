@@ -55,13 +55,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   if(typeof listingStore?.listByOwner!=='function'||typeof listingStore?.getOwned!=='function')
     throw new Error('owner listing source required');
 
-  async function persistAndRender(ownerId,old,patch,panel) {
+  async function persistAndRender(ownerId,old,patch,panel,{verifiedResolution=false}={}) {
     const expected=old?.revision??0;
     // Never let an unrelated menu screen discard an ambiguous Stars
     // publication result. Only the verified reconciliation owner may
     // clear that lock; ordinary UI navigation must preserve it.
     const next={...patch,revision:expected+1,
-      ...(old?.publishing==='needs_reconcile'?{publishing:'needs_reconcile'}:{})};
+      ...(old?.publishing==='needs_reconcile'&&!verifiedResolution?{publishing:'needs_reconcile'}:{})};
     const drawn=typeof panel==='function'?panel(next.revision):panel;
     // Keep the editable text screen visually attached to the owner's album preview.
     if(['editor','description'].includes(next.screen) &&
@@ -281,18 +281,41 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     }
     if(/^menu:listing(?:\|r[1-9][0-9]*)?$/.test(code)) {
       if(code!=='menu:listing')validateRevision(code,old);
-      // Every explicit "New Post" action starts a NEW product, regardless of
-      // whether the owner navigated here from Home, My Videos, a previous
-      // edit or a persisted preview. Old media may be retained in the seller's
-      // listings, but it must never silently become this new draft.
+      // A former publication can have reached Telegram despite a failed
+      // client response. Never clear its duplicate-send guard on navigation.
+      // Only a product marked published by the receipt-gated markPublished()
+      // operation proves the old pending send has already been completed.
+      let resolvedPrevious=false;
+      if(old?.publishing==='needs_reconcile'){
+        const pending=old.pendingVideoDraft;
+        if(pending?.listingId&&Number.isSafeInteger(pending.revision)){
+          try{
+            const posted=await listingStore.getOwned(ownerId,pending.listingId);
+            resolvedPrevious=posted?.status==='published' &&
+              Number.isSafeInteger(posted.revision)&&posted.revision>pending.revision;
+          }catch{/* Unknown owner/ledger state must remain locked. */}
+        }
+        if(!resolvedPrevious){
+          return persistAndRender(ownerId,old,{
+            ...old,waiting:null,screen:old.draft?'review':'my_videos'
+          },rev=>old.draft
+            ?reviewPanel(old.draft,rev,'⚠️ 前の投稿結果が未確定です。購入履歴を確認するまで重複登録は行いません。')
+            :myVideosPanel({sellerId:String(ownerId),
+              listings:[],page:0,revision:rev,
+              notice:'⚠️ 前の投稿結果を確認中です。購入履歴の照合が必要です。'}));
+        }
+      }
+      // A verified completed old sale is kept in its original listing and
+      // purchase ledger. This brand-new product gets no inherited media,
+      // listing ID, previews, or unresolved pending-reference.
       const draft=openCreatorEditor({sellerId:String(ownerId)});
       return persistAndRender(ownerId,old,{
-        ...old,screenMessageId:messageId,
+        ...old,screenMessageId:messageId,publishing:resolvedPrevious?null:old?.publishing??null,
         draft,originalDraft:null,pendingVideoDraft:null,
         previewMessageId:null,albumMessageId:null,
         field:null,detailId:null,deleteId:null,descriptionEntered:false,
         screen:'await_video',waiting:'paidVideo'
-      },rev=>statusPanel(draft,rev));
+      },rev=>statusPanel(draft,rev),{verifiedResolution:resolvedPrevious});
     }
     if(code==='menu:manage') {
       const items=await listingStore.listByOwner(ownerId);
