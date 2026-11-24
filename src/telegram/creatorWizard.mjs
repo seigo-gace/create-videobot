@@ -83,7 +83,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const albumToField=next.screen==='field' &&
       Number.isSafeInteger(old?.albumMessageId) &&
       old.screenMessageId===old.albumMessageId;
-    const previousScreenId=albumToField?null:(patch.screenMessageId??old?.screenMessageId);
+    // Do not try to edit a former media-group item into the new text-only
+    // upload prompt. A new post must not attach to the prior album.
+    const albumToFresh=next.screen==='await_video' &&
+      Number.isSafeInteger(old?.albumMessageId) &&
+      old.albumMessageId===old.screenMessageId;
+    const previousScreenId=(albumToField||albumToFresh)?null:
+      (patch.screenMessageId??old?.screenMessageId);
     const result=await screenTransport.show(ownerId,firstAlbumScreen?null:previousScreenId,drawn);
     if(firstAlbumScreen && Number.isSafeInteger(previousScreenId) && previousScreenId>0 &&
        previousScreenId!==result.messageId)
@@ -269,25 +275,18 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     }
     if(/^menu:listing(?:\|r[1-9][0-9]*)?$/.test(code)) {
       if(code!=='menu:listing')validateRevision(code,old);
-      // From My Videos, New Post always starts a fresh product; an existing
-      // listing edit is never silently reused as a new listing.
-      const draft=old?.screen==='my_videos'||!old?.draft
-        ?openCreatorEditor({sellerId:String(ownerId)})
-        :old.draft;
-      // Older in-progress drafts may have been saved before the automatic
-      // preview pipeline was active. Repair only missing derived media on
-      // explicit editor re-entry; never require a second main-video upload.
-      const recovery=draft.paidVideo && (!draft.thumbnail?.secondFileId || !draft.sample)
-        ?await autoPreview(ownerId,draft)
-        :{draft,warning:'',previewMessageId:old?.previewMessageId??null};
+      // Every explicit "New Post" action starts a NEW product, regardless of
+      // whether the owner navigated here from Home, My Videos, a previous
+      // edit or a persisted preview. Old media may be retained in the seller's
+      // listings, but it must never silently become this new draft.
+      const draft=openCreatorEditor({sellerId:String(ownerId)});
       return persistAndRender(ownerId,old,{
         ...old,screenMessageId:messageId,
-        previewMessageId:recovery.previewMessageId??old?.previewMessageId??null,
-        albumMessageId:recovery.previewMessageId??old?.albumMessageId??null,
-        screen:recovery.draft.paidVideo?'editor':'await_video',
-        draft:recovery.draft,waiting:recovery.draft.paidVideo?null:'paidVideo',
-        pendingVideoDraft:old?.screen==='my_videos'?null:old?.pendingVideoDraft??null
-      },rev=>statusPanel(recovery.draft,rev,recovery.warning));
+        draft,originalDraft:null,pendingVideoDraft:null,
+        previewMessageId:null,albumMessageId:null,
+        field:null,detailId:null,deleteId:null,descriptionEntered:false,
+        screen:'await_video',waiting:'paidVideo'
+      },rev=>statusPanel(draft,rev));
     }
     if(code==='menu:manage') {
       const items=await listingStore.listByOwner(ownerId);
