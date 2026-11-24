@@ -326,20 +326,18 @@ test('existing sales summary and history are shown through injected owner ledger
  assert.equal(x.states.get(33).screen,'home');
 });
 
-test('existing My Videos title and price buttons show seller-only detail, fee disclosure and back',async()=>{
+test('legacy title and price detail callbacks return to video list without opening unrequested details',async()=>{
  const x=setup();
  await x.callback('menu:manage');
  await x.callback('video:open:my1|r1');
- assert.equal(x.states.get(33).screen,'video_detail');
- assert.match(x.screens.at(-1).panel.text,/自分の動画/);
- assert.match(x.screens.at(-1).panel.text,/運営管理費/);
- assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard[0][0].callback_data,'video:back:my1|r2');
- await x.callback('video:back:my1|r2');
  assert.equal(x.states.get(33).screen,'my_videos');
- await x.callback('video:price:my1|r3');
- assert.equal(x.states.get(33).screen,'video_detail');
- assert.match(x.screens.at(-1).panel.text,/管理費30 Stars／投稿者分70 Stars/);
- await assert.rejects(()=>x.callback('video:back:my1|r2'),/STALE_CREATOR_BUTTON/);
+ assert.match(x.screens.at(-1).panel.text,/自分の動画/);
+ assert.doesNotMatch(x.screens.at(-1).panel.text,/管理費30 Stars／投稿者分70 Stars/);
+ assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard[0][1].callback_data,'menu:listing');
+ await x.callback('video:price:my1|r2');
+ assert.equal(x.states.get(33).screen,'my_videos');
+ assert.doesNotMatch(x.screens.at(-1).panel.text,/運営管理費/);
+ await assert.rejects(()=>x.callback('video:back:my1|r2'),/VIDEO_SCREEN_STALE|STALE_CREATOR_BUTTON/);
 });
 
 test('caption without title does not store video, retry accepts same captioned video',async()=>{
