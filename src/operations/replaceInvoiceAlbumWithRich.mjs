@@ -75,6 +75,10 @@ export async function replaceInvoiceAlbumWithRich({pool,telegramApi,getVerifiedV
    edited?.media_group_id!=null||
    !Array.isArray(attached)||attached.length!==2||
    attached[0]?.type!=='photo'||attached[1]?.type!=='video'||
+   // Telegram's returned RichBlockPhoto/Video place has_spoiler on the
+   // block, not on the input's nested InputMedia. Never delete the original
+   // covered previews unless BOTH replacement previews are covered.
+   attached[0]?.has_spoiler!==true||attached[1]?.has_spoiler!==true||
    collage.caption?.text!==caption||
    actual?.text!==label||actual?.callback_data!==action)
   throw Error('VIDEO_INPLACE_TELEGRAM_ACK_UNKNOWN_KEEP_OLD_ALBUM');
