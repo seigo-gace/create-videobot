@@ -295,12 +295,12 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
  assert.equal(x.states.get(33).publishing,'needs_reconcile',
   'returning to home must never clear an ambiguous paid-video send');
  await x.callback('menu:listing');
- assert.equal(x.states.get(33).publishing,'needs_reconcile',
-  'reopening the creator editor must preserve reconciliation lock');
  const reopened=x.states.get(33);
- await x.callback('edit:preview|r'+reopened.revision);
- const afterPreview=x.states.get(33);
- await assert.rejects(()=>x.callback('review:publish|r'+afterPreview.revision),
+ assert.equal(reopened.publishing,'needs_reconcile',
+  'new post must not erase an unresolved paid-video publication');
+ assert.equal(reopened.screen,'review');
+ assert.match(x.screens.at(-1).panel.text,/前の投稿結果が未確定/);
+ await assert.rejects(()=>x.callback('review:publish|r'+reopened.revision),
   /PUBLISH_NEEDS_RECONCILE/);
  assert.equal(attempts,1,'menu navigation cannot cause duplicate paid media sends');
 });
