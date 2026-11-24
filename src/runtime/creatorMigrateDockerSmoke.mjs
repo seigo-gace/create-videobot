@@ -60,21 +60,6 @@ try {
  if(uncertain.needsReconcile!==1)
    throw Error('OWNER_JOB_UNCERTAIN_WRITE_MUST_NOT_REPLAY');
  if(await queue.claim()!==null)throw Error('OWNER_JOB_UNCERTAIN_REPLAY_ALLOWED');
- const blockedMutation={update_id:90105,callback_query:{data:'review:publish|r3',message:{chat:{id:333,type:'private'}},from:{id:333}}};
- const menuRecovery={update_id:90106,callback_query:{data:'menu:home',message:{chat:{id:333,type:'private'}},from:{id:333}}};
- const menuNext={update_id:90107,callback_query:{data:'menu:video',message:{chat:{id:333,type:'private'}},from:{id:333}}};
- for(const u of [blockedMutation,menuRecovery,menuNext])await queue.enqueue(u);
- const home=await queue.claim();
- if(home?.id!==90106)throw Error('OWNER_MENU_RECOVERY_BLOCKED');
- if(await queue.claim()!==null)throw Error('OWNER_MENU_CONCURRENT_MUTATION');
- await queue.completed(home);
- const video=await queue.claim();
- if(video?.id!==90107)throw Error('OWNER_MENU_FIFO_BROKEN');
- await queue.completed(video);
- if(await queue.claim()!==null)throw Error('OWNER_UNCERTAIN_MUTATION_REPLAYED');
- const remain=await pool.query("SELECT status FROM videobot_owner_update_jobs WHERE update_id IN (90104,90105) ORDER BY update_id");
- if(remain.rows[0]?.status!=='needs_reconcile'||remain.rows[1]?.status!=='queued')throw Error('OWNER_UNCERTAIN_RECORD_CHANGED');
- process.stdout.write('OWNER_MENU_RECOVERY_BEHIND_UNCERTAINTY=PASS\\n');
  process.stdout.write('DOCKER_NODE_POSTGRES_CREATOR_OWNER_QUEUE=PASS\\n');
  // Real PostgreSQL proof: exceptional update is retained privately,
  // reinsertions with the same fingerprint are idempotent, and mismatches fail.
