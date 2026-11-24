@@ -760,3 +760,19 @@ test('new registration after editing never updates the previous listing',async()
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(x.states.get(33).draft,null);
 });
+
+test('legacy purchased video Edit link does not open unrequested Details page',async()=>{
+ const x=setup({listingStoreOverride:{
+  async getOwned(owner,id){return id==='my1'?{id:'my1',sellerId:String(owner),
+    revision:2,status:'published',title:'購入済み商品'}:null;}
+ }});
+ await x.callback('menu:manage');
+ await x.handler.openOwnedVideo({message:{chat:{id:33,type:'private'},from:{id:33},
+  message_id:111,text:'/start ved_video_my1_r1'}},'my1',1);
+ assert.equal(x.states.get(33).screen,'my_videos');
+ assert.equal(x.states.get(33).draft,null);
+ assert.match(x.screens.at(-1).panel.text,/購入済み動画は変更できません/);
+ assert.equal(x.screens.at(-1).panel.text.includes('📋 詳細'),false);
+ assert(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].some(
+  b=>b.callback_data==='menu:listing'));
+});
