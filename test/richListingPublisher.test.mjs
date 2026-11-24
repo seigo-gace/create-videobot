@@ -37,7 +37,7 @@ test('one public RichMessage has spoiler photo+sample collage and inline button,
  assert.equal(result.richMessageId,200);
  assert.equal(result.saleMode,'invoice');
  assert.deepEqual(d.calls.map(x=>x.method),['sendRichMessage']);
- const req=d.calls[1].params;
+ const req=d.calls[0].params;
  assert.deepEqual(req.rich_message.blocks.map(x=>x.type),['collage']);
  assert.equal(req.rich_message.blocks[0].caption.text,'サムネ＋サンプル\n本編は購入後にDMで受信');
  const collage=req.rich_message.blocks[0].blocks;
