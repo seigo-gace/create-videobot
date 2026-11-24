@@ -1,6 +1,7 @@
 import {createCreatorBotUpdateHandler} from './creatorBot.mjs';
 import {createCreatorWebhookAdmission} from './creatorWebhookAdmission.mjs';
-import {publishVideoListing} from './paidListingPublisher.mjs';
+import {publishRichVideoListing} from './richListingPublisher.mjs';
+import {createPostgresRichOfferReceiptStore} from '../sales/pgRichVideoReceipts.mjs';
 import {createPostgresCreatorSessionStore} from '../sales/pgCreatorSessions.mjs';
 import {createPostgresListingStore} from '../sales/pgListings.mjs';
 import {createPostgresPostingReceiptStore} from '../sales/pgPostingReceipts.mjs';
@@ -65,6 +66,7 @@ export function createVideoBotSourceModule({
   const sessionStore=createPostgresCreatorSessionStore(pool);
   const listingStore=createPostgresListingStore(pool);
   const receiptStore=createPostgresPostingReceiptStore(pool);
+  const richOfferStore=createPostgresRichOfferReceiptStore(pool);
   const videoInvoiceStore=createPostgresVideoInvoiceStore(pool);
   const videoInvoiceSales=createVideoInvoiceSalesFlow({api:telegramApi,store:videoInvoiceStore});
   const updateStore=createPostgresWebhookUpdateStore(pool);
@@ -113,11 +115,9 @@ export function createVideoBotSourceModule({
   const mediaProcessor=createVideoMediaProcessor({
     ...ports,run:mediaRun,workRoot:mediaWorkRoot??undefined,storageApproved
   });
-  const publishListing=listing=>publishVideoListing({
-    listing,store:receiptStore,telegramApi,
-    getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic,
-    // Stay with invoice until native Stars locking is confirmed on an unpaid account.
-    saleMode:process.env.VIDEO_SALE_MODE==='paid_media'?'paid_media':'invoice'
+  const publishListing=listing=>publishRichVideoListing({
+    listing,store:richOfferStore,telegramApi,
+    getVerifiedVideoTopic:gateOwner.getVerifiedVideoTopic
   });
   const stickerPublisher=async({owner,draft,onUploaded,onBeforeMutation})=>{
     if(!Number.isSafeInteger(owner)||owner<=0||!draft?.fileId||!draft?.title)

@@ -17,18 +17,106 @@ function affected(r){return r?.rowCount===1;}
 export function createPostgresVideoInvoiceStore(pool){
  if(typeof pool?.query!=='function')throw Error('VIDEO_INVOICE_DB_REQUIRED');
  return {
+  async claimLegacyDelivery({buyerId,listingId,revision,buyerInitiated=false}){
+   if(!pos(buyerId)||typeof listingId!=='string'||!SKU.test(listingId)||!pos(revision))
+     throw Error('VIDEO_LEGACY_BUYER_INVALID');
+   // Compare the verified original purchaser, seller, and exact full video
+   // reference. This cannot authorize a different seller's product or sample.
+   const r=await pool.query(
+    `WITH active_offers AS (
+       SELECT delivery_key,listing_id,revision FROM videobot_post_receipts
+        WHERE status='sent' AND sale_mode='invoice' AND paid_message_id IS NOT NULL
+       UNION
+       SELECT delivery_key,listing_id,revision FROM videobot_rich_offer_receipts
+        WHERE status='sent' AND message_id IS NOT NULL
+     ), eligible AS (
+       SELECT r.delivery_key,l.paid_video_file_id AS video_file_id,l.title,
+              p.telegram_transaction_id
+       FROM active_offers r
+       JOIN videobot_listings l ON l.listing_id=r.listing_id
+       JOIN videobot_stars_ledger p ON p.buyer_user_id=$1 AND p.kind='paid'
+       JOIN videobot_listings old_l ON old_l.listing_id=p.listing_id
+         AND old_l.seller_user_id=l.seller_user_id
+         AND old_l.paid_video_file_id=l.paid_video_file_id
+       WHERE r.listing_id=$2 AND r.revision=$3
+         AND l.status='published' AND l.rights_verified=TRUE
+         AND l.adult_consent_verified=TRUE AND l.fee_terms_accepted_at IS NOT NULL
+         AND l.paid_video_file_id IS NOT NULL
+       ORDER BY p.telegram_transaction_id LIMIT 1
+     ), claimed AS (
+       INSERT INTO videobot_video_legacy_deliveries
+         (delivery_key,buyer_user_id,original_telegram_transaction_id,
+          video_file_id,title,status)
+       SELECT delivery_key,$1,telegram_transaction_id,video_file_id,title,
+              'delivering' FROM eligible
+       ON CONFLICT (delivery_key,buyer_user_id) DO NOTHING
+       RETURNING delivery_key
+     )
+     SELECT e.delivery_key,e.video_file_id,e.title,
+            EXISTS(SELECT 1 FROM claimed) AS claimed
+     FROM eligible e`,
+    [buyerId,listingId,revision]);
+   const x=first(r);
+   if(!x)return {legacy:false};
+   let claimed=x.claimed===true;
+   // A previous Telegram timeout/unknown acknowledgement must never
+   // trigger an automatic retry. The verified buyer may explicitly reopen
+   // the offer in the Bot DM to ask for the same paid video again at no cost.
+   if(!claimed && buyerInitiated===true){
+     const retry=await pool.query(
+       `UPDATE videobot_video_legacy_deliveries d
+         SET status='delivering',updated_at=NOW()
+        WHERE d.delivery_key=$1 AND d.buyer_user_id=$2
+          AND d.status='delivery_unknown'
+          AND d.video_file_id=$3
+          AND EXISTS (SELECT 1 FROM videobot_stars_ledger p
+                      WHERE p.telegram_transaction_id=d.original_telegram_transaction_id
+                        AND p.buyer_user_id=$2 AND p.kind='paid')
+        RETURNING d.delivery_key`,
+       [x.delivery_key,buyerId,x.video_file_id]);
+     claimed=retry.rowCount===1;
+   }
+   return {legacy:true,claimed,
+     deliveryKey:x.delivery_key,fileId:x.video_file_id,title:x.title};
+  },
+  async markLegacyDelivered({deliveryKey,buyerId,messageId}){
+   if(typeof deliveryKey!=='string'||!pos(buyerId)||!pos(messageId))
+     throw Error('VIDEO_LEGACY_DELIVERY_INVALID');
+   const r=await pool.query(
+    `UPDATE videobot_video_legacy_deliveries
+     SET status='delivered',delivered_message_id=$3,updated_at=NOW()
+     WHERE delivery_key=$1 AND buyer_user_id=$2 AND status='delivering'
+     RETURNING delivery_key`,
+    [deliveryKey,buyerId,messageId]);
+   if(!affected(r))throw Error('VIDEO_LEGACY_DELIVERY_PERSIST_UNKNOWN');
+  },
+  async markLegacyUnknown({deliveryKey,buyerId}){
+   if(typeof deliveryKey!=='string'||!pos(buyerId))
+     throw Error('VIDEO_LEGACY_DELIVERY_INVALID');
+   await pool.query(
+    `UPDATE videobot_video_legacy_deliveries
+     SET status='delivery_unknown',updated_at=NOW()
+     WHERE delivery_key=$1 AND buyer_user_id=$2 AND status='delivering'`,
+    [deliveryKey,buyerId]);
+  },
   async reserve({buyerId,listingId,revision}){
    if(!pos(buyerId)||typeof listingId!=='string'||!SKU.test(listingId)||!pos(revision))
      throw Error('VIDEO_INVOICE_RESERVE_INVALID');
    const key=listingId+':'+revision;
    const result=await pool.query(
-    `INSERT INTO videobot_video_invoice_orders
+    `WITH active_offers AS (
+       SELECT delivery_key,listing_id,revision FROM videobot_post_receipts
+        WHERE status='sent' AND sale_mode='invoice' AND paid_message_id IS NOT NULL
+       UNION
+       SELECT delivery_key,listing_id,revision FROM videobot_rich_offer_receipts
+        WHERE status='sent' AND message_id IS NOT NULL
+     )
+     INSERT INTO videobot_video_invoice_orders
      (order_id,delivery_key,listing_id,buyer_user_id,seller_user_id,price_stars,video_file_id,title,status)
      SELECT $1,r.delivery_key,l.listing_id,$2,l.seller_user_id,
             l.price_stars,l.paid_video_file_id,l.title,'prepared'
-       FROM videobot_post_receipts r JOIN videobot_listings l ON l.listing_id=r.listing_id
-      WHERE r.delivery_key=$3 AND r.status='sent' AND r.sale_mode='invoice'
-        AND r.paid_message_id IS NOT NULL
+       FROM active_offers r JOIN videobot_listings l ON l.listing_id=r.listing_id
+      WHERE r.delivery_key=$3
         AND l.status='published' AND l.rights_verified=TRUE
         AND l.adult_consent_verified=TRUE AND l.paid_video_file_id IS NOT NULL
         AND l.price_stars BETWEEN 1 AND 25000 AND l.fee_terms_accepted_at IS NOT NULL
@@ -111,6 +199,15 @@ export function createPostgresVideoInvoiceStore(pool){
       !['paid','delivering','delivered','delivery_unknown'].includes(prev.status))
      throw Error('VIDEO_INVOICE_PAYMENT_CONFLICT');
    return {duplicate:true,orderId};
+  },
+  async allowBuyerDeliveryRetry({orderId,buyerId}){
+   // Payment stays recorded; only an explicit buyer-initiated redelivery
+   // after an uncertain Telegram send may unlock another attempt.
+   keyId(orderId);if(!pos(buyerId))throw Error('VIDEO_INVOICE_BUYER_INVALID');
+   const r=await pool.query(
+     "UPDATE videobot_video_invoice_orders SET status='paid',updated_at=NOW() WHERE order_id=$1 AND buyer_user_id=$2 AND status='delivery_unknown' AND telegram_payment_charge_id IS NOT NULL RETURNING order_id",
+     [orderId,buyerId]);
+   return r.rowCount===1;
   },
   async claimDelivery({orderId,buyerId}){
    keyId(orderId);if(!pos(buyerId))throw Error('VIDEO_INVOICE_BUYER_INVALID');

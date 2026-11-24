@@ -122,6 +122,17 @@ export function createPostgresListingStore(pool) {
     /** Only call after both real Telegram message IDs have durable receipts. */
     async markPublished(owner,id,expectedRevision,receipt) {
       ownerId(owner);listingId(id);revisionNumber(expectedRevision);
+      // Telegram RichMessage is ONE message. Do not invent two album IDs.
+      // The legacy 2+1 post receipt path remains below unchanged.
+      if(receipt?.posted===true && Number.isSafeInteger(receipt.richMessageId)&&
+        receipt.richMessageId>0){
+        if(expectedRevision<1)throw Error('verified rich publication revision required');
+        const r=await pool.query(
+          "UPDATE videobot_listings AS l SET status='published',revision=l.revision+1,updated_at=NOW() WHERE l.seller_user_id=$1 AND l.listing_id=$2 AND l.revision=$3 AND l.status IN ('draft','ready') AND l.rights_verified=TRUE AND l.adult_consent_verified=TRUE AND l.fee_terms_accepted_at IS NOT NULL AND l.creator_terms_version='1.0' AND l.creator_terms_url IS NOT NULL AND l.management_fee_bps=3000 AND l.title<>'' AND l.price_stars IS NOT NULL AND l.thumbnail_file_id IS NOT NULL AND l.sample_file_id IS NOT NULL AND l.paid_video_file_id IS NOT NULL AND EXISTS (SELECT 1 FROM videobot_rich_offer_receipts AS r WHERE r.delivery_key=$2||':'||$3::text AND r.listing_id=l.listing_id AND r.revision=$3 AND r.status='sent' AND r.message_id=$4) RETURNING l.*",
+          [owner,id,expectedRevision,receipt.richMessageId]);
+        if(r.rowCount!==1)throw Error('RICH_PUBLISH_RECEIPT_REQUIRES_RECONCILE');
+        return recordToListing(r.rows[0]);
+      }
       if(expectedRevision<1 || receipt?.posted!==true ||
          !Array.isArray(receipt.freeMessageIds) ||
          receipt.freeMessageIds.length!==2 ||

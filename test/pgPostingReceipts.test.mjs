@@ -68,7 +68,7 @@ test('PostgreSQL bigint[] text IDs are normalized without losing exact message i
   db.entries.get('list2:1').free_message_ids=['9007199254740993','4690'];
   await assert.rejects(()=>store.read('list2:1'),/PERSISTED_FREE_MESSAGE_ID_INVALID/);
 });
-test('domain paid sale path reuses existing builders and private receipt store, not shared MPB',async()=>{
+test('invoice video offer uses the existing private receipt store without shared MPB',async()=>{
   const db=fakeDb(),store=createPostgresPostingReceiptStore(db);
   const calls=[];
   const dependencies={
@@ -78,16 +78,20 @@ test('domain paid sale path reuses existing builders and private receipt store, 
     getVerifiedVideoTopic:async()=>({id:3,chatId:-100333,threadId:22,
       purpose:'video_sale',board:'video_chat',verified:true,enabled:true,title:'Sale'}),
     verifyMembership:async()=>true,verifyReview:async()=>true,verifyRelease:async()=>true,store,
-    telegramApi:async(method)=>{
+    telegramApi:async(method,params)=>{
       calls.push(method);
-      return method==='sendMediaGroup'?[{message_id:71,media_group_id:'album_db'},{message_id:72,media_group_id:'album_db'}]:{message_id:73,chat:{id:-100333},message_thread_id:22,paid_media:{star_count:50,paid_media:[{type:'preview'}]}};
+      if(method==='sendMediaGroup')return [{message_id:71,media_group_id:'album_db'},{message_id:72,media_group_id:'album_db'}];
+      if(method==='getMe')return {is_bot:true,username:'CreateVdobot'};
+      if(method==='sendMessage')return {message_id:73,chat:{id:-100333},
+        message_thread_id:22,reply_markup:params.reply_markup};
+      throw Error('unexpected Telegram method '+method);
     }
   };
   const first=await publishVideoListing(dependencies);
   const repeated=await publishVideoListing(dependencies);
   assert.equal(first.posted,true);
   assert.equal(repeated.alreadySent,true);
-  assert.deepEqual(calls,['sendMediaGroup','sendPaidMedia']);
+  assert.deepEqual(calls,['sendMediaGroup','getMe','sendMessage']);
   assert.deepEqual((await store.read('list1:1')).freeMessageIds,[71,72]);
 });
 test('database adapter rejects invalid ids and refuses stale paid acknowledgment',async()=>{
