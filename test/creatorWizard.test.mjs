@@ -673,3 +673,89 @@ test('skip on optional description keeps the real album and reaches the ordinary
   assert.equal(state.draft.sample.fileId,'sample_auto_1');
   await assert.rejects(()=>x.callback('entry:skip|r2'),/STALE_CREATOR_BUTTON/);
 });
+
+
+test('new post from an existing video editor is always an empty CREATE flow with no old album or pending listing',async()=>{
+ const x=setup();
+ await x.callback('menu:manage');
+ await x.callback('video:edit:my1|r1');
+ const previous=x.states.get(33);
+ x.states.set(33,{...previous,
+  previewMessageId:301,albumMessageId:301,
+  pendingVideoDraft:{listingId:'my1',revision:7},
+  descriptionEntered:true,field:'title',detailId:'my1'});
+ await x.callback('menu:listing');
+ const fresh=x.states.get(33);
+ assert.equal(fresh.draft.mode,'create');
+ assert.equal(fresh.draft.listingId,null);
+ assert.equal(fresh.draft.paidVideo,null);
+ assert.equal(fresh.draft.thumbnail,null);
+ assert.equal(fresh.draft.sample,null);
+ assert.equal(fresh.draft.title,'');
+ assert.equal(fresh.previewMessageId,null);
+ assert.equal(fresh.albumMessageId,null);
+ assert.equal(fresh.pendingVideoDraft,null);
+ assert.equal(fresh.originalDraft,null);
+ assert.equal(fresh.field,null);
+ assert.equal(fresh.detailId,null);
+ assert.equal(fresh.screen,'await_video');
+ assert.equal(fresh.waiting,'paidVideo');
+ assert.match(x.screens.at(-1).panel.text,/新規動画を投稿/);
+ assert.equal(x.screens.at(-1).panel.albumMessageId,undefined);
+ assert.equal(x.screens.at(-1).panel.replyToMessageId,undefined);
+ await x.send({video:{file_id:'genuine_new_video_222',duration:87},caption:'新規登録する作品'},1001);
+ assert.equal(x.states.get(33).draft.mode,'create');
+ assert.equal(x.states.get(33).draft.paidVideo.fileId,'genuine_new_video_222');
+ assert.equal(x.states.get(33).draft.listingId,null);
+});
+test('repeated explicit new post always discards prior CREATE draft, never returns to its preview',async()=>{
+ const x=setup();
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'old_video_100',duration:88},caption:'前の作品'},1101);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ assert.equal(x.states.get(33).draft.paidVideo.fileId,'old_video_100');
+ const old=x.states.get(33);
+ x.states.set(33,{...old,previewMessageId:401,albumMessageId:401,
+   pendingVideoDraft:{listingId:'old_pending_product',revision:1}});
+ await x.callback('menu:listing');
+ const fresh=x.states.get(33);
+ assert.equal(fresh.draft.mode,'create');
+ assert.equal(fresh.screen,'await_video');
+ assert.equal(fresh.draft.paidVideo,null);
+ assert.equal(fresh.draft.title,'');
+ assert.equal(fresh.previewMessageId,null);
+ assert.equal(fresh.albumMessageId,null);
+ assert.equal(fresh.pendingVideoDraft,null);
+ assert.equal(x.screens.at(-1).panel.albumMessageId,undefined);
+ assert.equal(x.screens.at(-1).panel.replyToMessageId,undefined);
+});
+test('new registration after editing never updates the previous listing',async()=>{
+ let updated=0,created=0;
+ const x=setup({listingStoreOverride:{
+  async updateDraft(){updated++;throw Error('old listing must never be updated');},
+  async createDraft(owner,id,draft){
+   created++;
+   assert.equal(owner,33);
+   assert.notEqual(id,'my1');
+   assert.equal(draft.mode,'create');
+   assert.equal(draft.listingId,null);
+   assert.equal(draft.paidVideo.fileId,'brand_new_unique_video');
+   return {id,revision:1,sellerId:String(owner),...draft};
+  },
+  async markPublished(){return {status:'published'}}
+ },publishListing:async()=>({posted:true,freeMessageIds:[501,502],paidMessageId:503})});
+ await x.callback('menu:manage');
+ await x.callback('video:edit:my1|r1');
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'brand_new_unique_video',duration:100},caption:'新しく出品する作品'},1451);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ await x.callback('edit:price|r'+x.states.get(33).revision);
+ await x.callback('edit:price:300|r'+x.states.get(33).revision);
+ await x.callback('edit:preview|r'+x.states.get(33).revision);
+ await x.callback('review:rights|r'+x.states.get(33).revision);
+ await x.callback('review:publish|r'+x.states.get(33).revision);
+ assert.equal(created,1);
+ assert.equal(updated,0);
+ assert.equal(x.states.get(33).screen,'my_videos');
+ assert.equal(x.states.get(33).draft,null);
+});
