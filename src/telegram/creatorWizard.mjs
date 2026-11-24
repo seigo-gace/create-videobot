@@ -296,12 +296,13 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           }catch{/* Unknown owner/ledger state must remain locked. */}
         }
         if(!resolvedPrevious){
+          const items=old.draft?null:await listingStore.listByOwner(ownerId);
           return persistAndRender(ownerId,old,{
             ...old,waiting:null,screen:old.draft?'review':'my_videos'
           },rev=>old.draft
             ?reviewPanel(old.draft,rev,'⚠️ 前の投稿結果が未確定です。購入履歴を確認するまで重複登録は行いません。')
             :myVideosPanel({sellerId:String(ownerId),
-              listings:[],page:0,revision:rev,
+              listings:items,page:0,revision:rev,
               notice:'⚠️ 前の投稿結果を確認中です。購入履歴の照合が必要です。'}));
         }
       }
