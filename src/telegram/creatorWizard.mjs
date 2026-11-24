@@ -242,7 +242,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     const actionRevision=/\|r([1-9][0-9]*)$/.exec(code);
     const oldScreen=old?.screenMessageId!==messageId ||
       (actionRevision && Number(actionRevision[1])!==old?.revision);
-    if(code.startsWith('entry:register') &&
+    if((code.startsWith('entry:register') || code.startsWith('edit:cancel')) &&
        old?.draft?.paidVideo && oldScreen) {
       // Obsolete destructive/publishing buttons can never execute the old
       // action. Refresh the saved draft and require a fresh explicit tap.
@@ -426,7 +426,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,revision:rev}));
       }
       if(value==='save' && draft?.mode==='edit' && draft.listingId) {
-        if(typeof listingStore.updateDraft!=='function')throw Error('LISTING_UPDATE_UNAVAILABLE');
+        if(!draft.publishedEdit&&typeof listingStore.updateDraft!=='function')throw Error('LISTING_UPDATE_UNAVAILABLE');
         if(!draft.title || !draft.paidVideo)throw Error('INCOMPLETE_VIDEO_EDIT');
         if(old.publishing==='needs_reconcile')throw Error('PUBLISH_NEEDS_RECONCILE');
         let saved;
