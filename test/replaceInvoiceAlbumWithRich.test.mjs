@@ -15,7 +15,7 @@ const old=()=>({
 const topic={id:3,chatId:-100222,threadId:63,verified:true,enabled:true,
  purpose:'video_sale',board:'video_chat'};
 function deps(){
- let row=old(),history=1,ack=true,removeAt=null;const calls=[];
+ let row=old(),history=1,ack=true,spoiler=true,removeAt=null;const calls=[];
  const pool={query:async(sql)=>{
   if(sql.includes('FROM videobot_listings l')&&sql.includes('videobot_post_receipts r'))
    return {rows:[row]};
@@ -32,16 +32,23 @@ function deps(){
      message_id:103,chat:{id:topic.chatId},
      rich_message:params.rich_message
    };
+   const collage=params.rich_message.blocks[0];
+   // Bot API returns has_spoiler on RichBlockPhoto/Video, whereas the
+   // request carries it on nested InputMediaPhoto/Video.
+   const rich_message={blocks:[{...collage,blocks:collage.blocks.map((b,i)=>({
+     ...b,has_spoiler:spoiler||i===0
+       ?(b.photo?.has_spoiler??b.video?.has_spoiler)
+       :false
+   }))}]};
    return {message_id:103,chat:{id:topic.chatId},
-    rich_message:params.rich_message,
-    reply_markup:params.reply_markup};
+    rich_message,reply_markup:params.reply_markup};
   }
   if(method==='deleteMessage')return params.message_id!==removeAt;
   throw Error('No other Telegram method is permitted: '+method);
  };
  return {pool,telegramApi,getVerifiedVideoTopic:async()=>topic,calls,
   setRow(v){row={...row,...v}},
-  setHistory(v){history=v},noMarkup(){ack=false},failDelete(id){removeAt=id}};
+  setHistory(v){history=v},noMarkup(){ack=false},noSpoiler(){spoiler=false},failDelete(id){removeAt=id}};
 }
 test('edits SAME purchase message to collage with caption and one-tap callback, removes only free duplicate previews',async()=>{
  const d=deps();
@@ -74,6 +81,11 @@ test('no markup in Telegram reply means no free media removal',async()=>{
  const d=deps();d.noMarkup();
  await assert.rejects(()=>replaceInvoiceAlbumWithRich(d),/ACK_UNKNOWN_KEEP_OLD_ALBUM/);
  assert.deepEqual(d.calls.map(x=>x.method),['editMessageText']);
+});
+test('a missing Telegram spoiler acknowledgement never deletes old covered previews',async()=>{
+ const d=deps();d.noSpoiler();
+ await assert.rejects(()=>replaceInvoiceAlbumWithRich(d),/ACK_UNKNOWN_KEEP_OLD_ALBUM/);
+ assert.deepEqual(d.calls.map(c=>c.method),['editMessageText']);
 });
 test('a rejected edit cannot create a fallback public message',async()=>{
  const d=deps();
