@@ -248,13 +248,19 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
   const intro=notice || (owned.length ? '🎬 登録済み動画' : '現在動画は未登録です。\n🆕新規動画を登録してください。');
   const rows=[intro];
   const entities=[];
-  for(const [index,item] of items.entries()){
-    const prefix='［編集］';
-    const row=prefix + (item.id===updatedId?'📝 ':item.status==='published'?'🎬 ':'🆕') + item.title;
-    const offset=rows.join('\n').length+1;
-    // Telegram deep link is owner- and revision-validated by the wizard.
-    entities.push({type:'text_link',offset,length:prefix.length,
-      url:'https://t.me/CreateVdobot?start=ved_video_'+item.id+'_r'+revision});
+  for(const item of items){
+    // The seller can edit only unsold draft items. Showing ［編集］ beside a
+    // published, buyer-protected sale falsely opens a read-only Details page,
+    // which is not an editing flow and was not requested by the creator.
+    const editable=item.status==='draft'||item.status==='ready';
+    const prefix=editable?'［編集］':'';
+    const mark=item.id===updatedId?'📝 ':item.status==='published'?'🎬 ':'🆕';
+    const row=prefix+mark+item.title;
+    if(editable){
+      const offset=rows.join('\n').length+1;
+      entities.push({type:'text_link',offset,length:prefix.length,
+        url:'https://t.me/CreateVdobot?start=ved_video_'+item.id+'_r'+revision});
+    }
     rows.push(row);
   }
   const btn=(text,data)=>({text,callback_data:data});
