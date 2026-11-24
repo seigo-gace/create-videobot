@@ -166,3 +166,24 @@ test('existing invoice buyer can request a no-charge retry after uncertain send 
  assert.deepEqual(d.calls.map(c=>c.method),['sendVideo']);
  assert.equal(d.state.status,'delivered');
 });
+
+test('one inline tap by historic buyer in public Topic re-delivers without any invoice or second tap',async()=>{
+ const d=deps(),calls=[];
+ d.store.claimLegacyDelivery=async({buyerId,listingId,revision,buyerInitiated})=>{
+   assert.equal(buyerId,42);assert.equal(listingId,'v26nov24invoice');
+   assert.equal(revision,1);assert.equal(buyerInitiated,true);
+   return {legacy:true,claimed:true,deliveryKey:'v26nov24invoice:1',
+    fileId:'previous_full_file',title:'Already purchased'};
+ };
+ d.store.markLegacyDelivered=async()=>calls.push('rights-kept');
+ d.store.markLegacyUnknown=async()=>{throw Error('unexpected delivery failure')};
+ const flow=createVideoInvoiceSalesFlow({store:d.store,api:d.api});
+ const r=await flow.handle({callback_query:{id:'paid_cb',from:{id:42},
+   data:'vid:buy:v26nov24invoice:1',
+   message:{chat:{type:'supergroup',id:-100123}}}});
+ assert.equal(r.alreadyPurchased,true);assert.equal(r.delivered,true);
+ assert.deepEqual(d.calls.map(x=>x.method),['answerCallbackQuery','sendVideo']);
+ assert.equal(d.calls[1].params.chat_id,42);
+ assert.equal(d.calls[1].params.protect_content,false);
+ assert.deepEqual(calls,['rights-kept']);
+});
