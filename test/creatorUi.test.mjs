@@ -167,7 +167,7 @@ test('terms summary has checkbox and only reveals publish after all content and 
  let d=openCreatorEditor({sellerId:'seller1'});
  d=editCreatorDraft(d,{type:'captionTitle',text:'作品'});
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main11'}});
- d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb11'}});
+ d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb11',secondFileId:'thumb12'}});
  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample11',durationSeconds:30}});
  d=editCreatorDraft(d,{type:'preset',stars:300});
  const before=creatorReviewPanel(d,2,'','https://example.test/terms.html');
