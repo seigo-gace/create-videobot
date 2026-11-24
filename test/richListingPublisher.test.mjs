@@ -36,17 +36,19 @@ test('one public RichMessage has spoiler photo+sample collage and inline button,
  const d=fake(),result=await publishRichVideoListing(d);
  assert.equal(result.richMessageId,200);
  assert.equal(result.saleMode,'invoice');
- assert.deepEqual(d.calls.map(x=>x.method),['getMe','sendRichMessage']);
+ assert.deepEqual(d.calls.map(x=>x.method),['sendRichMessage']);
  const req=d.calls[1].params;
- assert.deepEqual(req.rich_message.blocks.map(x=>x.type),['collage','paragraph']);
+ assert.deepEqual(req.rich_message.blocks.map(x=>x.type),['collage']);
+ assert.equal(req.rich_message.blocks[0].caption.text,'サムネ＋サンプル\n本編は購入後にDMで受信');
  const collage=req.rich_message.blocks[0].blocks;
  assert.deepEqual(collage.map(x=>x.type),['photo','video']);
  assert.deepEqual(collage.map(x=>x.photo?.has_spoiler??x.video?.has_spoiler),[true,true]);
  assert.equal(collage[0].photo.media,'thumbnailFile');
  assert.equal(collage[1].video.media,'sampleFile');
  assert.equal(req.reply_markup.inline_keyboard[0][0].text,'⭐ 10 Starsで本編を購入');
- assert.equal(req.reply_markup.inline_keyboard[0][0].url,'https://t.me/CreateVdobot?start=vid_video1_r1');
+ assert.equal(req.reply_markup.inline_keyboard[0][0].callback_data,'vid:buy:video1:1');
  assert.equal(JSON.stringify(req).includes('privateFullVideo'),false);
+ assert.equal(JSON.stringify(req).includes('start=vid_'),false);
  assert.equal(req.chat_id,topic.chatId);
  assert.equal(d.record.status,'sent');
  assert.equal(d.record.messageId,200);
@@ -55,7 +57,7 @@ test('idempotent re-entry never sends a second public message',async()=>{
  const d=fake();await publishRichVideoListing(d);
  const again=await publishRichVideoListing(d);
  assert.equal(again.alreadySent,true);
- assert.deepEqual(d.calls.map(x=>x.method),['getMe','sendRichMessage']);
+ assert.deepEqual(d.calls.map(x=>x.method),['sendRichMessage']);
 });
 test('rejected or unsafe samples, missing rights and invalid prices never send',async()=>{
  const patches=[
@@ -98,7 +100,7 @@ test('Telegram acknowledgment lacking purchase button becomes unknown, not a suc
  await assert.rejects(()=>publishRichVideoListing(d),/RICH_VIDEO_TELEGRAM_ACK_UNKNOWN/);
  assert.equal(d.record.status,'needs_reconcile');
  await assert.rejects(()=>publishRichVideoListing(d),/RICH_VIDEO_PUBLICATION_REQUIRES_RECONCILE/);
- assert.equal(d.calls.length,2);
+ assert.equal(d.calls.length,1);
 });
 test('failed Telegram transport does not trigger a duplicate send',async()=>{
  const d=fake();const real=d.telegramApi;
@@ -109,5 +111,5 @@ test('failed Telegram transport does not trigger a duplicate send',async()=>{
  await assert.rejects(()=>publishRichVideoListing(d),/network lost/);
  assert.equal(d.record.status,'needs_reconcile');
  await assert.rejects(()=>publishRichVideoListing(d),/RICH_VIDEO_PUBLICATION_REQUIRES_RECONCILE/);
- assert.deepEqual(d.calls.map(x=>x.method),['getMe','sendRichMessage']);
+ assert.deepEqual(d.calls.map(x=>x.method),['sendRichMessage']);
 });
