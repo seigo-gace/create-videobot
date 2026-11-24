@@ -25,7 +25,7 @@ function deps(){
 }
 function listing() {
   return {id:'video001',sellerId:'44',revision:1,title:'Example',priceStars:300,
-    thumbnail:{fileId:'photo001'},sample:{fileId:'sample001',durationSeconds:30},
+    thumbnail:{fileId:'photo001',secondFileId:'photo002'},sample:{fileId:'sample001',durationSeconds:30},
     paidVideo:{fileId:'main001'},rightsVerified:true,adultConsentVerified:true,
     feeTermsAccepted:true,managementFeeBps:3000,ownerConfirmedPublish:true};
 }

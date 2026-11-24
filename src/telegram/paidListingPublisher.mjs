@@ -98,6 +98,11 @@ export async function publishVideoListing({
       throw error;
     }
   }
+  if(!listing.thumbnail.secondFileId){
+    const error=new Error('VIDEO_SECOND_THUMBNAIL_REQUIRED');
+    error.code='VIDEO_PUBLICATION_PRE_SEND_REJECTED';
+    throw error;
+  }
   const claim=await store.claim({key,listingId:listing.id,revision:listing.revision,topicId:topic.id,saleMode});
   if (!claim || claim.claimed !== true) {
     const prior=await store.read(key);

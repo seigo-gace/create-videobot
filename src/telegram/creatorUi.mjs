@@ -330,7 +330,7 @@ export function creatorReviewPanel(draft, revision = 0, note = '', termsUrl = ''
   if(!Number.isSafeInteger(revision)||revision<1)throw new Error('invalid review revision');
   const validTerms=typeof termsUrl==='string' &&
     /^https:\/\/[A-Za-z0-9.-]+\/[A-Za-z0-9/_-]+\.html$/.test(termsUrl);
-  const missing=['thumbnail','sample','paidVideo','title','priceStars'].filter(k=>!draft[k]);
+  const missing=['thumbnail','sample','paidVideo','title','priceStars'].filter(k=>!draft[k]||(k==='thumbnail'&&!draft.thumbnail.secondFileId));
   const agreed=draft.rightsVerified===true&&draft.adultConsentVerified===true&&
     draft.feeTermsAccepted===true&&draft.termsVersion===CREATOR_TERMS_VERSION &&
     typeof draft.termsAcceptedAt==='string'&&draft.termsUrl===termsUrl;

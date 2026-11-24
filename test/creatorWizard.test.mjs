@@ -40,7 +40,7 @@ function setup({listingStoreOverride={},publishListing,salesProvider,mediaProces
       return {fileId:'prepared_sample_001',durationSeconds:30};
     },
     async prepareMissingPreviews(){
-      return {thumbnail:{fileId:'photo_auto_1'},sample:{fileId:'sample_auto_1',durationSeconds:30}};
+      return {thumbnail:{fileId:'photo_auto_1',secondFileId:'photo_auto_2'},sample:{fileId:'sample_auto_1',durationSeconds:30}};
     }
   };
   const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor:{...mediaProcessor,...mediaProcessorOverride},publishListing,salesProvider,termsUrl:'https://example.test/createvdobot-terms.html'});

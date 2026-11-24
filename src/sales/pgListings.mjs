@@ -128,6 +128,7 @@ export function createPostgresListingStore(pool) {
          !Array.isArray(receipt.freeMessageIds) ||
          ![2,3].includes(receipt.freeMessageIds.length) ||
          receipt.freeMessageIds.some(x=>!Number.isSafeInteger(x)||x<=0) ||
+         new Set(receipt.freeMessageIds).size!==receipt.freeMessageIds.length ||
          !Number.isSafeInteger(receipt.paidMessageId) ||
          receipt.paidMessageId<=0)
         throw new Error('verified publish receipt required');

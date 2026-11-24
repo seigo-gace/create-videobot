@@ -159,7 +159,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
   async function registerVideo(ownerId,old,draft) {
 
         if(old.publishing==='needs_reconcile')throw new Error('PUBLISH_NEEDS_RECONCILE');
-        const valid=!!draft.thumbnail&&!!draft.sample&&!!draft.paidVideo&&
+        const valid=!!draft.thumbnail?.secondFileId&&!!draft.sample&&!!draft.paidVideo&&
           !!draft.title&&Number.isSafeInteger(draft.priceStars)&&
           draft.rightsVerified===true&&draft.adultConsentVerified===true&&
           draft.feeTermsAccepted===true&&draft.termsVersion===CREATOR_TERMS_VERSION&&
@@ -366,6 +366,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           rev=>statusPanel(old.draft,rev));
       }
       if(action==='entry:register'&&old.screen==='editor') {
+        if(old.draft.paidVideo&&(!old.draft.thumbnail?.secondFileId||!old.draft.sample)){
+          const recovery=await autoPreview(ownerId,old.draft);
+          return persistAndRender(ownerId,old,{...old,draft:recovery.draft,previewMessageId:recovery.previewMessageId??old.previewMessageId,albumMessageId:recovery.previewMessageId??old.albumMessageId,waiting:null},rev=>statusPanel(recovery.draft,rev,recovery.warning||'無料サンプルを確認してから投稿してください。'));
+        }
         // Publishing is impossible until a separate visible agreement step.
         return persistAndRender(ownerId,old,
           {...old,screen:'review',waiting:null},

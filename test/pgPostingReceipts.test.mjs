@@ -73,14 +73,14 @@ test('domain paid sale path reuses existing builders and private receipt store, 
   const calls=[];
   const dependencies={
     listing:{id:'list1',sellerId:'user1',revision:1,title:'Movie',priceStars:50,
-      thumbnail:{fileId:'photo001'},sample:{fileId:'sample001',durationSeconds:30},paidVideo:{fileId:'main001'},
+      thumbnail:{fileId:'photo001',secondFileId:'photo002'},sample:{fileId:'sample001',durationSeconds:30},paidVideo:{fileId:'main001'},
       rightsVerified:true,adultConsentVerified:true,ownerConfirmedPublish:true,feeTermsAccepted:true,managementFeeBps:3000},
     getVerifiedVideoTopic:async()=>({id:3,chatId:-100333,threadId:22,
       purpose:'video_sale',board:'video_chat',verified:true,enabled:true,title:'Sale'}),
     verifyMembership:async()=>true,verifyReview:async()=>true,verifyRelease:async()=>true,store,
     telegramApi:async(method)=>{
       calls.push(method);
-      return method==='sendMediaGroup'?[{message_id:71,media_group_id:'album_db'},{message_id:72,media_group_id:'album_db'}]:{message_id:73,chat:{id:-100333},message_thread_id:22,paid_media:{star_count:50,paid_media:[{type:'preview'}]}};
+      return method==='sendMediaGroup'?[{message_id:71,media_group_id:'album_db'},{message_id:72,media_group_id:'album_db'},{message_id:74,media_group_id:'album_db'}]:{message_id:73,chat:{id:-100333},message_thread_id:22,paid_media:{star_count:50,paid_media:[{type:'preview'}]}};
     }
   };
   const first=await publishVideoListing(dependencies);
@@ -88,7 +88,7 @@ test('domain paid sale path reuses existing builders and private receipt store, 
   assert.equal(first.posted,true);
   assert.equal(repeated.alreadySent,true);
   assert.deepEqual(calls,['sendMediaGroup','sendPaidMedia']);
-  assert.deepEqual((await store.read('list1:1')).freeMessageIds,[71,72]);
+  assert.deepEqual((await store.read('list1:1')).freeMessageIds,[71,72,74]);
 });
 test('database adapter rejects invalid ids and refuses stale paid acknowledgment',async()=>{
   const store=createPostgresPostingReceiptStore(fakeDb());

@@ -4,7 +4,7 @@ import { publishVideoListing } from '../src/telegram/paidListingPublisher.mjs';
 
 function listing(){
   return {id:'sale001', sellerId:'creator1', revision:1, title:'夏の思い出', priceStars:300,
-    thumbnail:{fileId:'photo001'}, sample:{fileId:'sample001',durationSeconds:30},
+    thumbnail:{fileId:'photo001',secondFileId:'photo002'}, sample:{fileId:'sample001',durationSeconds:30},
     paidVideo:{fileId:'main001'},rightsVerified:true,adultConsentVerified:true,ownerConfirmedPublish:true,feeTermsAccepted:true,managementFeeBps:3000};
 }
 function memoryReceiptStore() {
@@ -40,19 +40,19 @@ function deps(overrides={}){
 
     telegramApi:async (method,params)=>{
       calls.push({method,params});
-      return method==='sendMediaGroup'?[{message_id:10,media_group_id:'album_001'},{message_id:11,media_group_id:'album_001'}]:{message_id:12,chat:{id:-100123},message_thread_id:777,paid_media:{star_count:300,paid_media:[{type:'preview'}]}};
+      return method==='sendMediaGroup'?[{message_id:10,media_group_id:'album_001'},{message_id:11,media_group_id:'album_001'},{message_id:14,media_group_id:'album_001'}]:{message_id:12,chat:{id:-100123},message_thread_id:777,paid_media:{star_count:300,paid_media:[{type:'preview'}]}};
     },...overrides};
 }
 test('uses existing paid/free builders, requires approval and persists both response ids',async()=>{
   const d=deps();
   const result=await publishVideoListing(d);
   assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','sendPaidMedia']);
-  assert.deepEqual(d.calls[0].params.media.map(x=>x.has_spoiler),[true,true]);
+  assert.deepEqual(d.calls[0].params.media.map(x=>x.has_spoiler),[true,true,true]);
   assert.equal(d.calls[1].params.star_count,300);
   assert.equal(d.calls[1].params.payload,'sale001:1');
   assert.equal(d.calls[0].params.message_thread_id,777);
   assert.equal(d.calls[1].params.message_thread_id,777);
-  assert.deepEqual(result.freeMessageIds,[10,11]);
+  assert.deepEqual(result.freeMessageIds,[10,11,14]);
   assert.equal(result.paidMessageId,12);
   const repeat=await publishVideoListing(d);
   assert.equal(repeat.alreadySent,true);
@@ -89,7 +89,7 @@ test('paid-message acknowledgement without official Stars payload is never treat
    const d=deps({telegramApi:async(method,params)=>{
      d.calls.push({method,params});
      return method==='sendMediaGroup'?
-       [{message_id:10,media_group_id:'album_001'},{message_id:11,media_group_id:'album_001'}]:result;
+       [{message_id:10,media_group_id:'album_001'},{message_id:11,media_group_id:'album_001'},{message_id:14,media_group_id:'album_001'}]:result;
    }});
    await assert.rejects(()=>publishVideoListing(d),/native Stars lock not confirmed/);
    assert.equal((await d.store.read('sale001:1')).status,'needs_reconcile');
@@ -119,13 +119,13 @@ test('unconnected video GATE is marked as a definitive pre-send refusal',async()
 test('paid failure after free album is kept unknown and cannot automatically resend',async()=>{
   const d=deps({telegramApi:async (method)=>{
     d.calls.push({method});
-    if(method==='sendMediaGroup')return [{message_id:22,media_group_id:'album_002'},{message_id:23,media_group_id:'album_002'}];
+    if(method==='sendMediaGroup')return [{message_id:22,media_group_id:'album_002'},{message_id:23,media_group_id:'album_002'},{message_id:24,media_group_id:'album_002'}];
     throw new Error('simulated timeout after paid request');
   }});
   await assert.rejects(()=>publishVideoListing(d),/simulated timeout/);
   const state=await d.store.read('sale001:1');
   assert.equal(state.status,'needs_reconcile');
-  assert.deepEqual(state.freeMessageIds,[22,23]);
+  assert.deepEqual(state.freeMessageIds,[22,23,24]);
   await assert.rejects(()=>publishVideoListing(d),/PUBLISH_NEEDS_RECONCILE/);
   assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','sendPaidMedia']);
 });
@@ -150,7 +150,7 @@ test('optional video description appears on both free gallery and official tap-t
  d.listing.description='30秒の無料見本。全編はStarsで視聴できます。';
  await publishVideoListing(d);
  assert.equal(d.calls[0].method,'sendMediaGroup');
- assert.equal(d.calls[0].params.media.length,2);
+ assert.equal(d.calls[0].params.media.length,3);
  assert.equal(d.calls[1].method,'sendPaidMedia');
  assert.equal(d.calls[1].params.media[0].type,'video');
  assert.equal(d.calls[1].params.star_count,300);
@@ -165,8 +165,8 @@ test('public preview and native Stars post contain only creator-supplied title a
  await publishVideoListing(d);
  const free=d.calls[0].params;
  const paid=d.calls[1].params;
- assert.equal(free.media.length,2);
- assert.deepEqual(free.media.map(x=>x.has_spoiler),[true,true]);
+ assert.equal(free.media.length,3);
+ assert.deepEqual(free.media.map(x=>x.has_spoiler),[true,true,true]);
  assert.equal(free.media[0].caption,undefined);
  assert.equal(paid.caption,'夏の思い出\n見本の説明');
  assert.equal(paid.star_count,300);
@@ -217,7 +217,7 @@ test('existing receipt stays idempotent even when another revision was previousl
  d.store.findOtherDelivery=async()=>({key:'sale001:2',status:'sent'});
  const again=await publishVideoListing(d);
  assert.equal(again.alreadySent,true);
- assert.deepEqual(again.freeMessageIds,[10,11]);
+ assert.deepEqual(again.freeMessageIds,[10,11,14]);
  assert.equal(again.paidMessageId,12);
  assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','sendPaidMedia']);
 });
@@ -227,7 +227,8 @@ test('invoice fallback attaches Stars purchase button to sample without exposing
    d.calls.push({method,params});
    if(method==='sendMediaGroup')return [
      {message_id:10,media_group_id:'album_001'},
-     {message_id:11,media_group_id:'album_001'}
+     {message_id:11,media_group_id:'album_001'},
+     {message_id:14,media_group_id:'album_001'}
    ];
    if(method==='getMe')return {is_bot:true,username:'CreateVdobot'};
    if(method==='editMessageReplyMarkup')return true;
@@ -236,7 +237,7 @@ test('invoice fallback attaches Stars purchase button to sample without exposing
  const result=await publishVideoListing(d);
  assert.equal(result.saleMode,'invoice');
  assert.deepEqual(d.calls.map(x=>x.method),['sendMediaGroup','getMe','editMessageReplyMarkup']);
- assert.equal(d.calls[2].params.message_id,11);
+ assert.equal(d.calls[2].params.message_id,14);
  assert.equal(d.calls[2].params.reply_markup.inline_keyboard[0][0].url,
    'https://t.me/CreateVdobot?start=vid_sale001_r1');
  assert.equal(d.calls[2].params.reply_markup.inline_keyboard[0][0].text,'⭐ 300で購入');
@@ -251,7 +252,8 @@ test('invoice unknown reply markup does not create a second sale offer on retry'
    d.calls.push({method,params});
    if(method==='sendMediaGroup')return [
      {message_id:10,media_group_id:'album_001'},
-     {message_id:11,media_group_id:'album_001'}
+     {message_id:11,media_group_id:'album_001'},
+     {message_id:14,media_group_id:'album_001'}
    ];
    if(method==='getMe')return {is_bot:true,username:'CreateVdobot'};
    throw Error('unknown remote result');

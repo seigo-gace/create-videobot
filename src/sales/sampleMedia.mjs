@@ -124,7 +124,7 @@ export async function prepareAutomaticSampleVideo({inputPath,outputPath,run=exec
     if(actual>60.1||actual>=duration||Math.abs(actual-total)>0.15)
       throw new Error('generated automatic sample duration invalid');
     const info=await stat(temporary);
-    if(info.size<=0||info.size>20*1024*1024)throw new Error('automatic sample upload size invalid');
+    if(info.size<=0||info.size>20_000_000)throw new Error('automatic sample upload size invalid');
     await chmod(temporary,0o600);
     await link(temporary,output);
     return {kind:'clipped',path:output,durationSeconds:actual,originalDurationSeconds:duration};
