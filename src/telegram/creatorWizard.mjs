@@ -297,10 +297,17 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
         }
         if(!resolvedPrevious){
           const items=old.draft?null:await listingStore.listByOwner(ownerId);
+          // The terms/review panel requires a valid Stars price. A legacy
+          // unresolved draft may have no price yet; render its editor with
+          // the explicit reconciliation warning instead of throwing.
+          const canReview=old.draft?.priceStars!=null;
           return persistAndRender(ownerId,old,{
-            ...old,waiting:null,screen:old.draft?'review':'my_videos'
+            ...old,waiting:null,
+            screen:old.draft?(canReview?'review':'editor'):'my_videos'
           },rev=>old.draft
-            ?reviewPanel(old.draft,rev,'⚠️ 前の投稿結果が未確定です。購入履歴を確認するまで重複登録は行いません。')
+            ?(canReview
+              ?reviewPanel(old.draft,rev,'⚠️ 前の投稿結果が未確定です。購入履歴を確認するまで重複登録は行いません。')
+              :statusPanel(old.draft,rev,'⚠️ 前の投稿結果が未確定です。購入履歴を確認するまで重複登録は行いません。'))
             :myVideosPanel({sellerId:String(ownerId),
               listings:items,page:0,revision:rev,
               notice:'⚠️ 前の投稿結果を確認中です。購入履歴の照合が必要です。'}));
