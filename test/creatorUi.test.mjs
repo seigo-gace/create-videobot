@@ -271,6 +271,11 @@ test('a changed legal page is not treated as previously accepted by the preview'
  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample001',durationSeconds:30}});
  d=editCreatorDraft(d,{type:'preset',stars:300});
  d=editCreatorDraft(d,{type:'confirmTerms'});
+ d=editCreatorDraft(d,{type:'captionTitle',text:'作品'});
+ d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb01',secondFileId:'thumb02'}});
+ d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample01',durationSeconds:30}});
+ d=editCreatorDraft(d,{type:'preset',stars:300});
+ d=editCreatorDraft(d,{type:'confirmTerms'});
  d={...d,termsUrl:'https://example.test/old-terms.html'};
  const p=creatorReviewPanel(d,8,'','https://example.test/new-terms.html');
  assert.ok(p.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='review:agree|r8'));
