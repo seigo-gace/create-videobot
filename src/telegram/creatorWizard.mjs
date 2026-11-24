@@ -478,7 +478,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           albumMessageId:recovery.previewMessageId??old.albumMessageId??null
         },rev=>statusPanel(recovery.draft,rev,recovery.warning));
       }
-      if(value==='price'&&old.screen==='editor')return persistAndRender(ownerId,old,{...old,screen:'field',field:'price',waiting:null},
+      if(value==='price')return persistAndRender(ownerId,old,{...old,screen:'field',field:'price',waiting:null},
         rev=>creatorFieldPanel(draft,'price',rev));
       if(['thumbnail','sample','paidVideo','title','description'].includes(value)&&old.screen==='editor') {
         return persistAndRender(ownerId,old,{...old,screen:'field',field:value,waiting:value},

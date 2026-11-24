@@ -151,7 +151,7 @@ test('VIDEO existing edit preview keeps change buttons, never enables new paid p
  assert.equal(x.states.get(33).screen,'editor');
  assert.match(x.screens.at(-1).panel.text,/下の［編集］ボタン/);
  assert.doesNotMatch(x.screens.at(-1).panel.text,/📋 投稿前の規約・約款確認/);
- assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+ assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
    ['✅ 変更','❌ キャンセル','🗑 削除']);
  assert.equal(publications,0);
  await x.callback('edit:save|r3');
@@ -419,7 +419,7 @@ test('video upload -> inline edit -> explicit terms -> publish once -> personal 
  assert.equal(state.draft.thumbnail.fileId,'photo_auto_1');
  assert.equal(state.draft.sample.durationSeconds,30);
  assert.equal(x.calls.filter(c=>c.method==='sendMediaGroup').length,1);
- assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+ assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
    ['✅ 投稿する','❌ キャンセル']);
  assert.match(x.screens.at(-1).panel.text,/［未登録］ 説明：/);
  await x.callback('edit:description|r3');
@@ -614,7 +614,7 @@ test('owner-only title edit shows one field and cancel restores saved video with
   await x.callback('menu:manage');
   await x.callback('video:edit:my1|r1');
   assert.equal(x.states.get(33).draft.mode,'edit');
-  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
     ['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
   await x.callback('edit:title|r2');
   assert.equal(x.states.get(33).screen,'field');
