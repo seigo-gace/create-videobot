@@ -147,6 +147,13 @@ export function creatorDescriptionPanel(draft,revision,notice='') {
 
 /** Telegram creator registration: upload -> automatic private preview -> optional description -> registration. */
 // Render actual stored, probed duration rather than a legacy fixed label.
+// Report stored references, not a claim that the assets were generated or delivered.
+function thumbnailStatus(thumbnail) {
+  const validId=id=>typeof id==='string'&&/^[A-Za-z0-9_-]{3,256}$/.test(id);
+  if(!validId(thumbnail?.fileId))return thumbnail?'登録状態未確認':'未登録';
+  const second=validId(thumbnail.secondFileId)&&thumbnail.secondFileId!==thumbnail.fileId;
+  return second?'登録済み（2枚）':'登録済み（1枚）';
+}
 function sampleStatus(sample) {
   if (!sample) return '未登録';
   if (!Number.isFinite(sample.durationSeconds) || sample.durationSeconds <= 0)
@@ -173,7 +180,7 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     ['title','タイトル',draft.title,draft.title],
     ['description','説明',draft.description,draft.description],
     ['price','価格',draft.priceStars,'⭐ '+draft.priceStars+' Stars'],
-    ['thumbnail','🖼 サムネ',draft.thumbnail,'登録済み'],
+    ['thumbnail','🖼 サムネ',draft.thumbnail,thumbnailStatus(draft.thumbnail)],
     ['sample','🎞 サンプル',draft.sample,sampleStatus(draft.sample)],
     ['paidVideo','🎬 有料本編',draft.paidVideo,'登録済み']
   ];
@@ -215,7 +222,7 @@ export function creatorFieldPanel(draft,field,revision=0,notice='') {
     title:'タイトル：'+(draft.title||'未登録'),
     description:'説明：'+(draft.description||'未登録'),
     price:'価格：'+(draft.priceStars==null?'未設定':'⭐ '+draft.priceStars+' Stars'),
-    thumbnail:'🖼 サムネ：'+(draft.thumbnail?'登録済み':'未登録'),
+    thumbnail:'🖼 サムネ：'+thumbnailStatus(draft.thumbnail),
     sample:'🎞 サンプル：'+sampleStatus(draft.sample),
     paidVideo:'🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録')
   }[field];
@@ -296,7 +303,7 @@ export function videoInfoPanel(listing,revision,mode='open') {
     videoFeeDisclosure(listing.priceStars)
   ];
   if(mode==='open')lines.push(
-    'サムネ：'+(listing.thumbnail?'登録済み':'未登録'),
+    'サムネ：'+thumbnailStatus(listing.thumbnail),
     'サンプル：'+sampleStatus(listing.sample),
     '本編：'+(listing.paidVideo?'登録済み':'未登録'),
     '状態：'+(listing.status==='published'?'公開済み':listing.status==='paused'?'停止中':'未公開')

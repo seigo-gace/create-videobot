@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   openCreatorEditor, editCreatorDraft, creatorEditorPanel, myVideosPanel,
-  validateWithdrawalText, withdrawalPrompt, confirmedWithdrawal, WithdrawalInputError, creatorReviewPanel, creatorFieldPanel
+  validateWithdrawalText, withdrawalPrompt, confirmedWithdrawal, WithdrawalInputError, creatorReviewPanel, creatorFieldPanel, videoInfoPanel
 } from '../src/telegram/creatorUi.mjs';
 
 test('new and existing listing share field editor, edit protects existing fields', () => {
@@ -357,4 +357,29 @@ test('owner list differentiates saved drafts, uncertain attempts and acknowledge
  assert.doesNotMatch(panel.text,/登録済み動画/);
  assert.equal(panel.entities.length,3);
  assert.ok(panel.entities.every(e=>panel.text.slice(e.offset,e.offset+e.length)==='［編集］'));
+});
+
+test('thumbnail status reports actual distinct stored references consistently across read-only views',()=>{
+ const base={id:'listing1',sellerId:'seller1',revision:1,title:'風景動画',priceStars:100,
+   paidVideo:{fileId:'main001'},sample:{fileId:'sample001',durationSeconds:30}};
+ for(const [thumbnail,expected] of [
+   [{fileId:'photo001'},'登録済み（1枚）'],
+   [{fileId:'photo001',secondFileId:'photo002'},'登録済み（2枚）'],
+   [{fileId:'photo001',secondFileId:'photo001'},'登録済み（1枚）'],
+   [{fileId:'photo001',secondFileId:'bad!'},'登録済み（1枚）'],
+   [{secondFileId:'photo002'},'登録状態未確認']
+ ]){
+   const listing={...base,thumbnail};
+   const draft=openCreatorEditor({sellerId:'seller1',existing:listing});
+   const before=JSON.stringify(draft);
+   for(const panel of [creatorEditorPanel(draft,2),creatorFieldPanel(draft,'thumbnail',2),videoInfoPanel(listing,2)]){
+     assert.ok(panel.text.includes('サムネ：'+expected));
+     assert.ok(!panel.text.includes('サンプル：登録済み（60秒）'));
+   }
+   assert.equal(JSON.stringify(draft),before);
+   assert.ok(creatorEditorPanel(draft,2).text.includes('サンプル：登録済み（30秒）'));
+ }
+ const listing={...base,thumbnail:null};
+ assert.match(videoInfoPanel(listing,2).text,/サムネ：未登録/);
+ assert.match(creatorFieldPanel(openCreatorEditor({sellerId:'seller1',existing:listing}),'thumbnail',2).text,/サムネ：未登録/);
 });
