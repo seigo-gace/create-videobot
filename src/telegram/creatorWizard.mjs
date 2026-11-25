@@ -61,7 +61,10 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
     // publication result. Only the verified reconciliation owner may
     // clear that lock; ordinary UI navigation must preserve it.
     const next={...patch,revision:expected+1,
-      ...(old?.publishing==='needs_reconcile'&&!verifiedResolution?{publishing:'needs_reconcile',pendingVideoDraft:old.pendingVideoDraft??null}:{})};
+      ...(['needs_reconcile','in_progress'].includes(old?.publishing)&&!verifiedResolution?{
+        publishing:patch.publishing==='needs_reconcile'?'needs_reconcile':old.publishing,
+        pendingVideoDraft:patch.pendingVideoDraft??old.pendingVideoDraft??null
+      }:{})};
     const drawn=typeof panel==='function'?panel(next.revision):panel;
     // Keep the editable text screen visually attached to the owner's album preview.
     if(['editor','description'].includes(next.screen) &&
@@ -175,8 +178,20 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
             rev=>old.screen==='review'
               ?reviewPanel(draft,rev,'公開用の既存GATE・Topic・売上DB接続はまだ検証されていません。投稿は行われません。')
               :statusPanel(draft,rev,'⚠️ 公開先と売上DBの接続が未確認です。投稿は行われていません。'));
-        const reservation={...old,draft,revision:old.revision+1,publishing:'in_progress'};
-        // Reserve callback revision *before* any paid-media send; rejects races.
+        const pending=old.pendingVideoDraft;
+        if(typeof listingStore.findUnresolvedRegistration==='function'){
+          let unresolved;
+          try{unresolved=await listingStore.findUnresolvedRegistration(ownerId,draft.paidVideo.fileId);}
+          catch{return persistAndRender(ownerId,old,{...old,draft,screen:'review',waiting:null},
+            rev=>reviewPanel(draft,rev,'⚠️ 登録記録を確認できません。投稿は実行していません。'));}
+          if(unresolved)return persistAndRender(ownerId,old,{...old,draft,screen:'review',waiting:null},
+            rev=>reviewPanel(draft,rev,'⚠️ 同じ動画の以前の投稿結果が未確認です。新規登録・再投稿は行っていません。'));
+        }
+        // Persist the chosen identity BEFORE the first database insert or
+        // external send. Even a restart cannot turn this into another ID.
+        const reservedId=pending?.listingId??randomUUID();
+        const reservation={...old,draft,revision:old.revision+1,publishing:'in_progress',
+          pendingVideoDraft:{listingId:reservedId,revision:pending?.revision??0}};
         await sessionStore.write(ownerId,old.revision,reservation);
         let stored=null;
         try {
@@ -185,12 +200,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           // acceptance; no extra button or user command is introduced.
           const acceptedDraft=draft;
           // Reuse the persisted draft after a proven pre-send denial.
-          const pending=old.pendingVideoDraft;
           stored=draft.mode==='edit'
             ? await listingStore.updateDraft(ownerId,draft.listingId,draft.revision,acceptedDraft)
-            : pending?.listingId
+            : pending?.listingId&&pending.revision>=1
               ? await listingStore.updateDraft(ownerId,pending.listingId,pending.revision,acceptedDraft)
-              : await listingStore.createDraft(ownerId,randomUUID(),acceptedDraft);
+              : await listingStore.createDraft(ownerId,reservedId,acceptedDraft);
           const published=await publishListing({
             ...stored,ownerConfirmedPublish:true,
             rightsVerified:draft.rightsVerified,
@@ -199,14 +213,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           if(published?.posted!==true || !Number.isSafeInteger(published.paidMessageId))
             throw new Error('publication not confirmed');
           await listingStore.markPublished(ownerId,stored.id,stored.revision,published);
-          const current=await sessionStore.read(ownerId);
-          const items=await listingStore.listByOwner(ownerId);
-          return persistAndRender(ownerId,current,{...current,draft:null,
-            screen:'my_videos',page:0,publishing:null,waiting:null,pendingVideoDraft:null},
-            rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,
-              revision:rev,notice:draft.mode==='edit'?
-                '動画を編集／更新しました。':'新規動画を登録しました。',
-              updatedId:draft.mode==='edit'?stored.id:null}));
+          // The publication transaction is complete here; DM rendering is a separate outcome.
         } catch(e) {
           const current=await sessionStore.read(ownerId);
           const pending=stored&&draft.mode==='create'
@@ -217,15 +224,27 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
               ...current,publishing:null,waiting:null,screen:'review',draft,
               pendingVideoDraft:pending
             },rev=>reviewPanel(draft,rev,
-              '⚠️ 公開先または投稿審査を確認できないため、Telegramへ投稿していません。下書きは保存済みです。設定の復旧後、同じ下書きから投稿できます。'));
+              '⚠️ 公開先または投稿審査を確認できないため、Telegramへ投稿していません。下書きは保存済みです。設定の復旧後、同じ下書きから投稿できます。'),{verifiedResolution:true});
           }
           return persistAndRender(ownerId,current,{
             ...current,publishing:'needs_reconcile',waiting:null,
             screen:'review',draft,pendingVideoDraft:pending
           },rev=>reviewPanel(draft,rev,
-            '⚠️ 送信または保存結果の照合が必要です。重複投稿を防止するため、再投稿しません。'));
+            '⚠️ 登録完了は確認できません。送信または保存結果の照合が必要です。重複投稿を防止するため、再投稿しません。'));
         }
-      
+        // A Telegram confirmation-screen failure does not undo the confirmed
+        // publication or create another sale. Preserve the durable outcome.
+        try{
+          const current=await sessionStore.read(ownerId);
+          const items=await listingStore.listByOwner(ownerId);
+          return await persistAndRender(ownerId,current,{...current,draft:null,
+            screen:'my_videos',page:0,publishing:null,waiting:null,pendingVideoDraft:null},
+            rev=>myVideosPanel({sellerId:String(ownerId),listings:items,page:0,
+              revision:rev,notice:'新規動画を登録しました。トピックへの投稿も完了しました。',
+              updatedId:stored.id}),{verifiedResolution:true});
+        }catch{
+          return {handled:true,publicationRecorded:true,screenDelivery:'not_confirmed'};
+        }
   }
 
   async function handleCallback(update) {
@@ -272,8 +291,8 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       // client response. Never clear its duplicate-send guard on navigation.
       // Only a product marked published by the receipt-gated markPublished()
       // operation proves the old pending send has already been completed.
-      let resolvedPrevious=false;
-      if(old?.publishing==='needs_reconcile'){
+      let resolvedPrevious=false,detachedHistorical=false;
+      if(['needs_reconcile','in_progress'].includes(old?.publishing)){
         const pending=old.pendingVideoDraft;
         if(pending?.listingId&&Number.isSafeInteger(pending.revision)){
           try{
@@ -282,7 +301,15 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
               Number.isSafeInteger(posted.revision)&&posted.revision>pending.revision;
           }catch{/* Unknown owner/ledger state must remain locked. */}
         }
-        if(!resolvedPrevious){
+        // A legacy session can retain a global lock but have neither its
+        // draft nor its reference. The historical receipt must remain
+        // untouched. Detach only that orphaned session lock after proving
+        // the unknown attempt is already durable, and start a fresh draft.
+        if(!resolvedPrevious&&old.publishing==='needs_reconcile'&&!old.draft&&!pending?.listingId&&typeof listingStore.findUnresolvedRegistration==='function'){
+          const retained=await listingStore.listByOwner(ownerId);
+          detachedHistorical=retained.some(v=>['draft','ready'].includes(v.status)&&v.publicationState==='unconfirmed');
+        }
+        if(!resolvedPrevious&&!detachedHistorical){
           const items=old.draft?null:await listingStore.listByOwner(ownerId);
           // The terms/review panel requires a valid Stars price. A legacy
           // unresolved draft may have no price yet; render its editor with
@@ -305,12 +332,12 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       // listing ID, previews, or unresolved pending-reference.
       const draft=openCreatorEditor({sellerId:String(ownerId)});
       return persistAndRender(ownerId,old,{
-        ...old,screenMessageId:messageId,publishing:resolvedPrevious?null:old?.publishing??null,
+        ...old,screenMessageId:messageId,publishing:resolvedPrevious||detachedHistorical?null:old?.publishing??null,
         draft,originalDraft:null,pendingVideoDraft:null,
         previewMessageId:null,albumMessageId:null,
         field:null,detailId:null,deleteId:null,descriptionEntered:false,
         screen:'await_video',waiting:'paidVideo'
-      },rev=>statusPanel(draft,rev),{verifiedResolution:resolvedPrevious});
+      },rev=>statusPanel(draft,rev),{verifiedResolution:resolvedPrevious||detachedHistorical});
     }
     // Both the current and previously emitted versioned Back/Cancel buttons
     // navigate without ever publishing or deleting a product.

@@ -912,3 +912,32 @@ test('missing terms URL and legacy confirmation never terminate navigation or pu
   assert.equal(x.states.get(33).screen,'await_video');
   assert.equal(publications,0);
 });
+
+test('legacy orphaned session can open a genuinely new entry while old receipt remains unknown',async()=>{
+ const x=setup({listingStoreOverride:{
+  async listByOwner(owner){return [{id:'old1',sellerId:String(owner),title:'旧下書き',status:'draft',publicationState:'unconfirmed'}];},
+  async findUnresolvedRegistration(){return null;}
+ }});
+ x.states.set(33,{revision:1,screenMessageId:101,screen:'home',draft:null,publishing:'needs_reconcile',pendingVideoDraft:null});
+ await x.callback('menu:listing');
+ assert.equal(x.states.get(33).screen,'await_video');
+ assert.equal(x.states.get(33).publishing,null);
+ assert.equal(x.states.get(33).draft.paidVideo,null);
+});
+test('an unresolved same-file registration cannot create another row or call publication',async()=>{
+ let creates=0,publishes=0;
+ const x=setup({listingStoreOverride:{
+  async findUnresolvedRegistration(owner,file){assert.equal(file,'main001');return {id:'old1',status:'draft',publicationState:'unconfirmed'};},
+  async createDraft(){creates++;throw Error('must not create');},
+  async updateDraft(){throw Error('must not update');},async markPublished(){throw Error('must not mark');}
+ },publishListing:async()=>{publishes++;throw Error('must not publish');}});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'main001',duration:90},caption:'検証用'},210);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ await x.callback('edit:price|r'+x.states.get(33).revision);
+ await x.callback('edit:price:300|r'+x.states.get(33).revision);
+ await x.callback('entry:register|r'+x.states.get(33).revision);
+ await x.callback('review:agree|r'+x.states.get(33).revision);
+ assert.equal(creates,0);assert.equal(publishes,0);
+ assert.match(x.screens.at(-1).panel.text,/以前の投稿結果が未確認/);
+});

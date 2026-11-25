@@ -344,3 +344,17 @@ test('body links preserve exact UTF-16 offsets and published metadata protection
  assert.equal(published.reply_markup.inline_keyboard.length,1);
  assert.ok(published.reply_markup.inline_keyboard.flat().every(b=>!b.callback_data.startsWith('edit:delete')));
 });
+
+test('owner list differentiates saved drafts, uncertain attempts and acknowledged publications',()=>{
+ const panel=myVideosPanel({sellerId:'seller1',revision:3,listings:[
+  {id:'draft1',sellerId:'seller1',title:'下書き',status:'draft',publicationState:'unposted'},
+  {id:'unknown1',sellerId:'seller1',title:'未確認',status:'draft',publicationState:'unconfirmed'},
+  {id:'published1',sellerId:'seller1',title:'公開',status:'published',publicationState:'recorded'}
+ ]});
+ assert.match(panel.text,/下書き\n　（未投稿・下書き）/);
+ assert.match(panel.text,/未確認\n　（投稿結果未確認）/);
+ assert.match(panel.text,/公開\n　（投稿記録あり）/);
+ assert.doesNotMatch(panel.text,/登録済み動画/);
+ assert.equal(panel.entities.length,3);
+ assert.ok(panel.entities.every(e=>panel.text.slice(e.offset,e.offset+e.length)==='［編集］'));
+});

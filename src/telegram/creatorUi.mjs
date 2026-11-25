@@ -255,7 +255,7 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
   const pages = Math.max(1, Math.ceil(owned.length / 10));
   if (page >= pages) throw new Error('page outside listing range');
   const items=owned.slice(page*10,page*10+10);
-  const intro=notice || (owned.length ? '🎬 登録済み動画' : '現在動画は未登録です。\n🆕新規動画を登録してください。');
+  const intro=notice || (owned.length ? '🎬 動画一覧' : '現在動画は未登録です。\n🆕新規動画を登録してください。');
   const rows=[intro];
   const entities=[];
   for(const item of items){
@@ -263,7 +263,9 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
     const editable=item.status!=='removed';
     const prefix=editable?'［編集］':'';
     const mark=item.id===updatedId?'📝 ':item.status==='published'?'🎬 ':'🆕';
-    const row=prefix+mark+item.title;
+    const state=item.publicationState??(item.status==='paused'?'paused':item.status==='published'?'unconfirmed':item.status==='draft'||item.status==='ready'?'unposted':null);
+    const label={recorded:'投稿記録あり',unposted:'未投稿・下書き',unconfirmed:'投稿結果未確認',paused:'公開停止'}[state];
+    const row=prefix+mark+item.title+(label?'\n　（'+label+'）':'');
     if(editable)entities.push({type:'text_link',offset:rows.join('\n').length+1,
       length:prefix.length,url:'https://t.me/CreateVdobot?start=ved_video_'+item.id+'_r'+revision});
     rows.push(row);
