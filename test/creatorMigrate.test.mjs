@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {applyCreatorSchema} from '../src/runtime/creatorMigrate.mjs';
+import {applyCreatorSchema,assertCreatorSchemaApplied,CREATOR_SCHEMA_MIGRATION_COUNT} from '../src/runtime/creatorMigrate.mjs';
 
 function pool({failAt}={}){
  const calls=[],released=[];
@@ -13,12 +13,13 @@ function pool({failAt}={}){
   release(){released.push(true);}
  };}};
 }
-test('all twenty-two VideoBot migrations run in one locked transaction with no GATE mutations',async()=>{
+test('all current VideoBot migrations run in one locked transaction with no GATE mutations',async()=>{
  const db=pool(),loaded=[];
  const result=await applyCreatorSchema({pool:db,loadSql:async name=>{
   loaded.push(name);return 'CREATE TABLE IF NOT EXISTS test_'+loaded.length+' (id int)';
  }});
- assert.deepEqual(result,{applied:true,migrations:23});
+ assert.deepEqual(result,{applied:true,migrations:CREATOR_SCHEMA_MIGRATION_COUNT});
+ assert.doesNotThrow(()=>assertCreatorSchemaApplied(result));
  assert.equal(loaded.length,23);
  assert.match(loaded[0],/^001_video_post_receipts/);
  assert.match(loaded.at(-1),/^023_video_preview_montage/);
@@ -42,4 +43,12 @@ test('refuse missing files or unowned transaction pool without touching database
  await assert.rejects(()=>applyCreatorSchema({pool:db,loadSql:async()=>''}),/migration unavailable/);
  assert.equal(db.calls.length,0);
  await assert.rejects(()=>applyCreatorSchema(),/VideoBot migration pool required/);
+});
+
+test('startup rejects incomplete or uncommitted schema and accepts exactly the owned migration set',()=>{
+ const n=CREATOR_SCHEMA_MIGRATION_COUNT;
+ assert.throws(()=>assertCreatorSchemaApplied({applied:true,migrations:n-1}),/CREATOR_POLL_SCHEMA_INCOMPLETE/);
+ assert.throws(()=>assertCreatorSchemaApplied({applied:false,migrations:n}),/CREATOR_POLL_SCHEMA_INCOMPLETE/);
+ assert.throws(()=>assertCreatorSchemaApplied({applied:true,migrations:n+1}),/CREATOR_POLL_SCHEMA_INCOMPLETE/);
+ assert.doesNotThrow(()=>assertCreatorSchemaApplied({applied:true,migrations:n}));
 });

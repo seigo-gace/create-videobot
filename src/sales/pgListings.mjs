@@ -37,7 +37,8 @@ function recordToListing(row) {
     termsAcceptedAt:row.fee_terms_accepted_at instanceof Date
       ?row.fee_terms_accepted_at.toISOString():row.fee_terms_accepted_at??null,
     managementFeeBps:row.management_fee_bps===undefined?null:Number(row.management_fee_bps),
-    status:row.status
+    status:row.status,
+    publicationState:row.publication_state??(row.status==='paused'?'paused':row.status==='published'?'unconfirmed':'unposted')
   };
 }
 function validatedDraft(draft) {
@@ -76,13 +77,21 @@ function validatedDraft(draft) {
     draft.thumbnail?.secondFileId??null
   ];
 }
+// A stored draft and an acknowledged publication are different facts.
+// Derive the owner's visible state from the existing durable receipt table;
+// an incomplete or missing receipt is never presented as confirmed delivery.
+const publicationStateSql=`CASE
+  WHEN l.status='paused' THEN 'paused'
+  WHEN l.status='published' AND EXISTS (SELECT 1 FROM videobot_post_receipts r WHERE r.listing_id=l.listing_id AND r.status='sent' AND cardinality(r.free_message_ids) IN (2,3) AND r.paid_message_id>0) THEN 'recorded'
+  WHEN l.status='published' OR EXISTS (SELECT 1 FROM videobot_post_receipts r WHERE r.listing_id=l.listing_id AND r.status IN ('sending','sent','needs_reconcile')) THEN 'unconfirmed'
+  ELSE 'unposted' END AS publication_state`;
 export function createPostgresListingStore(pool) {
   if(typeof pool?.query!=='function')throw new Error('VideoBot private SQL pool required');
   return {
     async listByOwner(owner) {
       ownerId(owner);
       const result=await pool.query(
-        "SELECT * FROM videobot_listings WHERE seller_user_id=$1 AND status<>'removed' ORDER BY updated_at DESC,listing_id DESC",
+        `SELECT l.*, ${publicationStateSql} FROM videobot_listings l WHERE l.seller_user_id=$1 AND l.status<>'removed' ORDER BY l.updated_at DESC,l.listing_id DESC`,
         [owner]
       );
       return (result.rows||[]).map(recordToListing);
@@ -90,10 +99,20 @@ export function createPostgresListingStore(pool) {
     async getOwned(owner,id) {
       ownerId(owner);listingId(id);
       const result=await pool.query(
-        'SELECT * FROM videobot_listings WHERE seller_user_id=$1 AND listing_id=$2 AND status<>\'removed\'',
+        `SELECT l.*, ${publicationStateSql} FROM videobot_listings l WHERE l.seller_user_id=$1 AND l.listing_id=$2 AND l.status<>'removed'`,
         [owner,id]
       );
       return recordToListing(result.rows?.[0]);
+    },
+    // Do not silently issue a second listing for an unresolved submission of
+    // the same stored media. This does not block a distinct, explicit new draft.
+    async findUnresolvedRegistration(owner,fileId) {
+      ownerId(owner);
+      if(typeof fileId!=='string'||!/^[A-Za-z0-9_-]{3,256}$/.test(fileId))throw Error('invalid paidVideo reference');
+      const r=await pool.query(
+        `SELECT l.*, ${publicationStateSql} FROM videobot_listings l WHERE l.seller_user_id=$1 AND l.paid_video_file_id=$2 AND l.status IN ('draft','ready') AND EXISTS (SELECT 1 FROM videobot_post_receipts r WHERE r.listing_id=l.listing_id AND r.status IN ('sending','sent','needs_reconcile')) ORDER BY l.created_at DESC LIMIT 1`,
+        [owner,fileId]);
+      return recordToListing(r.rows?.[0]);
     },
     /** Starts a product draft and never overwrites an existing listing ID. */
     async createDraft(owner,id,draft) {
@@ -119,6 +138,15 @@ export function createPostgresListingStore(pool) {
         [owner,id,expectedRevision,...cols]
       );
       if(r?.rowCount!==1)throw new Error('LISTING_STALE_OR_PUBLISHED');
+      return recordToListing(r.rows[0]);
+    },
+    /** Edit seller metadata without changing the sold media, price, receipt or buyer entitlement. */
+    async updatePublishedMetadata(owner,id,expectedRevision,draft) {
+      ownerId(owner);listingId(id);revisionNumber(expectedRevision);
+      if(!draft?.publishedEdit||!draft.title?.trim()||draft.title.length>128||/[\r\n]/.test(draft.title)||typeof draft.description!=='string'||draft.description.length>800||
+         !Array.isArray(draft.dirtyFields)||draft.dirtyFields.some(f=>!['title','description'].includes(f)))throw Error('PUBLISHED_METADATA_INVALID');
+      const r=await pool.query("UPDATE videobot_listings SET title=$4,description=$5,revision=revision+1,updated_at=NOW() WHERE seller_user_id=$1 AND listing_id=$2 AND revision=$3 AND status IN ('published','paused') RETURNING *",[owner,id,expectedRevision,draft.title,draft.description]);
+      if(r?.rowCount!==1)throw Error('PUBLISHED_EDIT_STALE');
       return recordToListing(r.rows[0]);
     },
     /** Only call after both real Telegram message IDs have durable receipts. */

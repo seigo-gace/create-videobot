@@ -57,17 +57,20 @@ test('My Videos displays ten owner-only inline edit links and back/new row',()=>
  const listings=[{id:'other',sellerId:'seller2',title:'他人',priceStars:500},...owned];
  const first=myVideosPanel({sellerId:'seller1',listings,page:0,revision:5});
  assert.equal(first.entities.length,10);
+ assert.ok(first.entities.every((e,i)=>e.url.endsWith('ved_video_vid'+i+'_r5')&&first.text.slice(e.offset,e.offset+e.length)==='［編集］'));
+ assert.equal(first.reply_markup.inline_keyboard.length,2);
  assert.match(first.text,/［編集］🆕動画0/);
  const changed=myVideosPanel({sellerId:'seller1',listings,page:0,revision:5,
    notice:'動画を編集／更新しました。',updatedId:'vid1'});
  assert.match(changed.text,/［編集］📝 動画1/);
  assert.match(changed.text,/動画を編集／更新しました/);
  assert.equal(first.text.includes('他人'),false);
- assert.deepEqual(first.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る','🆕 新規投稿']);
- assert.equal(first.reply_markup.inline_keyboard[1][0].text,'次へ ▶');
+ assert.deepEqual(first.reply_markup.inline_keyboard.at(-2).map(b=>b.text),['🔙 戻る','🆕 新規投稿']);
+ assert.equal(first.reply_markup.inline_keyboard.at(-1)[0].text,'次へ ▶');
  const second=myVideosPanel({sellerId:'seller1',listings,page:1,revision:6});
  assert.equal(second.entities.length,2);
- assert.equal(second.reply_markup.inline_keyboard[1][0].text,'◀ 前へ');
+ assert.ok(second.entities.every((e,i)=>e.url.endsWith('ved_video_vid'+(10+i)+'_r6')));
+ assert.equal(second.reply_markup.inline_keyboard.at(-1)[0].text,'◀ 前へ');
  const empty=myVideosPanel({sellerId:'seller1',listings:[],revision:1});
  assert.match(empty.text,/現在動画は未登録です/);
  assert.throws(()=>myVideosPanel({sellerId:'seller1',listings,page:2}),/page outside/);
@@ -96,7 +99,7 @@ test('seller consent is explicit, reversible and reset when video changes',()=>{
  assert.deepEqual([d.rightsVerified,d.adultConsentVerified,d.feeTermsAccepted],[true,true,true]);
  let panel=creatorReviewPanel(d,5,'','https://example.test/terms.html');
  assert.match(panel.text,/同意済み/);
- assert.equal(panel.reply_markup.inline_keyboard[1][0].callback_data,'review:agree|r5');
+ assert.equal(panel.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:agree')),false,'incomplete content cannot be submitted');
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main002'}});
  assert.deepEqual([d.rightsVerified,d.adultConsentVerified,d.feeTermsAccepted],[false,false,false]);
  panel=creatorReviewPanel(d,6,'','https://example.test/terms.html');
@@ -111,7 +114,9 @@ test('preview has only inline edit links; fees appear only in consent review',()
  const editor=creatorEditorPanel(d,2);
  assert.equal(editor.text.includes('管理費'),false);
  assert.equal(editor.entities.length,6);
- assert.deepEqual(editor.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
+ assert.ok(editor.entities.every(e=>['［編集］','［未登録］'].includes(editor.text.slice(e.offset,e.offset+e.length))));
+ assert.equal(editor.reply_markup.inline_keyboard.length,1);
+ assert.deepEqual(editor.reply_markup.inline_keyboard.at(-1).map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
  assert.match(editor.text,/［未登録］ 説明：/);
  const review=creatorReviewPanel(d,3,'','https://example.test/terms.html');
  assert.match(review.text,/30%/);
@@ -154,16 +159,17 @@ test('first video opens inline preview with six edit links and no extra descript
  assert.match(final.text,/［編集］ タイトル：作品タイトル/);
  assert.match(final.text,/［未登録］ 説明：/);
  assert.match(final.text,/［未登録］ 価格：/);
- assert.deepEqual(final.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
+ assert.deepEqual(final.reply_markup.inline_keyboard.at(-1).map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
  assert.equal(final.entities.length,6);
- for(const e of final.entities)
-   assert.match(final.text.slice(e.offset,e.offset+e.length),/編集|未登録/);
+ assert.equal(final.reply_markup.inline_keyboard.length,1);
+ assert.ok(final.entities.some(e=>e.url.endsWith('ved_sample_r3')));
+ assert.ok(final.reply_markup.inline_keyboard.flat().every(b=>!b.url));
  d=editCreatorDraft(d,{type:'descriptionInput',text:'説明本文'});
  assert.match(creatorEditorPanel(d,4).text,/［編集］ 説明：説明本文/);
  assert.throws(()=>editCreatorDraft(d,{type:'descriptionInput',text:'x'.repeat(801)}),/description/);
 });
 
-test('terms summary has checkbox and only reveals publish after all content and explicit agreement',()=>{
+test('terms summary offers one final consent action only when content is complete',()=>{
  let d=openCreatorEditor({sellerId:'seller1'});
  d=editCreatorDraft(d,{type:'captionTitle',text:'作品'});
  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main11'}});
@@ -171,11 +177,13 @@ test('terms summary has checkbox and only reveals publish after all content and 
  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample11',durationSeconds:30}});
  d=editCreatorDraft(d,{type:'preset',stars:300});
  const before=creatorReviewPanel(d,2,'','https://example.test/terms.html');
- assert.equal(before.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),false);
+ assert.deepEqual(before.reply_markup.inline_keyboard.flat().filter(b=>b.callback_data?.startsWith('review:agree')).map(b=>b.text),['✅ 同意して登録する']);
+ assert.equal(before.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:publish')),false);
  d=editCreatorDraft(d,{type:'confirmTerms'});
  d={...d,termsUrl:'https://example.test/terms.html'};
  const after=creatorReviewPanel(d,3,'','https://example.test/terms.html');
- assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),true);
+ assert.deepEqual(after.reply_markup.inline_keyboard.flat().filter(b=>b.callback_data?.startsWith('review:agree')).map(b=>b.text),['✅ 同意して登録を再試行']);
+ assert.equal(after.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:publish')),false);
  assert.match(after.text,/☑ 同意済み/);
 });
 
@@ -201,9 +209,10 @@ test('shared preview guide follows create/edit mode and preserves action buttons
  assert.match(newPanel.text,/［未登録］ 説明：/);
  assert.ok(newPanel.text.indexOf('📝 登録方法')>newPanel.text.indexOf('有料本編：'));
  assert.doesNotMatch(newPanel.text,/販売手数料|管理費|投稿者の取り分|30%|70%|出金|払出|引き出し可能/);
- assert.ok(newPanel.entities.every(e=>newPanel.text.slice(e.offset,e.offset+e.length)==='［編集］'||newPanel.text.slice(e.offset,e.offset+e.length)==='［未登録］'));
- assert.deepEqual(newPanel.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
- for(const e of newPanel.entities)assert.equal(newPanel.text.slice(e.offset,e.offset+e.length), '［編集］'.includes(newPanel.text.slice(e.offset,e.offset+e.length))?'［編集］':'［未登録］');
+ assert.equal(newPanel.entities.length,6);
+ assert.equal(newPanel.reply_markup.inline_keyboard.length,1);
+ assert.deepEqual(newPanel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),['✅ 投稿する','❌ キャンセル']);
+ assert.ok(newPanel.reply_markup.inline_keyboard.flat().every(b=>!b.url));
  const existing=openCreatorEditor({sellerId:'seller1',existing:{
    id:'mine_1',sellerId:'seller1',revision:2,title:'既存作品',paidVideo:{fileId:'main123'}
  }});
@@ -212,20 +221,21 @@ test('shared preview guide follows create/edit mode and preserves action buttons
  assert.doesNotMatch(unchanged.text,/📝 登録方法|登録手続き|［投稿する］/);
  assert.ok(unchanged.text.indexOf('📝 編集方法')>unchanged.text.indexOf('有料本編：'));
  assert.doesNotMatch(unchanged.text,/販売手数料|管理費|投稿者の取り分|30%|70%|出金|払出|引き出し可能/);
- assert.ok(unchanged.entities.every(e=>unchanged.text.slice(e.offset,e.offset+e.length)==='［編集］'||unchanged.text.slice(e.offset,e.offset+e.length)==='［未登録］'));
- assert.deepEqual(unchanged.reply_markup.inline_keyboard[0].map(b=>b.text),['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
+ assert.equal(unchanged.entities.length,6);
+ assert.equal(unchanged.reply_markup.inline_keyboard.length,1);
+ assert.deepEqual(unchanged.reply_markup.inline_keyboard.at(-1).map(b=>b.text),['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
  const modified=creatorEditorPanel(editCreatorDraft(existing,{type:'titleInput',text:'変更後'}),5);
- assert.deepEqual(modified.reply_markup.inline_keyboard[0].map(b=>b.text),['✅ 変更','❌ キャンセル','🗑 削除']);
- for(const e of modified.entities)assert.match(modified.text.slice(e.offset,e.offset+e.length),/^［(編集|未登録)］$/);
+ assert.deepEqual(modified.reply_markup.inline_keyboard.at(-1).map(b=>b.text),['✅ 変更','❌ キャンセル','🗑 削除']);
+ assert.ok(modified.reply_markup.inline_keyboard.flat().every(b=>!b.url));
 });
 
 test('registered video editor uses four actions, return only when unchanged and never shows publish',()=>{
  const existing={id:'mine_1',sellerId:'seller1',revision:2,title:'作品',paidVideo:{fileId:'main123'}};
  const original=openCreatorEditor({sellerId:'seller1',existing});
- assert.deepEqual(creatorEditorPanel(original,2).reply_markup.inline_keyboard[0].map(b=>b.text),
+ assert.deepEqual(creatorEditorPanel(original,2).reply_markup.inline_keyboard.at(-1).map(b=>b.text),
  ['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
  const changed=editCreatorDraft(original,{type:'titleInput',text:'改題'});
- assert.deepEqual(creatorEditorPanel(changed,3).reply_markup.inline_keyboard[0].map(b=>b.text),
+ assert.deepEqual(creatorEditorPanel(changed,3).reply_markup.inline_keyboard.at(-1).map(b=>b.text),
  ['✅ 変更','❌ キャンセル','🗑 削除']);
 });
 
@@ -269,9 +279,82 @@ test('a changed legal page is not treated as previously accepted by the preview'
  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample001',durationSeconds:30}});
  d=editCreatorDraft(d,{type:'preset',stars:300});
  d=editCreatorDraft(d,{type:'confirmTerms'});
+ d=editCreatorDraft(d,{type:'captionTitle',text:'作品'});
+ d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb01',secondFileId:'thumb02'}});
+ d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample01',durationSeconds:30}});
+ d=editCreatorDraft(d,{type:'preset',stars:300});
+ d=editCreatorDraft(d,{type:'confirmTerms'});
  d={...d,termsUrl:'https://example.test/old-terms.html'};
  const p=creatorReviewPanel(d,8,'','https://example.test/new-terms.html');
  assert.ok(p.reply_markup.inline_keyboard.flat().some(b=>b.callback_data==='review:agree|r8'));
  assert.ok(p.reply_markup.inline_keyboard.flat().every(b=>b.callback_data!=='review:publish|r8'));
- assert.match(p.text,/☐ 規約内容を確認して同意する/);
+ assert.match(p.text,/同意ボタンを押すと登録手続きが開始/);
+});
+
+test('published buyer-protected videos retain their editor entrance',()=>{
+ const panel=myVideosPanel({sellerId:'seller1',revision:7,listings:[
+  {id:'preserved_paid',sellerId:'seller1',title:'購入済みの動画',status:'published'},
+  {id:'editable_draft',sellerId:'seller1',title:'下書き',status:'draft'}
+ ]});
+ assert.match(panel.text,/🎬 購入済みの動画/);
+ assert.match(panel.text,/［編集］🎬/);
+ assert.match(panel.text,/［編集］🆕下書き/);
+ assert.equal(panel.entities.length,2);
+ assert.equal(panel.reply_markup.inline_keyboard.length,1);
+ assert.ok(panel.entities.some(e=>e.url.endsWith('ved_video_preserved_paid_r7')));
+ assert.ok(panel.entities.some(e=>e.url.endsWith('ved_video_editable_draft_r7')));
+ assert.equal(panel.reply_markup.inline_keyboard.at(-1)[1].callback_data,'menu:listing');
+});
+
+ test('sample duration label reflects stored duration, never a fixed thirty seconds',()=>{
+  let draft=openCreatorEditor({sellerId:'seller1'});
+  draft=editCreatorDraft(draft,{type:'paidVideo',media:{fileId:'main001'}});
+  for(const durationSeconds of [60,30,12.5]){
+    const updated=editCreatorDraft(draft,{type:'sample',media:{fileId:'sample001',durationSeconds}});
+    const expected='サンプル：登録済み（'+durationSeconds+'秒）';
+    assert.ok(creatorEditorPanel(updated,2).text.includes(expected));
+    assert.ok(creatorFieldPanel(updated,'sample',3).text.includes(expected));
+  }
+  assert.match(creatorFieldPanel(draft,'sample',4).text,/サンプル：未登録/);
+ });
+ test('consent screen has one submit action and no revoke or second submit',()=>{
+  let d=openCreatorEditor({sellerId:'seller1'});
+  d=editCreatorDraft(d,{type:'captionTitle',text:'Test'});
+  d=editCreatorDraft(d,{type:'paidVideo',media:{fileId:'main001'}});
+  d=editCreatorDraft(d,{type:'thumbnail',media:{fileId:'thumb001',secondFileId:'thumb002'}});
+  d=editCreatorDraft(d,{type:'sample',media:{fileId:'sample001',durationSeconds:60}});
+  d=editCreatorDraft(d,{type:'preset',stars:300});
+  const url='https://example.test/terms.html';
+  for(const draft of [d,{...editCreatorDraft(d,{type:'confirmTerms'}),termsUrl:url}]){
+    const p=creatorReviewPanel(draft,3,'',url);
+    const keys=p.reply_markup.inline_keyboard.flat();
+    assert.equal(keys.filter(b=>b.callback_data?.startsWith('review:agree|')).length,1);
+    assert.ok(keys.every(b=>!b.text.includes('取り消す')&&!b.callback_data?.startsWith('review:publish')));
+  }
+ });
+
+test('body links preserve exact UTF-16 offsets and published metadata protection',()=>{
+ const d=openCreatorEditor({sellerId:'seller1',existing:{id:'v1',sellerId:'seller1',revision:1,title:'🎬題名',description:'説明🎞',paidVideo:{fileId:'main001'},priceStars:100}});
+ const panel=creatorEditorPanel(d,42);
+ assert.deepEqual(panel.entities.map(e=>e.url.split('ved_')[1]),['title_r42','description_r42','price_r42','thumbnail_r42','sample_r42','paidVideo_r42']);
+ for(const e of panel.entities)assert.match(panel.text.slice(e.offset,e.offset+e.length),/^［(?:編集|未登録)］$/);
+ assert.equal(panel.reply_markup.inline_keyboard.length,1);
+ const published=creatorEditorPanel({...d,publishedEdit:true},43);
+ assert.deepEqual(published.entities.map(e=>e.url.split('ved_')[1]),['title_r43','description_r43']);
+ assert.equal(published.reply_markup.inline_keyboard.length,1);
+ assert.ok(published.reply_markup.inline_keyboard.flat().every(b=>!b.callback_data.startsWith('edit:delete')));
+});
+
+test('owner list differentiates saved drafts, uncertain attempts and acknowledged publications',()=>{
+ const panel=myVideosPanel({sellerId:'seller1',revision:3,listings:[
+  {id:'draft1',sellerId:'seller1',title:'下書き',status:'draft',publicationState:'unposted'},
+  {id:'unknown1',sellerId:'seller1',title:'未確認',status:'draft',publicationState:'unconfirmed'},
+  {id:'published1',sellerId:'seller1',title:'公開',status:'published',publicationState:'recorded'}
+ ]});
+ assert.match(panel.text,/下書き\n　（未投稿・下書き）/);
+ assert.match(panel.text,/未確認\n　（投稿結果未確認）/);
+ assert.match(panel.text,/公開\n　（投稿記録あり）/);
+ assert.doesNotMatch(panel.text,/登録済み動画/);
+ assert.equal(panel.entities.length,3);
+ assert.ok(panel.entities.every(e=>panel.text.slice(e.offset,e.offset+e.length)==='［編集］'));
 });

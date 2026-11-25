@@ -13,11 +13,15 @@ function fakeDb(){
   }
   const query=async(sql,params)=>{
     queries.push({sql,params});
-    if(sql.startsWith('SELECT * FROM videobot_listings WHERE seller_user_id=$1 AND status')){
-      return {rows:[...rows.values()].filter(r=>r.seller_user_id===params[0]&&r.status!=='removed')};
+    const state=r=>({...r,publication_state:r.status==='paused'?'paused':r.status==='published'&&[...receipts.entries()].some(([k,v])=>k.startsWith(r.listing_id+':')&&v.status==='sent')?'recorded':r.status==='published'||[...receipts.keys()].some(k=>k.startsWith(r.listing_id+':'))?'unconfirmed':'unposted'});
+    if(sql.includes('FROM videobot_listings l WHERE l.seller_user_id=$1 AND l.status')){
+      return {rows:[...rows.values()].filter(r=>r.seller_user_id===params[0]&&r.status!=='removed').map(state)};
     }
-    if(sql.startsWith('SELECT * FROM videobot_listings WHERE seller_user_id=$1 AND listing_id=$2')){
-      const r=rows.get(params[1]);return {rows:r?.seller_user_id===params[0]&&r.status!=='removed'?[r]:[]};
+    if(sql.includes('FROM videobot_listings l WHERE l.seller_user_id=$1 AND l.listing_id=$2')){
+      const r=rows.get(params[1]);return {rows:r?.seller_user_id===params[0]&&r.status!=='removed'?[state(r)]:[]};
+    }
+    if(sql.includes('l.paid_video_file_id=$2')){
+      return {rows:[...rows.values()].filter(r=>r.seller_user_id===params[0]&&r.paid_video_file_id===params[1]&&['draft','ready'].includes(r.status)&&state(r).publication_state==='unconfirmed').map(state).slice(0,1)};
     }
     if(sql.startsWith('INSERT INTO videobot_listings')){
       const [id,owner,...draft]=params;
@@ -178,4 +182,14 @@ test('updated creator draft retains exact original acceptance timestamp; clearin
  assert.equal(cleared.termsAcceptedAt,null);
  assert.equal(cleared.termsVersion,null);
  assert.equal(cleared.termsUrl,null);
+});
+
+test('listing readback distinguishes unpublished draft and unknown publication receipt',async()=>{
+ const db=fakeDb(),store=createPostgresListingStore(db);
+ await store.createDraft(33,'vid001',example());
+ assert.equal((await store.listByOwner(33))[0].publicationState,'unposted');
+ db.receipts.set('vid001:1',{status:'needs_reconcile'});
+ assert.equal((await store.listByOwner(33))[0].publicationState,'unconfirmed');
+ assert.equal((await store.findUnresolvedRegistration(33,'paid001')).id,'vid001');
+ assert.equal(await store.findUnresolvedRegistration(44,'paid001'),null);
 });

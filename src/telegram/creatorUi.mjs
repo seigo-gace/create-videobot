@@ -43,6 +43,7 @@ export function openCreatorEditor({ sellerId, existing = null } = {}) {
   if (existing && (existing.sellerId !== sellerId || !ID.test(existing.id || ''))) throw new Error('listing ownership mismatch');
   return {
     mode: existing ? 'edit' : 'create',
+    publishedEdit: ['published','paused'].includes(existing?.status),
     sellerId,
     listingId: existing?.id ?? null,
     revision: existing?.revision ?? 0,
@@ -145,6 +146,14 @@ export function creatorDescriptionPanel(draft,revision,notice='') {
 }
 
 /** Telegram creator registration: upload -> automatic private preview -> optional description -> registration. */
+// Render actual stored, probed duration rather than a legacy fixed label.
+function sampleStatus(sample) {
+  if (!sample) return '未登録';
+  if (!Number.isFinite(sample.durationSeconds) || sample.durationSeconds <= 0)
+    return '登録済み（再生時間未確認）';
+  const seconds=Math.round(sample.durationSeconds * 10) / 10;
+  return '登録済み（'+seconds+'秒）';
+}
 export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
   expectDraft(draft);
   if(!Number.isSafeInteger(revision)||revision<0)throw new Error('invalid screen revision');
@@ -165,31 +174,32 @@ export function creatorEditorPanel(draft, revision = 0, screen = 'editor') {
     ['description','説明',draft.description,draft.description],
     ['price','価格',draft.priceStars,'⭐ '+draft.priceStars+' Stars'],
     ['thumbnail','🖼 サムネ',draft.thumbnail,'登録済み'],
-    ['sample','🎞 サンプル',draft.sample,'登録済み'],
+    ['sample','🎞 サンプル',draft.sample,sampleStatus(draft.sample)],
     ['paidVideo','🎬 有料本編',draft.paidVideo,'登録済み']
   ];
   const fields=[];
   for(const [field,label,registered,display] of definitions){
     const mark=registered?'［編集］':'［未登録］';
-    fields.push({field,index:rows.length,mark});
-    rows.push(mark+' '+label+'：'+(registered?display:''));
+    const available=!draft.publishedEdit||['title','description'].includes(field);
+    if(available)fields.push({field,index:rows.length,mark});
+    rows.push((available?mark:'［保持］')+' '+label+'：'+(registered?display:''));
   }
   if(draft.mode==='edit'&&draft.rightsVerified&&draft.adultConsentVerified&&draft.feeTermsAccepted)
     rows.push('☑ 規約約款同意済み');
   rows.push('',...guide);
+  if(draft.publishedEdit)rows.push('公開済み：タイトル・説明を変更できます。購入者の権利を維持するため価格・素材は保持します。');
   const text=rows.join('\n');
-  const entities=[];
-  for(const {field,index,mark} of fields) {
-    const offset=rows.slice(0,index).reduce((n,v)=>n+v.length+1,0);
-    entities.push({type:'text_link',offset,length:mark.length,
-      url:'https://t.me/CreateVdobot?start=ved_'+field+'_r'+revision});
-  }
+  // Adopted body-text edit links; Telegram offsets use UTF-16 code units.
+  const entities=fields.map(({field,index,mark})=>({
+    type:'text_link',offset:rows.slice(0,index).reduce((n,v)=>n+v.length+1,0),
+    length:mark.length,url:'https://t.me/CreateVdobot?start=ved_'+field+'_r'+revision
+  }));
   if(draft.mode==='edit') {
     const changed=Array.isArray(draft.dirtyFields)&&draft.dirtyFields.length>0;
     return {text,entities,reply_markup:{inline_keyboard:[[
       ...(changed?[]:[btn('🔙 戻る','edit:return')]),
       btn('✅ 変更','edit:save'),btn('❌ キャンセル','edit:cancel'),
-      ...(draft.listingId?[btn('🗑 削除','edit:delete')]:[])
+      ...(draft.listingId&&!draft.publishedEdit?[btn('🗑 削除','edit:delete')]:[])
     ]]}};
   }
   return {text,entities,reply_markup:{inline_keyboard:[
@@ -206,7 +216,7 @@ export function creatorFieldPanel(draft,field,revision=0,notice='') {
     description:'説明：'+(draft.description||'未登録'),
     price:'価格：'+(draft.priceStars==null?'未設定':'⭐ '+draft.priceStars+' Stars'),
     thumbnail:'🖼 サムネ：'+(draft.thumbnail?'登録済み':'未登録'),
-    sample:'🎞 サンプル：'+(draft.sample?'登録済み':'未登録'),
+    sample:'🎞 サンプル：'+sampleStatus(draft.sample),
     paidVideo:'🎬 有料本編：'+(draft.paidVideo?'登録済み':'未登録')
   }[field];
   if(!value)throw new Error('unknown creator field');
@@ -245,16 +255,19 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
   const pages = Math.max(1, Math.ceil(owned.length / 10));
   if (page >= pages) throw new Error('page outside listing range');
   const items=owned.slice(page*10,page*10+10);
-  const intro=notice || (owned.length ? '🎬 登録済み動画' : '現在動画は未登録です。\n🆕新規動画を登録してください。');
+  const intro=notice || (owned.length ? '🎬 動画一覧' : '現在動画は未登録です。\n🆕新規動画を登録してください。');
   const rows=[intro];
   const entities=[];
-  for(const [index,item] of items.entries()){
-    const prefix='［編集］';
-    const row=prefix + (item.id===updatedId?'📝 ':item.status==='published'?'🎬 ':'🆕') + item.title;
-    const offset=rows.join('\n').length+1;
-    // Telegram deep link is owner- and revision-validated by the wizard.
-    entities.push({type:'text_link',offset,length:prefix.length,
-      url:'https://t.me/CreateVdobot?start=ved_video_'+item.id+'_r'+revision});
+  for(const item of items){
+    // All retained owner listings have an actual editor entrance.
+    const editable=item.status!=='removed';
+    const prefix=editable?'［編集］':'';
+    const mark=item.id===updatedId?'📝 ':item.status==='published'?'🎬 ':'🆕';
+    const state=item.publicationState??(item.status==='paused'?'paused':item.status==='published'?'unconfirmed':item.status==='draft'||item.status==='ready'?'unposted':null);
+    const label={recorded:'投稿記録あり',unposted:'未投稿・下書き',unconfirmed:'投稿結果未確認',paused:'公開停止'}[state];
+    const row=prefix+mark+item.title+(label?'\n　（'+label+'）':'');
+    if(editable)entities.push({type:'text_link',offset:rows.join('\n').length+1,
+      length:prefix.length,url:'https://t.me/CreateVdobot?start=ved_video_'+item.id+'_r'+revision});
     rows.push(row);
   }
   const btn=(text,data)=>({text,callback_data:data});
@@ -263,8 +276,7 @@ export function myVideosPanel({ sellerId, listings, page = 0, revision = 0, noti
   if(page+1<pages)nav.push(btn('次へ ▶','video:page:'+(page+1)+'|r'+revision));
   const keyboard=[[btn('🔙 戻る','menu:home'),btn('🆕 新規投稿','menu:listing')]];
   if(nav.length)keyboard.push(nav);
-  return {text:rows.join('\n'),...(entities.length?{entities}:{}),
-    reply_markup:{inline_keyboard:keyboard}};
+  return {text:rows.join('\n'),...(entities.length?{entities}:{}),reply_markup:{inline_keyboard:keyboard}};
 }
 
 /** Read-only detail for the existing title and price buttons on My Videos.
@@ -285,7 +297,7 @@ export function videoInfoPanel(listing,revision,mode='open') {
   ];
   if(mode==='open')lines.push(
     'サムネ：'+(listing.thumbnail?'登録済み':'未登録'),
-    'サンプル：'+(listing.sample?'登録済み':'未登録'),
+    'サンプル：'+sampleStatus(listing.sample),
     '本編：'+(listing.paidVideo?'登録済み':'未登録'),
     '状態：'+(listing.status==='published'?'公開済み':listing.status==='paused'?'停止中':'未公開')
   );
@@ -346,15 +358,14 @@ export function creatorReviewPanel(draft, revision = 0, note = '', termsUrl = ''
     '・購入者都合の通常返金はありません（法令・Telegram公式の正当な例外を除く）。',
     '規約バージョン：'+CREATOR_TERMS_VERSION,
     validTerms?'全文リンクから規約を確認してください。':'⚠️ 規約本文の公開先が未確認のため、同意・投稿できません。',
-    agreed?'☑ 同意済み':'☐ 規約内容を確認して同意する',
+    agreed?'☑ 同意済み':'☐ 規約内容を確認してください。同意ボタンを押すと登録手続きが開始されます。',
     missing.length?'⚠️ 未登録項目：'+missing.join('・'):'',
     note
   ].filter(Boolean).join('\n');
   const rows=[];
   if(validTerms)rows.push([{text:'📄 規約・約款全文',url:termsUrl}]);
-  if(validTerms)rows.push([{text:agreed?'☑ 同意を取り消す':'☐ 内容を確認して同意する',
+  if(validTerms&&!missing.length&&draft.mode==='create')rows.push([{text:agreed?'✅ 同意して登録を再試行':'✅ 同意して登録する',
     callback_data:'review:agree|r'+revision}]);
-  if(validTerms&&agreed&&!missing.length)rows.push([{text:'✅ 投稿する',callback_data:'review:publish|r'+revision}]);
   rows.push([{text:'🔙 プレビューへ戻る',callback_data:'review:edit|r'+revision},
     {text:'❌ キャンセル',callback_data:'review:cancel|r'+revision}]);
   return {text,reply_markup:{inline_keyboard:rows}};
