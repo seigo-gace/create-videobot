@@ -105,7 +105,8 @@ export async function prepareAutomaticSampleVideo({inputPath,outputPath,run=exec
   ],{timeout:30000,maxBuffer:4096});
   const hasAudio=/^\d+\s*$/.test(String(audio).trim());
   const temporary=resolve(dirname(output),'.montage-'+randomUUID()+'.mp4');
-  const sources=clips.flatMap(c=>['-ss',String(c.start),'-t',String(c.length),'-i',input]);
+  // Four concurrent readers must not each create a host-sized decoder pool.
+  const sources=clips.flatMap(c=>['-ss',String(c.start),'-t',String(c.length),'-threads','1','-i',input]);
   const filters=clips.flatMap((c,i)=>[
     '['+i+':v:0]fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1,setpts=PTS-STARTPTS[v'+i+']',
     ...(hasAudio?['['+i+':a:0]aresample=48000,apad,atrim=duration='+c.length+',asetpts=PTS-STARTPTS[a'+i+']']:[])
@@ -116,7 +117,7 @@ export async function prepareAutomaticSampleVideo({inputPath,outputPath,run=exec
     await run(ffmpeg,[
       '-nostdin','-hide_banner','-loglevel','error','-filter_complex_threads','1',...sources,
       '-filter_complex',filters.join(';'),'-map','[v]',...(hasAudio?['-map','[a]']:[]),
-      '-t',String(total),'-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p',
+      '-t',String(total),'-c:v','libx264','-threads:v','1','-preset','veryfast','-pix_fmt','yuv420p',
       '-b:v','1800k','-maxrate','2000k','-bufsize','4000k',
       ...(hasAudio?['-c:a','aac','-b:a','96k']:[]),'-movflags','+faststart','-y',temporary
     ],{timeout:240000,maxBuffer:1024*1024});

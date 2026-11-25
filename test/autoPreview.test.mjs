@@ -46,6 +46,10 @@ test('missing both: generate two images and one montage without replacing main',
   assert.equal(montage.args.filter(x=>x==='-i').length,4);
   assert.ok(montage.args.includes('concat=n=4:v=1:a=0[v]')||montage.args.some(x=>x.includes('concat=n=4:v=1:a=0[v]')));
   assert.equal(montage.args.filter((x,i)=>x==='15'&&montage.args[i-1]==='-t').length,4);
+  const inputs=montage.args.flatMap((x,i)=>x==='-i'?[i]:[]);
+  assert.equal(inputs.length,4);
+  for(const i of inputs)assert.deepEqual(montage.args.slice(i-2,i),['-threads','1']);
+  assert.deepEqual(montage.args.slice(montage.args.indexOf('-c:v'),montage.args.indexOf('-c:v')+4),['-c:v','libx264','-threads:v','1']);
 }));
 test('short paid main generates a strictly shorter free sample', () => fixture(async({src,jpg,mp4})=>{
   const calls=[];
