@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCreatorWizard } from '../src/telegram/creatorWizard.mjs';
 
-function setup({listingStoreOverride={},publishListing,salesProvider,mediaProcessorOverride={}}={}){
+function setup({listingStoreOverride={},publishListing,salesProvider,mediaProcessorOverride={},termsUrl='https://example.test/createvdobot-terms.html'}={}){
   const states=new Map(),calls=[],screens=[];
   const sessionStore={
     async read(id){return states.get(id)??null;},
@@ -43,7 +43,7 @@ function setup({listingStoreOverride={},publishListing,salesProvider,mediaProces
       return {thumbnail:{fileId:'photo_auto_1',secondFileId:'photo_auto_2'},sample:{fileId:'sample_auto_1',durationSeconds:30}};
     }
   };
-  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor:{...mediaProcessor,...mediaProcessorOverride},publishListing,salesProvider,termsUrl:'https://example.test/createvdobot-terms.html'});
+  const handler=createCreatorWizard({api,sessionStore,screenTransport,listingStore:{...store,...listingStoreOverride},mediaProcessor:{...mediaProcessor,...mediaProcessorOverride},publishListing,salesProvider,termsUrl});
   const callback=(action,id=101,from=33)=>handler.handle({
     callback_query:{id:'cq_'+action,from:{id:from},data:action,
       message:{chat:{id:33,type:'private'},message_id:id}}
@@ -149,9 +149,9 @@ test('VIDEO existing edit preview keeps change buttons, never enables new paid p
  assert.equal(x.states.get(33).draft.mode,'edit');
  await x.callback('edit:preview|r2');
  assert.equal(x.states.get(33).screen,'editor');
- assert.match(x.screens.at(-1).panel.text,/変更したい項目の［編集］/);
+ assert.match(x.screens.at(-1).panel.text,/変更したい項目の［編集］をタップ/);
  assert.doesNotMatch(x.screens.at(-1).panel.text,/📋 投稿前の規約・約款確認/);
- assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+ assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
    ['✅ 変更','❌ キャンセル','🗑 削除']);
  assert.equal(publications,0);
  await x.callback('edit:save|r3');
@@ -214,8 +214,6 @@ test('creator confirms rights and explicitly publishes only after verified store
  assert.equal(published.length,0);
  assert.match(x.screens.at(-1).panel.text,/未登録項目と権利/);
  await x.callback('review:rights|r7');
- assert.equal(x.states.get(33).draft.rightsVerified,true);
- await x.callback('review:publish|r8');
  assert.equal(saved.length,1);
  assert.equal(published.length,1);
  assert.equal(calls.length,1);
@@ -223,8 +221,8 @@ test('creator confirms rights and explicitly publishes only after verified store
  assert.equal(saved[0].owner,33);
  assert.equal(x.states.get(33).draft,null);
  assert.match(x.screens.at(-1).panel.text,/新規動画を登録しました/);
- await x.callback('review:publish|r8');
- assert.equal(x.states.get(33).screen,'my_videos');
+ await x.callback('review:rights|r7');
+  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(published.length,1);
 });
 test('definitive pre-send GATE refusal retains one draft and permits safe retry',async()=>{
@@ -255,13 +253,12 @@ test('definitive pre-send GATE refusal retains one draft and permits safe retry'
  await x.callback('edit:price:300|r4');
  await x.callback('edit:preview|r5');
  await x.callback('review:rights|r6');
- await x.callback('review:publish|r7');
  const stopped=x.states.get(33);
  assert.equal(stopped.publishing,null);
  assert.equal(stopped.pendingVideoDraft.revision,1);
  assert.match(x.screens.at(-1).panel.text,/Telegramへ投稿していません/);
  assert.deepEqual([creates,updates,published],[1,0,0]);
- await x.callback('review:publish|r'+stopped.revision);
+ await x.callback('review:agree|r'+stopped.revision);
  assert.deepEqual([creates,updates,published],[1,1,1]);
  assert.equal(x.states.get(33).pendingVideoDraft,null);
  assert.equal(x.states.get(33).publishing,null);
@@ -285,11 +282,11 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
  await x.callback('edit:price:300|r4');
  await x.callback('edit:preview|r5');
  await x.callback('review:rights|r6');
- await x.callback('review:publish|r7');
  const revision=x.states.get(33).revision;
  assert.equal(x.states.get(33).publishing,'needs_reconcile');
  assert.equal(attempts,1);
- await assert.rejects(()=>x.callback('review:publish|r'+revision),/PUBLISH_NEEDS_RECONCILE/);
+ await x.callback('review:publish|r'+revision);
+ assert.match(x.screens.at(-1).panel.text,/前の投稿結果を確認中/);
  assert.equal(attempts,1);
  await x.callback('menu:home');
  assert.equal(x.states.get(33).publishing,'needs_reconcile',
@@ -300,8 +297,8 @@ test('unknown paid-media send result locks creator flow for explicit reconciliat
   'new post must not erase an unresolved paid-video publication');
  assert.equal(reopened.screen,'review');
  assert.match(x.screens.at(-1).panel.text,/前の投稿結果が未確定/);
- await assert.rejects(()=>x.callback('review:publish|r'+reopened.revision),
-  /PUBLISH_NEEDS_RECONCILE/);
+ await x.callback('review:publish|r'+reopened.revision);
+ assert.match(x.screens.at(-1).panel.text,/前の投稿結果を確認中/);
  assert.equal(attempts,1,'menu navigation cannot cause duplicate paid media sends');
 });
 
@@ -333,7 +330,7 @@ test('legacy title and price detail callbacks return to video list without openi
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.match(x.screens.at(-1).panel.text,/自分の動画/);
  assert.doesNotMatch(x.screens.at(-1).panel.text,/管理費30 Stars／投稿者分70 Stars/);
- assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard[0][1].callback_data,'menu:listing');
+ assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1)[1].callback_data,'menu:listing');
  await x.callback('video:price:my1|r2');
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.doesNotMatch(x.screens.at(-1).panel.text,/運営管理費/);
@@ -423,7 +420,7 @@ test('video upload -> inline edit -> explicit terms -> publish once -> personal 
  assert.equal(state.draft.thumbnail.fileId,'photo_auto_1');
  assert.equal(state.draft.sample.durationSeconds,30);
  assert.equal(x.calls.filter(c=>c.method==='sendMediaGroup').length,1);
- assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+ assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
    ['✅ 投稿する','❌ キャンセル']);
  assert.match(x.screens.at(-1).panel.text,/［未登録］ 説明：/);
  await x.callback('edit:description|r3');
@@ -434,9 +431,9 @@ test('video upload -> inline edit -> explicit terms -> publish once -> personal 
  assert.equal(x.states.get(33).screen,'review');
  assert.equal(published.length,0,'entering review cannot publish');
  assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(b=>b.text==='✅ 投稿する'),false);
- await x.callback('review:agree|r8');
- assert.equal(x.states.get(33).draft.feeTermsAccepted,true);
- await x.callback('review:publish|r9');
+ const consent=x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().find(b=>b.callback_data?.startsWith('review:agree'));
+  assert.equal(consent.text,'✅ 同意して登録する');
+  await x.callback(consent.callback_data);
  assert.equal(saved.length,1);
  assert.equal(saved[0].description,'この動画の説明です');
  assert.deepEqual([saved[0].rightsVerified,saved[0].adultConsentVerified,saved[0].feeTermsAccepted],[true,true,true]);
@@ -456,7 +453,7 @@ test('description remains optional and editable through inline text only',async(
  assert.equal(x.states.get(33).draft.description,'');
  const panel=x.screens.at(-1).panel;
  assert.match(panel.text,/［未登録］ 説明：/);
- assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r3')));
+ assert.ok(panel.entities.some(e=>e.url.endsWith('ved_description_r3')&&panel.text.slice(e.offset,e.offset+e.length)==='［未登録］'));
 });
 
 test('existing draft recovers missing automatic media on explicit edit-back, never via New Post',async()=>{
@@ -493,8 +490,7 @@ test('Stars settings back regenerates missing media for an old registered draft'
   assert.equal(restored.draft.paidVideo.fileId,'main001');
   assert.equal(restored.draft.thumbnail.fileId,'photo_auto_1');
   assert.equal(restored.draft.sample.durationSeconds,30);
-  assert.ok(x.screens.at(-1).panel.entities.some(
-    b=>b.url.includes('ved_paidVideo_')));
+  assert.ok(x.screens.at(-1).panel.entities.some(e=>e.url.endsWith('ved_paidVideo_r'+x.states.get(33).revision)));
 });
 
 test('obsolete pre-deploy Stars button redraws owner current draft and recovers My Videos',async()=>{
@@ -513,8 +509,7 @@ test('obsolete pre-deploy Stars button redraws owner current draft and recovers 
   assert.equal(state.draft.title,'旧画面作品');
   assert.equal(state.draft.thumbnail.fileId,'photo_auto_1');
   assert.equal(state.draft.sample.durationSeconds,30);
-  assert.ok(x.screens.at(-1).panel.entities.some(
-    b=>b.url.includes('ved_paidVideo_')));
+  assert.ok(x.screens.at(-1).panel.entities.some(e=>e.url.endsWith('ved_paidVideo_r'+x.states.get(33).revision)));
 });
 
 test('stale review buttons refresh current draft without publishing or canceling',async()=>{
@@ -557,7 +552,7 @@ test('old published review keyboard opens My Videos instead of becoming inert',a
  const result=await x.callback('review:publish|r1',101);
  assert.equal(result.handled,true);
  assert.equal(x.states.get(33).screen,'my_videos');
- assert.match(x.screens.at(-1).panel.text,/登録済み動画/);
+ assert.match(x.screens.at(-1).panel.text,/動画一覧/);
 });
 
 test('obsolete register and cancel never act on newer draft',async()=>{
@@ -618,7 +613,7 @@ test('owner-only title edit shows one field and cancel restores saved video with
   await x.callback('menu:manage');
   await x.callback('video:edit:my1|r1');
   assert.equal(x.states.get(33).draft.mode,'edit');
-  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
     ['🔙 戻る','✅ 変更','❌ キャンセル','🗑 削除']);
   await x.callback('edit:title|r2');
   assert.equal(x.states.get(33).screen,'field');
@@ -626,7 +621,7 @@ test('owner-only title edit shows one field and cancel restores saved video with
   assert.equal(x.screens.at(-1).panel.text.includes('管理費'),false);
   await x.send({text:'編集したタイトル'},901);
   assert.equal(x.states.get(33).draft.title,'編集したタイトル');
-  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
     ['✅ 変更','❌ キャンセル','🗑 削除']);
   await x.callback('edit:cancel|r4');
   assert.equal(x.states.get(33).screen,'my_videos');
@@ -652,7 +647,7 @@ test('initial video upload asks for optional description after private preview a
   assert.equal(x.states.get(33).screen,'editor');
   assert.equal(x.states.get(33).waiting,null);
   assert.equal(x.states.get(33).draft.description,'次に表示される説明');
-  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].map(b=>b.text),
+  assert.deepEqual(x.screens.at(-1).panel.reply_markup.inline_keyboard.at(-1).map(b=>b.text),
     ['✅ 投稿する','❌ キャンセル']);
   assert.equal(x.calls.filter(c=>c.method==='sendPaidMedia').length,0);
 });
@@ -752,29 +747,43 @@ test('new registration after editing never updates the previous listing',async()
  await x.callback('edit:price:300|r'+x.states.get(33).revision);
  await x.callback('edit:preview|r'+x.states.get(33).revision);
  await x.callback('review:rights|r'+x.states.get(33).revision);
- await x.callback('review:publish|r'+x.states.get(33).revision);
  assert.equal(created,1);
  assert.equal(updated,0);
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(x.states.get(33).draft,null);
 });
 
-test('legacy purchased video Edit link does not open unrequested Details page',async()=>{
+test('published listing Edit opens a real metadata editor and saves without publishing',async()=>{
  const x=setup({listingStoreOverride:{
-  async getOwned(owner,id){return id==='my1'?{id:'my1',sellerId:String(owner),
-    revision:2,status:'published',title:'購入済み商品'}:null;}
+  async getOwned(owner,id){return {id,sellerId:String(owner),revision:2,status:'published',title:'旧タイトル',description:'旧説明',priceStars:300,paidVideo:{fileId:'main777'}};},
+  async updatePublishedMetadata(owner,id,rev,d){assert.equal(owner,33);assert.equal(id,'my1');assert.equal(rev,2);assert.equal(d.title,'新タイトル');assert.equal(d.paidVideo.fileId,'main777');return {id};}
  }});
  await x.callback('menu:manage');
- await x.handler.openOwnedVideo({message:{chat:{id:33,type:'private'},from:{id:33},
-  message_id:111,text:'/start ved_video_my1_r1'}},'my1',1);
+ await x.handler.openOwnedVideo({message:{chat:{id:33,type:'private'},from:{id:33},message_id:111}},'my1',1);
+ assert.equal(x.states.get(33).screen,'editor');
+ assert.equal(x.states.get(33).draft.publishedEdit,true);
+ await x.callback('edit:title|r2');
+ await x.send({text:'新タイトル'},112);
+ await x.callback('edit:save|r4');
+ assert.equal(x.states.get(33).screen,'my_videos');
+ assert.match(x.screens.at(-1).panel.text,/動画を編集／更新しました/);
+});
+test('new post Back and Cancel return to the listing including old versioned Back',async()=>{
+ const x=setup();
+ await x.callback('menu:manage');
+ await x.callback('menu:listing');
+ const back=x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().find(b=>b.text.includes('戻る'));
+ assert.equal(back.callback_data,'menu:manage|r2');
+ await x.callback(back.callback_data);
  assert.equal(x.states.get(33).screen,'my_videos');
  assert.equal(x.states.get(33).draft,null);
- assert.match(x.screens.at(-1).panel.text,/購入済み動画は変更できません/);
- assert.equal(x.screens.at(-1).panel.text.includes('📋 詳細'),false);
- assert(x.screens.at(-1).panel.reply_markup.inline_keyboard[0].some(
-  b=>b.callback_data==='menu:listing'));
+ await x.callback('menu:listing');
+ const cancel=x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().find(b=>b.text.includes('キャンセル'));
+ assert.equal(cancel.callback_data,'edit:cancel|r4');
+ await x.callback(cancel.callback_data);
+ assert.equal(x.states.get(33).screen,'my_videos');
+ assert.equal(x.states.get(33).draft,null);
 });
-
 test('published prior receipt resolves stale creator lock and allows genuinely new registration',async()=>{
  const x=setup({listingStoreOverride:{
    async getOwned(owner,id){
@@ -801,6 +810,28 @@ test('published prior receipt resolves stale creator lock and allows genuinely n
  await x.send({video:{file_id:'new_unrelated_video_123',duration:90},caption:'新しい商品'},1272);
  assert.equal(x.states.get(33).draft.paidVideo.fileId,'new_unrelated_video_123');
 });
+test('recorded publication receipt resolves stale lock even when listing revision matches pending',async()=>{
+ const x=setup({listingStoreOverride:{
+  async getOwned(owner,id){
+    assert.equal(owner,33);
+    return id==='my1'?{id:'my1',sellerId:String(owner),revision:7,status:'published',
+      publicationState:'recorded',title:'記録済み作品'}:null;
+  }
+ }});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'stale_lock_video',duration:82},caption:'ロック残存'},1281);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ const prior=x.states.get(33);
+ x.states.set(33,{...prior,publishing:'needs_reconcile',
+  pendingVideoDraft:{listingId:'my1',revision:7},screen:'review'});
+ await x.callback('menu:listing');
+ const s=x.states.get(33);
+ assert.equal(s.publishing,null);
+ assert.equal(s.pendingVideoDraft,null);
+ assert.equal(s.draft.mode,'create');
+ assert.equal(s.draft.paidVideo,null);
+ assert.equal(s.screen,'await_video');
+});
 test('unresolved prior sale cannot be silently cleared by pressing new post',async()=>{
  const x=setup({listingStoreOverride:{
   async getOwned(owner,id){return {id,sellerId:String(owner),revision:7,status:'draft'};}
@@ -818,4 +849,201 @@ test('unresolved prior sale cannot be silently cleared by pressing new post',asy
  assert.equal(s.draft.paidVideo.fileId,'uncertain_prior_video');
  assert.equal(s.screen,'editor');
  assert.match(x.screens.at(-1).panel.text,/前の投稿結果が未確定/);
+});
+
+ test('rendered sample text link stays inside private wizard and cannot submit',async()=>{
+ const x=setup();
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'synthetic_main_01'},caption:'テスト'},1101);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ const link=x.screens.at(-1).panel.entities.find(e=>e.url.includes('ved_sample_r'));
+ assert.ok(link);
+ const revision=Number(new URL(link.url).searchParams.get('start').split('_r')[1]);
+ await x.handler.openTextEdit({message:{chat:{id:33,type:'private'},from:{id:33},message_id:1103}},'sample',revision);
+ const state=x.states.get(33);
+ assert.equal(state.screen,'field');assert.equal(state.waiting,'sample');
+ const panel=x.screens.at(-1).panel;
+ assert.ok(panel.reply_markup.inline_keyboard.flat().every(b=>!b.callback_data.startsWith('entry:register')));
+ assert.match(panel.text,/新しいサンプル動画を送信/);
+ assert.equal(x.calls.filter(c=>c.method==='answerCallbackQuery').length,2);
+ assert.ok(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===1103));
+ await x.send({video:{file_id:'upload001',duration:15}},1102);
+ assert.equal(x.states.get(33).draft.sample.fileId,'prepared_sample_001');
+ assert.equal(x.states.get(33).screen,'editor');
+ });
+
+test('incomplete preview reference set is reported as incomplete and original input is retained',async()=>{
+ const x=setup({mediaProcessorOverride:{async prepareMissingPreviews(){return {thumbnail:{fileId:'photo_auto_1'},sample:{fileId:'sample_auto_1',durationSeconds:30}};}}});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'synthetic_source_01'},caption:'Synthetic fixture'},9401);
+ const state=x.states.get(33);
+ assert.equal(state.draft.paidVideo.fileId,'synthetic_source_01');
+ assert.equal(state.draft.thumbnail.secondFileId,undefined);
+ assert.match(x.screens.at(-1).panel.text,/取得が完了していません/);
+ assert.equal(x.calls.some(c=>c.method==='sendMediaGroup'),false);
+ assert.equal(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===9401),false);
+});
+test('missing preview adapter output is not reported as completed',async()=>{
+ const x=setup({mediaProcessorOverride:{async prepareMissingPreviews(){return {};}}});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'synthetic_source_02'},caption:'Synthetic fixture'},9402);
+ assert.equal(x.states.get(33).draft.sample,null);
+ assert.match(x.screens.at(-1).panel.text,/取得が完了していません/);
+ assert.equal(x.calls.some(c=>c.method==='sendMediaGroup'),false);
+});
+
+test('independent input and preview failures remain visible together',async()=>{
+ const x=setup({mediaProcessorOverride:{
+   async optimizeMainVideo(){throw new Error('synthetic optimization failure');},
+   async prepareMissingPreviews(){throw new Error('fetch failed');}
+ }});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'synthetic_warning_fixture'},caption:'Synthetic fixture'},9403);
+ const panel=x.screens.at(-1).panel.text;
+ assert.match(panel,/本編圧縮は完了していません/);
+ assert.match(panel,/Telegramから動画を取得できませんでした/);
+ assert.equal(x.states.get(33).draft.paidVideo.fileId,'synthetic_warning_fixture');
+ assert.equal(x.states.get(33).draft.sample,null);
+ assert.equal(x.calls.some(c=>c.method==='sendMediaGroup'),false);
+ assert.equal(x.calls.some(c=>c.method==='deleteMessage'&&c.params.message_id===9403),false);
+});
+
+test('missing terms URL and legacy confirmation never terminate navigation or publish',async()=>{
+  let publications=0;
+  const x=setup({termsUrl:'',publishListing:async()=>{publications++;throw Error('unexpected publish');}});
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'synthetic fixture'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
+  await x.callback('edit:price|r'+x.states.get(33).revision);
+  await x.callback('edit:price:300|r'+x.states.get(33).revision);
+  await x.callback('entry:register|r'+x.states.get(33).revision);
+  for(const action of ['review:agree','review:rights','review:publish']){
+    const before=x.states.get(33);
+    const result=await x.callback(action+'|r'+before.revision);
+    assert.equal(result.handled,true);
+    assert.equal(x.states.get(33).draft.paidVideo.fileId,'main001');
+    assert.notEqual(x.states.get(33).draft.feeTermsAccepted,true);
+    assert.match(x.screens.at(-1).panel.text,/規約本文を確認できません/);
+    assert.equal(x.screens.at(-1).panel.reply_markup.inline_keyboard.flat().some(b=>b.callback_data?.startsWith('review:agree')),false);
+  }
+  await x.callback('review:edit|r'+x.states.get(33).revision);
+  assert.equal(x.states.get(33).screen,'editor');
+  await x.callback('menu:video');
+  assert.equal(x.states.get(33).screen,'my_videos');
+  await x.callback('menu:listing');
+  assert.equal(x.states.get(33).screen,'await_video');
+  assert.equal(publications,0);
+});
+
+test('legacy orphaned session can open a genuinely new entry while old receipt remains unknown',async()=>{
+ const x=setup({listingStoreOverride:{
+  async listByOwner(owner){return [{id:'old1',sellerId:String(owner),title:'旧下書き',status:'draft',publicationState:'unconfirmed'}];},
+  async findUnresolvedRegistration(){return null;}
+ }});
+ x.states.set(33,{revision:1,screenMessageId:101,screen:'home',draft:null,publishing:'needs_reconcile',pendingVideoDraft:null});
+ await x.callback('menu:listing');
+ assert.equal(x.states.get(33).screen,'await_video');
+ assert.equal(x.states.get(33).publishing,null);
+ assert.equal(x.states.get(33).draft.paidVideo,null);
+});
+test('an unresolved same-file registration cannot create another row or call publication',async()=>{
+ let creates=0,publishes=0;
+ const x=setup({listingStoreOverride:{
+  async findUnresolvedRegistration(owner,file){assert.equal(file,'main001');return {id:'old1',status:'draft',publicationState:'unconfirmed'};},
+  async createDraft(){creates++;throw Error('must not create');},
+  async updateDraft(){throw Error('must not update');},async markPublished(){throw Error('must not mark');}
+ },publishListing:async()=>{publishes++;throw Error('must not publish');}});
+ await x.callback('menu:listing');
+ await x.send({video:{file_id:'main001',duration:90},caption:'検証用'},210);
+ await x.callback('entry:skip|r'+x.states.get(33).revision);
+ await x.callback('edit:price|r'+x.states.get(33).revision);
+ await x.callback('edit:price:300|r'+x.states.get(33).revision);
+ await x.callback('entry:register|r'+x.states.get(33).revision);
+ await x.callback('review:agree|r'+x.states.get(33).revision);
+ assert.equal(creates,0);assert.equal(publishes,0);
+ assert.match(x.screens.at(-1).panel.text,/以前の投稿結果が未確認/);
+});
+
+test('synthetic registration failure identifies the failed stage without reporting success or retrying',async()=>{
+ for(const stage of ['draft_save','delivery','receipt_save']){
+  let creates=0,sends=0,marks=0,reservedId;
+  const x=setup({listingStoreOverride:{
+   async createDraft(owner,id,draft){
+    creates++;reservedId=id;
+    assert.equal(x.states.get(owner).pendingVideoDraft.listingId,id);
+    if(stage==='draft_save')throw Error('fixture database acknowledgement unavailable');
+    return {...draft,id,revision:1,sellerId:String(owner)};
+   },
+   async updateDraft(){throw Error('unexpected fixture update');},
+   async markPublished(){marks++;throw Error('fixture receipt save unavailable');}
+  },publishListing:async()=>{
+    sends++;
+    if(stage==='delivery')throw Error('fixture response unknown');
+    return {posted:true,paidMessageId:303,freeMessageIds:[301,302]};
+  }});
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'fixture_video_only',duration:90},caption:'Synthetic test'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
+  await x.callback('edit:price|r'+x.states.get(33).revision);
+  await x.callback('edit:price:300|r'+x.states.get(33).revision);
+  await x.callback('entry:register|r'+x.states.get(33).revision);
+  await x.callback('review:agree|r'+x.states.get(33).revision);
+  const state=x.states.get(33);
+  assert.equal(state.publishing,'needs_reconcile');
+  assert.equal(state.pendingVideoDraft.listingId,reservedId);
+  assert.equal(creates,1);
+  assert.equal(sends,stage==='draft_save'?0:1);
+  assert.equal(marks,stage==='receipt_save'?1:0);
+  const message=x.screens.at(-1).panel.text;
+  assert.match(message,/登録完了は確認できません/);
+  assert.match(message,{draft_save:/登録情報の保存結果/,delivery:/投稿先への送信結果/,receipt_save:/投稿完了記録の保存結果/}[stage]);
+  assert.doesNotMatch(message,/新規動画を登録しました/);
+  await x.callback('review:agree|r'+state.revision);
+  assert.equal(creates,1);
+  assert.equal(sends,stage==='draft_save'?0:1);
+ }
+});
+
+test('returning from a saved one-thumbnail review restores missing preview assets without publishing',async()=>{
+  let recoveries=0,published=0;
+  const x=setup({
+    mediaProcessorOverride:{async prepareMissingPreviews(draft){
+      recoveries++;
+      return {thumbnail:{fileId:draft.thumbnail?.fileId??'first_photo',secondFileId:'second_photo'},
+        sample:{fileId:'generated_sample',durationSeconds:60}};
+    }},
+    publishListing:async()=>{published++;return {posted:true,paidMessageId:99};}
+  });
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'保存済み作品'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
+  const old=x.states.get(33);
+  const saved={...old.draft,thumbnail:{fileId:'first_photo'},
+    sample:{fileId:'saved_sample',durationSeconds:30},priceStars:100};
+  recoveries=0;
+  x.states.set(33,{...old,draft:saved,screen:'review'});
+  await x.callback('review:edit|r'+old.revision);
+  const state=x.states.get(33);
+  assert.equal(state.screen,'editor');
+  assert.equal(state.draft.paidVideo.fileId,'main001');
+  assert.equal(state.draft.thumbnail.secondFileId,'second_photo');
+  assert.deepEqual(state.draft.sample,saved.sample);
+  assert.equal(state.draft.priceStars,100);
+  assert.equal(recoveries,1);
+  assert.equal(published,0);
+});
+test('return from unresolved review preserves receipt reconciliation and does not regenerate',async()=>{
+  let recoveries=0;
+  const x=setup({mediaProcessorOverride:{async prepareMissingPreviews(){recoveries++;return {};}}});
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'保留作品'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
+  const old=x.states.get(33);
+  const pending={listingId:'pending_1',revision:1};
+  x.states.set(33,{...old,screen:'review',publishing:'needs_reconcile',pendingVideoDraft:pending});
+  recoveries=0;
+  await x.callback('review:edit|r'+old.revision);
+  assert.equal(recoveries,0);
+  assert.equal(x.states.get(33).publishing,'needs_reconcile');
+  assert.deepEqual(x.states.get(33).pendingVideoDraft,pending);
 });

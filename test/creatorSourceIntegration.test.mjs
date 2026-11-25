@@ -108,6 +108,8 @@ test('source-composed offline Telegram webhook drives real wizard route with dur
  assert.equal(state().payload.screen,'editor');
  const finalScreen=x.calls.filter(y=>['sendMessage','editMessageText'].includes(y.method)).at(-1);
  assert.ok(finalScreen.params.entities.some(e=>e.url.endsWith('ved_description_r4')));
+  assert.equal(finalScreen.params.entities.length,6);
+  assert.equal(finalScreen.params.reply_markup.inline_keyboard.length,1);
  await x.send(callback(5,'edit:price|r4'));
  assert.equal(state().revision,5);
  await x.send(callback(6,'edit:price:300|r5'));

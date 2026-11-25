@@ -117,7 +117,7 @@ test('creator home opens sticker/emoji editor through existing sticker handler i
  assert.equal(events.filter(x=>x.method==='screen').length,1,'video wizard must not replace sticker screen');
 });
 
-test('text-linked field edit works only after video registration and for current owner/revision',async()=>{
+test('body text link opens the current owner field; stale old links cannot change it',async()=>{
  const states=new Map(),calls=[];
  const api=async(method,params)=>{calls.push({method,params});return {message_id:41};};
  const store={
@@ -148,15 +148,15 @@ test('text-linked field edit works only after video registration and for current
  assert.equal(states.get(33).revision,4);
  const screen=calls.filter(x=>x.method==='screen').at(-1).panel;
  assert.equal(states.get(33).screen,'editor');
- assert.ok(screen.entities.some(e=>e.url.endsWith('ved_title_r4')));
- assert.ok(screen.entities.some(e=>e.url.endsWith('ved_description_r4')));
  assert.equal(screen.entities.length,6);
- assert.ok(screen.reply_markup.inline_keyboard.flat().every(b=>!b.text.includes('編集')));
- const result=await handler(priv(33,'/start ved_title_r4'));
+ assert.ok(screen.entities.some(e=>e.url.endsWith('ved_description_r4')));
+ assert.equal(screen.reply_markup.inline_keyboard.length,1);
+ const title=screen.entities.find(e=>e.url.endsWith('ved_title_r4'));
+ assert.equal(screen.text.slice(title.offset,title.offset+title.length),'［編集］');
+ const result=await handler(priv(33,'/start '+new URL(title.url).searchParams.get('start')));
  assert.equal(result.handled,true);
  assert.equal(states.get(33).waiting,'title');
  assert.equal(states.get(33).revision,5);
- assert.ok(calls.some(x=>x.method==='deleteMessage'), 'deep link command is cleaned up');
  const stale=await handler(priv(33,'/start ved_price_r4'));
  assert.ok(!stale?.revision || stale?.revision!==6);
  await handler({message:{chat:{id:33,type:'private'},from:{id:33},
