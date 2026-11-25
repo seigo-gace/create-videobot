@@ -981,3 +981,47 @@ test('synthetic registration failure identifies the failed stage without reporti
   assert.equal(sends,stage==='draft_save'?0:1);
  }
 });
+
+test('returning from a saved one-thumbnail review restores missing preview assets without publishing',async()=>{
+  let recoveries=0,published=0;
+  const x=setup({
+    mediaProcessorOverride:{async prepareMissingPreviews(draft){
+      recoveries++;
+      return {thumbnail:{fileId:draft.thumbnail?.fileId??'first_photo',secondFileId:'second_photo'},
+        sample:{fileId:'generated_sample',durationSeconds:60}};
+    }},
+    publishListing:async()=>{published++;return {posted:true,paidMessageId:99};}
+  });
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'保存済み作品'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
+  const old=x.states.get(33);
+  const saved={...old.draft,thumbnail:{fileId:'first_photo'},
+    sample:{fileId:'saved_sample',durationSeconds:30},priceStars:100};
+  recoveries=0;
+  x.states.set(33,{...old,draft:saved,screen:'review'});
+  await x.callback('review:edit|r'+old.revision);
+  const state=x.states.get(33);
+  assert.equal(state.screen,'editor');
+  assert.equal(state.draft.paidVideo.fileId,'main001');
+  assert.equal(state.draft.thumbnail.secondFileId,'second_photo');
+  assert.deepEqual(state.draft.sample,saved.sample);
+  assert.equal(state.draft.priceStars,100);
+  assert.equal(recoveries,1);
+  assert.equal(published,0);
+});
+test('return from unresolved review preserves receipt reconciliation and does not regenerate',async()=>{
+  let recoveries=0;
+  const x=setup({mediaProcessorOverride:{async prepareMissingPreviews(){recoveries++;return {};}}});
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'main001',duration:90},caption:'保留作品'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
+  const old=x.states.get(33);
+  const pending={listingId:'pending_1',revision:1};
+  x.states.set(33,{...old,screen:'review',publishing:'needs_reconcile',pendingVideoDraft:pending});
+  recoveries=0;
+  await x.callback('review:edit|r'+old.revision);
+  assert.equal(recoveries,0);
+  assert.equal(x.states.get(33).publishing,'needs_reconcile');
+  assert.deepEqual(x.states.get(33).pendingVideoDraft,pending);
+});

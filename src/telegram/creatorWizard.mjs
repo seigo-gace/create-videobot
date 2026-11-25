@@ -560,8 +560,21 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
       if(old.screen!=='review')throw new Error('CREATOR_NOT_IN_REVIEW');
       const action=validateRevision(code,old);
       const draft=old.draft;
-      if(action==='review:edit')return persistAndRender(ownerId,old,
-        {...old,screen:'editor',waiting:null},rev=>statusPanel(draft,rev));
+      if(action==='review:edit'){
+        // An older saved review can contain a one-thumbnail draft. Reuse
+        // the ordinary preview recovery when the owner explicitly returns
+        // to the editor, without publishing or modifying a stored receipt.
+        const recover=draft.mode==='create' && draft.paidVideo &&
+          (!draft.thumbnail?.secondFileId||!draft.sample) &&
+          !['needs_reconcile','in_progress'].includes(old.publishing);
+        const recovery=recover?await autoPreview(ownerId,draft):
+          {draft,warning:'',previewMessageId:null};
+        return persistAndRender(ownerId,old,{
+          ...old,screen:'editor',waiting:null,draft:recovery.draft,
+          previewMessageId:recovery.previewMessageId??old.previewMessageId??null,
+          albumMessageId:recovery.previewMessageId??old.albumMessageId??null
+        },rev=>statusPanel(recovery.draft,rev,recovery.warning));
+      }
       if(action==='review:cancel') {
         const items=await listingStore.listByOwner(ownerId);
         return persistAndRender(ownerId,old,
