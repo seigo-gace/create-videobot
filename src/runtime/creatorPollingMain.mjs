@@ -1,0 +1,266 @@
+import {readFileSync,statSync} from 'node:fs';
+import {setDefaultResultOrder} from 'node:dns';
+import {setDefaultAutoSelectFamily} from 'node:net';
+import {randomBytes} from 'node:crypto';
+import {pathToFileURL} from 'node:url';
+import pg from 'pg';
+import {readPrivateToken} from './config.mjs';
+import {createTelegramBotApi} from '../telegram/botApi.mjs';
+import {clearCreatorCommandMenu} from '../telegram/commandMenuCleanup.mjs';
+import {verifyCreateVdoBot} from '../telegram/identityCheck.mjs';
+import {createTelegramVideoFetcher} from '../telegram/telegramFileFetch.mjs';
+import {createCreatorDmPreviewUploader} from '../telegram/privateMediaUpload.mjs';
+import {createVideoBotSourceModule} from '../telegram/creatorWiring.mjs';
+import {createCreatorPollingConsumer} from './creatorPollingConsumer.mjs';
+import {createPostgresOwnerUpdateQueue} from './creatorOwnerUpdateJobs.mjs';
+import {setTimeout as sleep} from 'node:timers/promises';
+import {applyCreatorSchema,assertCreatorSchemaApplied} from './creatorMigrate.mjs';
+import {createCreatorTelegramFetch} from './creatorEgress.mjs';
+import {createStickerShopPreview} from '../stickers/shopPreview.mjs';
+import {createStickerShopServer} from '../stickers/shopHttp.mjs';
+
+const {Pool}=pg;
+// Gserver host network has verified IPv4 Telegram egress, while default
+// IPv6-first connections timed out. Apply only to this new Bot process.
+setDefaultResultOrder('ipv4first');
+// Gserver runtime verification: Node's automatic dual-family connect timed out
+// even when IPv4 HTTPS succeeded. Keep this change local to this Bot process.
+setDefaultAutoSelectFamily(false);
+function mode(env){
+ if(env.NODE_ENV!=='production'||env.VIDEOBOT_RUN_MODE!=='telegram_poll'||
+    env.VIDEOBOT_PRIVATE_INGRESS_ONLY!=='true')
+   throw Error('CREATOR_POLL_PRIVATE_MODE_REQUIRED');
+ if(typeof env.VIDEOBOT_TELEGRAM_TOKEN_FILE!=='string'||
+    !env.VIDEOBOT_TELEGRAM_TOKEN_FILE.startsWith('/run/secrets/'))
+   throw Error('CREATOR_POLL_PRIVATE_SECRET_MOUNT_REQUIRED');
+ if(!env.VIDEOBOT_DATABASE_URL_FILE&&
+    env.VIDEOBOT_DB_PASSWORD_FILE!=='/run/secrets/videobot_db_password')
+   throw Error('CREATOR_POLL_PRIVATE_DB_SECRET_REQUIRED');
+ return env;
+}
+function explicitUnavailable(){
+ throw Error('GATE_OWNER_PUBLIC_POSTING_NOT_CONNECTED');
+}
+const privateStickerGate=Object.freeze({
+ getVerifiedVideoTopic:explicitUnavailable,
+ verifyMembership:explicitUnavailable,
+ verifyReview:explicitUnavailable,
+ verifyRelease:explicitUnavailable
+});
+export async function createCreatorPollingRuntime({
+ env=process.env,poolCtor=Pool,readSecret=readPrivateToken,
+ importOwner=specifier=>import(specifier),
+ createSource=createVideoBotSourceModule,
+ applySchema=applyCreatorSchema,
+ fetchImpl=globalThis.fetch
+}={}){
+ mode(env);
+ const token=readSecret(env.VIDEOBOT_TELEGRAM_TOKEN_FILE);
+ const dburl=env.VIDEOBOT_DATABASE_URL_FILE
+   ?readSecret(env.VIDEOBOT_DATABASE_URL_FILE)
+   :(()=>{
+      const path=env.VIDEOBOT_DB_PASSWORD_FILE;
+      const st=statSync(path);
+      if(!st.isFile()||(st.mode&0o077)!==0||st.size<12||st.size>4096)
+        throw Error('CREATOR_POLL_DB_PASSWORD_FILE_INVALID');
+      const pass=readFileSync(path,'utf8').trim();
+      const host=env.VIDEOBOT_DB_HOST,username=env.VIDEOBOT_DB_USER;
+      if(!['deploy-postgres-1','postgres'].includes(host)||
+         typeof username!=='string'||!/^[a-z][a-z0-9_]{0,62}$/.test(username)||
+         env.VIDEOBOT_DB_NAME!=='videobot'||pass.length<12)
+        throw Error('CREATOR_POLL_INTERNAL_DB_CONFIG_INVALID');
+      const auth=encodeURIComponent(username)+':'+encodeURIComponent(pass);
+      return 'postgresql://'+auth+'@'+host+':5432/videobot';
+   })();
+ const pool=new poolCtor({connectionString:dburl,max:3,
+  connectionTimeoutMillis:5000,idleTimeoutMillis:30000});
+ const outbound=createCreatorTelegramFetch(fetchImpl);
+ let api,source,poller;
+ try{
+  const scratch=env.VIDEOBOT_VIDEO_WORK_ROOT??null;
+  if(scratch!==null && scratch!=='/var/lib/videobot/media-work')
+   throw Error('CREATOR_MEDIA_WORK_ROOT_NOT_ADMITTED');
+  if(env.VIDEOBOT_OWNER_JOBS==='YES'&&scratch===null)
+   throw Error('CREATOR_DURABLE_MEDIA_WORK_ROOT_REQUIRED');
+  const localApi=env.VIDEOBOT_LOCAL_API_URL??null;
+  if(localApi!==null && (localApi!=='http://telegram-bot-api:8081'||
+    typeof env.VIDEOBOT_LOCAL_MEDIA_ROOT!=='string'||
+    env.VIDEOBOT_LOCAL_MEDIA_ROOT!=='/var/lib/telegram-bot-api'))
+    throw Error('CREATOR_LOCAL_BOT_API_NOT_VERIFIED');
+  const baseUrl=localApi??'https://api.telegram.org';
+  api=createTelegramBotApi({token,fetchImpl:outbound.fetch,timeoutMs:25000,baseUrl});
+  await verifyCreateVdoBot({api,checkProfile:false});
+  // Clear legacy BotFather command lists without changing internal deep-links.
+  // API/readback failures are explicit so the menu is never reported cleared.
+  await clearCreatorCommandMenu(api);
+  // The approved one-time sticker Topic receipt is an existing on-disk
+  // Telegram-verified Owner proof. No video sale routes are enabled.
+  let gateOwner=privateStickerGate,gateConnected=false;
+  if(env.VIDEOBOT_GATE_OWNER_ADAPTER){
+   if(env.VIDEOBOT_GATE_OWNER_ADAPTER!=='/opt/videobot/owner/gateOwner.mjs')
+     throw Error('CREATOR_POLL_GATE_OWNER_PATH_INVALID');
+   const owner=await importOwner(pathToFileURL(env.VIDEOBOT_GATE_OWNER_ADAPTER).href);
+   if(typeof owner?.createGateOwner!=='function')
+     throw Error('CREATOR_POLL_GATE_OWNER_PROVIDER_INVALID');
+   gateOwner=await owner.createGateOwner({telegramApi:api,pool,env});
+   gateConnected=true;
+  }
+  const info=await api('getWebhookInfo',{});
+  if(typeof info?.url!=='string'||info.url!=='')
+   throw Error('CREATOR_POLL_EXISTING_WEBHOOK_MUST_NOT_BE_REPLACED');
+  if(env.VIDEOBOT_SCHEMA_MIGRATE!=='YES')
+   throw Error('CREATOR_POLL_SCHEMA_OWNER_CONSENT_MISSING');
+  const schema=await applySchema({pool});
+  assertCreatorSchemaApplied(schema);
+  const ownerQueue=env.VIDEOBOT_OWNER_JOBS==='YES'?createPostgresOwnerUpdateQueue(pool):null;
+  if(ownerQueue)await ownerQueue.recover();
+  const pollAdmissionSecret=randomBytes(32).toString('hex');
+  const fetchSource=createTelegramVideoFetcher({telegramApi:api,token,fetchImpl:outbound.fetch,
+    ...(localApi?{localFileRoot:env.VIDEOBOT_LOCAL_MEDIA_ROOT,maxBytes:2_000_000_000}:{})});
+  const saveGenerated=createCreatorDmPreviewUploader({token,fetchImpl:outbound.fetch,
+    telegramApi:api,baseUrl,maxBytes:localApi?2_000_000_000:20_000_000,
+    localMediaRoot:localApi?env.VIDEOBOT_LOCAL_MEDIA_ROOT:null});
+  source=createSource({
+   pool,telegramApi:api,gateOwner,botToken:token,
+   stickerShopBaseUrl:env.VIDEOBOT_SHOP_PUBLIC_URL??null,
+   termsUrl:env.CREATEVDOBOT_TERMS_URL??'',
+   webhookSecret:pollAdmissionSecret,
+   storageApproved:true,mediaWorkRoot:scratch,
+   mediaPorts:{fetchSource,saveGenerated}
+  });
+  poller=createCreatorPollingConsumer({
+   telegramApi:api,
+   handleTelegramWebhook:source.handleTelegramWebhook,
+   webhookSecret:pollAdmissionSecret,
+   pool,ownerQueue
+  });
+  return {pool,source,api,poller,gateConnected,botToken:token,fetchSource,
+   ownerJobRunner:ownerQueue?()=>ownerQueue.runOne(source.handleTelegramWebhook,pollAdmissionSecret):null,
+   async close(){await outbound.close();await pool.end();}};
+ }catch(err){await outbound.close();await pool.end();throw err;}
+}
+// Bounded, read-only registration reconciliation runs inside the ONE
+// existing polling process. It never replays Telegram pack mutations.
+export async function sweepStickerRegistrations({source,afterOwnerId=0,limit=10}={}){
+ const store=source?.sessionStore,wizard=source?.stickerWizard;
+ if(typeof store?.listPendingStickerRegistrations!=='function'||
+    typeof wizard?.recoverPending!=='function')
+   return {afterOwnerId:0,processed:0,unavailable:true};
+ const rows=await store.listPendingStickerRegistrations({afterOwnerId,limit});
+ if(!rows.length)return {afterOwnerId:0,processed:0};
+ let recovered=0,checked=0;
+ for(const row of rows){
+   try{
+     const result=await wizard.recoverPending(row.ownerId);
+     checked++;
+     if(result?.status==='registered'||result?.status==='recovered_silently')
+       recovered++;
+   }catch(error){
+     // Concurrent CAS changes and transient Telegram failures are retried
+     // on the next scan. Do not stop DM polling or create a second poller.
+     checked++;
+   }
+ }
+ return {afterOwnerId:rows.at(-1).ownerId,processed:checked,recovered};
+}
+export async function runCreatorPollingMain({
+ createRuntime=createCreatorPollingRuntime,signal=undefined,onStatus=()=>{}
+}={}){
+ const rt=await createRuntime();
+ let shopServer=null;
+ const workerStop=new AbortController(),workers=[];
+ try{
+  const port=process.env.VIDEOBOT_SHOP_HTTP_PORT;
+  if(port!==undefined&&port!==''){
+   if(port!=='8766')throw Error('STICKER_SHOP_UNAPPROVED_LISTEN_PORT');
+   shopServer=createStickerShopServer({
+    pool:rt.pool,salesStore:rt.source.stickerSalesStore,
+    telegramApi:rt.api,botToken:rt.botToken,
+    inventory:rt.source.stickerInventory,
+    sessionStore:rt.source.sessionStore,
+    selectItem:rt.source.stickerWizard.selectGalleryItem,
+    preview:createStickerShopPreview({fetchSource:rt.fetchSource})
+   });
+   await new Promise((resolve,reject)=>{
+    shopServer.once('error',reject);
+    shopServer.listen(8766,'0.0.0.0',()=>{
+     shopServer.removeListener('error',reject);resolve();
+    });
+   });
+   onStatus('STICKER_SHOP_HTTP_READY=PASS');
+  }
+  onStatus('CREATOR_DM_POLL_READY=PASS');
+  onStatus('CREATOR_GATE_PUBLIC_RELEASE='+(rt.gateConnected?'CONNECTED':'NOT_VERIFIED'));
+  let recoveryCursor=0,recoveryInFlight=null,workerError=null;
+  let refundInFlight=null,nextRefundSweepAt=0;
+  if(rt.ownerJobRunner){
+   for(let i=0;i<2;i++){
+    const worker=(async()=>{
+     while(!signal?.aborted&&!workerStop.signal.aborted){
+      const result=await rt.ownerJobRunner();
+      if(result.needsReconcile)onStatus('CREATOR_OWNER_JOB_NEEDS_RECONCILE=YES');
+      if(!result.hadWork){
+       try{await sleep(500,undefined,{signal:workerStop.signal});}
+       catch(e){if(signal?.aborted||workerStop.signal.aborted)return;throw e;}
+      }
+     }
+    })().catch(e=>{workerError=e;workerStop.abort();});
+    workers.push(worker);
+   }
+  }
+  while(!signal?.aborted){
+   if(workerError)throw workerError;
+   const outcome=await rt.poller.pollBatch({timeout:rt.ownerJobRunner?2:8});
+   if(outcome.accepted>0)onStatus('CREATOR_DM_UPDATES_HANDLED='+outcome.accepted);
+   if(outcome.quarantined>0)onStatus('CREATOR_UPDATES_QUARANTINED='+outcome.quarantined);
+   if(!refundInFlight && Date.now()>=nextRefundSweepAt &&
+      typeof rt.source?.creatorRefundReconciler?.reconcileIncremental==='function') {
+     // Bounded single-process scan, never a second Telegram poller. Do not
+     // block purchase updates on potentially slow Stars history paging.
+     nextRefundSweepAt=Date.now()+5*60*1000;
+     refundInFlight=rt.source.creatorRefundReconciler.reconcileIncremental({maxPages:3})
+       .then(result=>{
+         if(result.recorded>0)onStatus('STARS_REFUNDS_VERIFIED='+result.recorded);
+         if(!result.coverageComplete)onStatus('STARS_REFUND_HISTORY_PARTIAL=YES');
+       })
+       .catch(()=>{
+         nextRefundSweepAt=Date.now()+60*1000;
+         onStatus('STARS_REFUND_RECONCILE_RETRY=YES');
+       })
+       .finally(()=>{refundInFlight=null;});
+   }
+   if(!recoveryInFlight){
+     // Never await a slow getStickerSet inside update polling.
+     // Only one bounded scan runs at a time in the SAME process.
+     recoveryInFlight=sweepStickerRegistrations({source:rt.source,
+       afterOwnerId:recoveryCursor,limit:10})
+       .then(result=>{
+         recoveryCursor=result.afterOwnerId;
+         if(result.recovered>0)
+           onStatus('STICKER_REGISTRATION_AUTO_RECOVERED='+result.recovered);
+       })
+       .catch(()=>onStatus('STICKER_REGISTRATION_RECOVERY_RETRY=YES'))
+       .finally(()=>{recoveryInFlight=null;});
+   }
+  }
+  if(recoveryInFlight)await recoveryInFlight;
+  if(refundInFlight)await refundInFlight;
+ }finally{
+  workerStop.abort();
+  if(workers.length)await Promise.allSettled(workers);
+  if(shopServer?.listening)await new Promise(resolve=>shopServer.close(()=>resolve()));
+  await rt.close();
+ }
+}
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+ const stop=new AbortController();
+ for(const event of ['SIGINT','SIGTERM'])process.once(event,()=>stop.abort());
+ try{await runCreatorPollingMain({signal:stop.signal,onStatus:t=>process.stdout.write(t+'\n')});}
+ catch(e){
+  const code=String(e?.message??'CREATOR_POLL_RUNTIME_FAILED');
+  const name=/^CREATOR_[A-Z_]+$|^GATE_OWNER_PUBLIC_POSTING_NOT_CONNECTED$/.test(code)?
+    code:'CREATOR_POLL_RUNTIME_FAILED';
+  process.stderr.write(name+'\n');
+  process.exitCode=1;
+ }
+}

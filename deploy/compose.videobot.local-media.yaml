@@ -1,0 +1,19 @@
+# Optional, explicitly verified large-video path.
+# Never enable until the official Local Bot API server has been started with
+# its owner's API credentials, the bot token has been migrated using Telegram's
+# documented logOut procedure, and this single poller has exclusive getUpdates.
+# Keep the DEFAULT compose unchanged when the provider is not ready.
+services:
+  videobot-poll:
+    environment:
+      VIDEOBOT_LOCAL_API_URL: http://telegram-bot-api:8081
+      VIDEOBOT_LOCAL_MEDIA_ROOT: /var/lib/telegram-bot-api
+    volumes:
+      - ${VIDEOBOT_LOCAL_MEDIA_SOURCE:?approved_local_bot_api_readonly_media_share_required}:/var/lib/telegram-bot-api:ro
+    networks:
+      - gserver-db
+      - telegram-local
+networks:
+  telegram-local:
+    external: true
+    name: ${VIDEOBOT_LOCAL_API_NETWORK:?existing_local_bot_api_private_network_required}

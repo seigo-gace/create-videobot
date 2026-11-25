@@ -1,0 +1,16 @@
+{
+  "name": "create-videobot",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "pg": "8.23.1",
+    "undici": "6.29.1"
+  }
+}

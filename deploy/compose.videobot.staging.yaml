@@ -1,0 +1,35 @@
+# Isolated staged bootstrap; not a running Telegram service.
+# Requires an existing, explicitly authorized private Gserver Docker network.
+services:
+  videobot-bootstrap:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: create-videobot:local-bootstrap
+    pull_policy: never
+    restart: "no"
+    read_only: true
+    init: true
+    user: "1000:1000"
+    networks:
+      - gserver-private
+    environment:
+      NODE_ENV: production
+      GSERVER_BASE_URL: http://gserver:8765/
+      GSERVER_BOT_TOKEN_FILE: /run/secrets/gserver_bot_token
+    secrets:
+      - gserver_bot_token
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.25
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m
+secrets:
+  gserver_bot_token:
+    file: ${GSERVER_BOT_TOKEN_SOURCE:?private_token_file_required}
+networks:
+  gserver-private:
+    external: true
+    name: ${GSERVER_PRIVATE_NETWORK:?network_must_be_verified}
