@@ -127,3 +127,19 @@ test('single media field uses actual registered photo and never edits or removes
  assert.equal(calls.some(x=>x.method==='deleteMessage'),false);
  assert.equal(calls.some(x=>x.method==='editMessageCaption'),false);
 });
+
+test('not-modified album caption is confirmed without resending or deleting the album',async()=>{
+ for(const previous of [311,101,null]){
+  const calls=[];
+  const transport=createVideoBotScreenTransport(async(method,args)=>{
+   calls.push({method,args});
+   if(method==='editMessageCaption')throw Error('Bad Request: message is not modified');
+   return true;
+  });
+  assert.deepEqual(await transport.show(33,previous,{...panel,albumMessageId:311}),
+    {messageId:311,replaced:previous===311,album:true});
+  assert.deepEqual(calls.map(c=>c.method),previous===101?
+    ['editMessageCaption','deleteMessage']:['editMessageCaption']);
+  if(previous===101)assert.equal(calls[1].args.message_id,101);
+ }
+});

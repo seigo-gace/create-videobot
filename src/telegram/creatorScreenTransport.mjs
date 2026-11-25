@@ -71,7 +71,13 @@ export function createVideoBotScreenTransport(telegramApi) {
           await telegramApi('deleteMessage',{chat_id:chatId,message_id:id}).catch(()=>{});
         return {messageId:panel.albumMessageId,replaced:id===panel.albumMessageId,album:true};
       }catch(error){
-        if(editOutcome(error)!=='cannot_edit')throw new Error('WIZARD_ALBUM_EDIT_RESULT_UNKNOWN');
+        const outcome=editOutcome(error);
+        if(outcome==='already'){
+          if(id!==null && id!==panel.albumMessageId)
+            await telegramApi('deleteMessage',{chat_id:chatId,message_id:id}).catch(()=>{});
+          return {messageId:panel.albumMessageId,replaced:id===panel.albumMessageId,album:true};
+        }
+        if(outcome!=='cannot_edit')throw new Error('WIZARD_ALBUM_EDIT_RESULT_UNKNOWN');
       }
     }
     if(id!==null) {
