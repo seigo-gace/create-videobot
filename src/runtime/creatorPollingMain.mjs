@@ -6,6 +6,7 @@ import {pathToFileURL} from 'node:url';
 import pg from 'pg';
 import {readPrivateToken} from './config.mjs';
 import {createTelegramBotApi} from '../telegram/botApi.mjs';
+import {clearCreatorCommandMenu} from '../telegram/commandMenuCleanup.mjs';
 import {verifyCreateVdoBot} from '../telegram/identityCheck.mjs';
 import {createTelegramVideoFetcher} from '../telegram/telegramFileFetch.mjs';
 import {createCreatorDmPreviewUploader} from '../telegram/privateMediaUpload.mjs';
@@ -89,6 +90,9 @@ export async function createCreatorPollingRuntime({
   const baseUrl=localApi??'https://api.telegram.org';
   api=createTelegramBotApi({token,fetchImpl:outbound.fetch,timeoutMs:25000,baseUrl});
   await verifyCreateVdoBot({api,checkProfile:false});
+  // Clear legacy BotFather command lists without changing internal deep-links.
+  // API/readback failures are explicit so the menu is never reported cleared.
+  await clearCreatorCommandMenu(api);
   // The approved one-time sticker Topic receipt is an existing on-disk
   // Telegram-verified Owner proof. No video sale routes are enabled.
   let gateOwner=privateStickerGate,gateConnected=false;
