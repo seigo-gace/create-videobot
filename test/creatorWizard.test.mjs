@@ -941,3 +941,43 @@ test('an unresolved same-file registration cannot create another row or call pub
  assert.equal(creates,0);assert.equal(publishes,0);
  assert.match(x.screens.at(-1).panel.text,/以前の投稿結果が未確認/);
 });
+
+test('synthetic registration failure identifies the failed stage without reporting success or retrying',async()=>{
+ for(const stage of ['draft_save','delivery','receipt_save']){
+  let creates=0,sends=0,marks=0,reservedId;
+  const x=setup({listingStoreOverride:{
+   async createDraft(owner,id,draft){
+    creates++;reservedId=id;
+    assert.equal(x.states.get(owner).pendingVideoDraft.listingId,id);
+    if(stage==='draft_save')throw Error('fixture database acknowledgement unavailable');
+    return {...draft,id,revision:1,sellerId:String(owner)};
+   },
+   async updateDraft(){throw Error('unexpected fixture update');},
+   async markPublished(){marks++;throw Error('fixture receipt save unavailable');}
+  },publishListing:async()=>{
+    sends++;
+    if(stage==='delivery')throw Error('fixture response unknown');
+    return {posted:true,paidMessageId:303,freeMessageIds:[301,302]};
+  }});
+  await x.callback('menu:listing');
+  await x.send({video:{file_id:'fixture_video_only',duration:90},caption:'Synthetic test'},210);
+  await x.callback('entry:skip|r'+x.states.get(33).revision);
+  await x.callback('edit:price|r'+x.states.get(33).revision);
+  await x.callback('edit:price:300|r'+x.states.get(33).revision);
+  await x.callback('entry:register|r'+x.states.get(33).revision);
+  await x.callback('review:agree|r'+x.states.get(33).revision);
+  const state=x.states.get(33);
+  assert.equal(state.publishing,'needs_reconcile');
+  assert.equal(state.pendingVideoDraft.listingId,reservedId);
+  assert.equal(creates,1);
+  assert.equal(sends,stage==='draft_save'?0:1);
+  assert.equal(marks,stage==='receipt_save'?1:0);
+  const message=x.screens.at(-1).panel.text;
+  assert.match(message,/登録完了は確認できません/);
+  assert.match(message,{draft_save:/登録情報の保存結果/,delivery:/投稿先への送信結果/,receipt_save:/投稿完了記録の保存結果/}[stage]);
+  assert.doesNotMatch(message,/新規動画を登録しました/);
+  await x.callback('review:agree|r'+state.revision);
+  assert.equal(creates,1);
+  assert.equal(sends,stage==='draft_save'?0:1);
+ }
+});

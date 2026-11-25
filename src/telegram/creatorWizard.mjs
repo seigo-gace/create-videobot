@@ -194,6 +194,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           pendingVideoDraft:{listingId:reservedId,revision:pending?.revision??0}};
         await sessionStore.write(ownerId,old.revision,reservation);
         let stored=null;
+        let failureStage='draft_save';
         try {
           // The price and 30% deduction are shown beside the final 登録 button.
           // Explicit tapping of 登録 records fee
@@ -205,6 +206,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
             : pending?.listingId&&pending.revision>=1
               ? await listingStore.updateDraft(ownerId,pending.listingId,pending.revision,acceptedDraft)
               : await listingStore.createDraft(ownerId,reservedId,acceptedDraft);
+          failureStage='delivery';
           const published=await publishListing({
             ...stored,ownerConfirmedPublish:true,
             rightsVerified:draft.rightsVerified,
@@ -212,6 +214,7 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
           });
           if(published?.posted!==true || !Number.isSafeInteger(published.paidMessageId))
             throw new Error('publication not confirmed');
+          failureStage='receipt_save';
           await listingStore.markPublished(ownerId,stored.id,stored.revision,published);
           // The publication transaction is complete here; DM rendering is a separate outcome.
         } catch(e) {
@@ -230,7 +233,11 @@ export function createCreatorWizard({api,sessionStore,screenTransport,listingSto
             ...current,publishing:'needs_reconcile',waiting:null,
             screen:'review',draft,pendingVideoDraft:pending
           },rev=>reviewPanel(draft,rev,
-            '⚠️ 登録完了は確認できません。送信または保存結果の照合が必要です。重複投稿を防止するため、再投稿しません。'));
+            '⚠️ 登録完了は確認できません。'+({
+              draft_save:'登録情報の保存結果を確認できません。投稿処理には進んでいません。',
+              delivery:'投稿先への送信結果を確認できません。',
+              receipt_save:'送信応答は取得しましたが、投稿完了記録の保存結果を確認できません。'
+            }[failureStage])+'重複投稿を防止するため、再投稿しません。'));
         }
         // A Telegram confirmation-screen failure does not undo the confirmed
         // publication or create another sale. Preserve the durable outcome.
