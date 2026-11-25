@@ -552,7 +552,7 @@ test('old published review keyboard opens My Videos instead of becoming inert',a
  const result=await x.callback('review:publish|r1',101);
  assert.equal(result.handled,true);
  assert.equal(x.states.get(33).screen,'my_videos');
- assert.match(x.screens.at(-1).panel.text,/登録済み動画/);
+ assert.match(x.screens.at(-1).panel.text,/動画一覧/);
 });
 
 test('obsolete register and cancel never act on newer draft',async()=>{
